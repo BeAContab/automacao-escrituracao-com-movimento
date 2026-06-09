@@ -27,6 +27,7 @@ from iss_fortaleza_automacao import (
 )
 from cnae_final import enriquecer_registros_cnae_final
 from gemini_extracao import extrair_campos_gemini
+from tratamento_erros import registrar_erro, registrar_evento_execucao
 
 VALOR_BR_PATTERN = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
 CNPJ_PATTERN = re.compile(
@@ -1163,6 +1164,18 @@ def solicitar_opcao() -> str:
         print()
 
 
+def solicitar_planilha_automacao() -> Path:
+    """Pergunta ao usuário qual planilha será usada na automação da ISS."""
+
+    entrada = input(
+        "Informe o caminho da planilha XLSX que será usada na automação da ISS "
+        "(Enter para `nf_compilado.xlsx`): "
+    ).strip().strip('"')
+    if not entrada:
+        return Path("nf_compilado.xlsx")
+    return Path(entrada)
+
+
 def construir_argumentos() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extrai dados de NFS-e em PDF, gera XLSX ou executa a automação da ISS."
@@ -1183,7 +1196,7 @@ def construir_argumentos() -> argparse.Namespace:
     parser.add_argument(
         "--planilha",
         type=Path,
-        default=Path("nf_compilado.xlsx"),
+        default=None,
         help="Planilha XLSX usada pela automação da ISS.",
     )
     parser.add_argument(
@@ -1205,6 +1218,7 @@ def construir_argumentos() -> argparse.Namespace:
 
 def main() -> int:
     args = construir_argumentos()
+    registrar_evento_execucao("Fluxo principal iniciado no extrair_nf_pdfs.py", "extrair_nf_pdfs.py")
 
     modo = args.modo
     if modo is None:
@@ -1222,11 +1236,16 @@ def main() -> int:
             )
         except ValueError as exc:
             raise SystemExit(f"Competência inválida: {exc}") from exc
-        if not args.planilha.exists():
+        planilha = args.planilha if args.planilha is not None else solicitar_planilha_automacao()
+        if not planilha.exists():
             raise SystemExit(
-                f"A planilha informada para a automação não existe: {args.planilha}"
+                f"A planilha informada para a automação não existe: {planilha}"
             )
-        executar_automacao_iss(args.planilha, competencia)
+        registrar_evento_execucao(
+            f"Modo 2 selecionado com planilha {planilha.resolve()}",
+            "extrair_nf_pdfs.py",
+        )
+        executar_automacao_iss(planilha, competencia)
         return 0
 
     pasta = args.pasta
@@ -1243,18 +1262,36 @@ def main() -> int:
     if not pdfs:
         raise SystemExit("Nenhum PDF foi encontrado na pasta informada.")
 
+    registrar_evento_execucao(
+        f"Modo 1 selecionado com {len(pdfs)} PDF(s) em {pasta.resolve()}",
+        "extrair_nf_pdfs.py",
+    )
+
     registros: list[NotaFiscalExtraida] = []
     for indice, pdf in enumerate(pdfs, start=1):
         print(f"[{indice}/{len(pdfs)}] Processando PDF: {pdf.name}", flush=True)
+        registrar_evento_execucao(
+            f"Iniciando processamento do PDF {indice}/{len(pdfs)}: {pdf.name}",
+            "extrair_nf_pdfs.py",
+        )
         try:
             registros.append(extrair_nota_fiscal(pdf))
         except Exception as exc:
             print(f"[{indice}/{len(pdfs)}] Falha ao processar {pdf.name}: {exc}", flush=True)
+            registrar_evento_execucao(
+                f"Falha ao processar {pdf.name}: {exc}",
+                "extrair_nf_pdfs.py",
+            )
             registros.append(
                 NotaFiscalExtraida(
                     arquivo_pdf=pdf.name,
                     descricao_servico=f"ERRO NA EXTRAÇÃO: {exc}",
                 )
+            )
+        else:
+            registrar_evento_execucao(
+                f"Processamento concluído com sucesso para {pdf.name}",
+                "extrair_nf_pdfs.py",
             )
 
     registros_completos = [registro for registro in registros if not registro.campos_vazios()]
@@ -1265,6 +1302,10 @@ def main() -> int:
     print(f"Linhas completas exportadas: {len(registros_completos)}")
     if caminho_log.exists():
         print(f"Log de extração gerado em: {caminho_log.resolve()}")
+    registrar_evento_execucao(
+        f"XLSX gerado em {destino.resolve()} com {len(registros_completos)} linha(s) exportada(s)",
+        "extrair_nf_pdfs.py",
+    )
     print()
     print(
         "Próximo passo sugerido: escolha a opção 2 para iniciar a automação visível da ISS de Fortaleza."
@@ -1273,5 +1314,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            registrar_erro(exc, "extrair_nf_pdfs.py")
+        raise
+    except Exception as exc:
+        registrar_erro(exc, "extrair_nf_pdfs.py")
+        raise
 

@@ -2,6 +2,89 @@
 
 ## [2026-06-09]
 
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: reconhecimento de competência já visível na tela de `Manter Escrituração`.
+- Impacto: quando a página já estiver em `Junho 2026`, a função 2 segue adiante sem tentar reprocessar os selects de competência.
+
+## [2026-06-09]
+
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: reforço das esperas e detecção do estado já selecionado na tela de `Manter Escrituração`.
+- Impacto: a função 2 deixa de travar tentando ler a competência cedo demais e passa a reconhecer quando Junho/2026 já está carregado.
+
+## [2026-06-09]
+
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: substituição do preenchimento direto do campo `Código CNAE` por digitação real no modal `Pesquisar CNAE`.
+- Impacto: todos os valores alimentados pela planilha na função 2 passam a ser digitados pelo teclado, sem colagem ou injeção direta no DOM.
+
+## [2026-06-09]
+
+### Alterado
+- Arquivos: `extrair_nf_pdfs.py`, `README.md`
+- Motivo: a automação da ISS passou a perguntar interativamente qual planilha XLSX será usada quando o usuário não informar o caminho explicitamente.
+- Impacto: o fluxo fica mais claro para o operador e evita uso silencioso de uma planilha padrão sem confirmação.
+
+## [2026-06-09]
+
+### Adicionado
+- Arquivos: `tratamento_erros.py`, `log_execucao.txt` (runtime)
+- Motivo: registro centralizado dos marcos da execução do programa.
+- Impacto: o fluxo agora gera um log de auditoria com ações importantes, como abertura de telas, seleção de prestador e conclusão de etapas.
+
+### Alterado
+- Arquivos: `main.py`, `extrair_nf_pdfs.py`, `iss_fortaleza_automacao.py`
+- Motivo: emissão de eventos de execução nos pontos principais do programa.
+- Impacto: a sequência operacional fica rastreável em `log_execucao.txt` sem depender apenas do terminal.
+
+### Alterado
+- Arquivo: `.gitignore`
+- Motivo: evitar versionamento do `log_execucao.txt`.
+- Impacto: o log permanece local e regenerável.
+
+## [2026-06-09]
+
+### Adicionado
+- Arquivos: `tratamento_erros.py`, `log_erro.txt` (runtime)
+- Motivo: centralização do registro de erros inesperados em um arquivo único.
+- Impacto: falhas da execução passam a gerar log com data, contexto, tipo de erro e stack trace.
+
+### Alterado
+- Arquivos: `main.py`, `extrair_nf_pdfs.py`
+- Motivo: captura dos erros de entrada do programa e gravação automática no `log_erro.txt`.
+- Impacto: o ponto de entrada passa a registrar exceções antes de encerrar a execução.
+
+### Alterado
+- Arquivo: `.gitignore`
+- Motivo: evitar versionamento do arquivo de log de erros.
+- Impacto: `log_erro.txt` permanece como artefato local de diagnóstico.
+
+## [2026-06-09]
+
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: inclusão da seleção da linha retornada pelo modal `Pesquisar CNAE` após a busca do código final.
+- Impacto: a automação passa a concluir a etapa de CNAE selecionando o item `digitarDocumentoForm:idFormularioPesquisaCnae:idDatatableListaCnae:0:j_id453` antes de seguir o fluxo.
+
+## [2026-06-09]
+
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: inclusão do preenchimento do modal `Pesquisar CNAE` com o valor de `ID_CNAE_FINAL` da planilha antes da continuação do fluxo.
+- Impacto: a função 2 passa a consultar o CNAE final do documento de forma automática, em vez de depender de preenchimento manual nessa etapa.
+
+## [2026-06-09]
+
+### Corrigido
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: tratamento genérico para o caso em que o autocomplete do portal retorna "Nenhuma Razão Social Encontrada" ao pesquisar o CNPJ do prestador.
+- Impacto: a função 2 passa a registrar o CNPJ ignorado em log, avançar para a próxima linha válida da planilha e continuar o fluxo sem interromper a automação.
+
+## [2026-06-09]
+
 ### Refatorado
 - Arquivo: `extrair_nf_pdfs.py`
 - Motivo: remoção dos blocos legados de correção por artista, prestador e nome de arquivo.
@@ -320,3 +403,20 @@
 - Arquivo: `brain/2026-06-05-extracao-nfs.md`
 - Motivo: registrar as decisões técnicas e observações importantes desta entrega.
 - Impacto: mantém histórico interno de contexto e decisões.
+
+## [2026-06-09]
+
+### Corrigido
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: a seleção de competência na função 2 passou a varrer a página principal e os frames do portal, com diagnóstico adicional quando os selects não são encontrados.
+- Impacto: reduz travamentos na etapa de "Manter Escrituração" e melhora a compatibilidade com variações de layout do portal.
+
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: o navegador da função 2 passou a abrir diretamente no portal da ISS, removendo a etapa intermediária de navegação após a criação da janela.
+- Impacto: deixa o início do fluxo mais simples, previsível e aderente ao uso assistido.
+
+### Corrigido
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: a função 2 passou a clicar explicitamente na aba `Serviços Tomados` antes de buscar o botão `Digitar Documento`.
+- Impacto: evita travamento quando a tela exibe a guia, mas o fluxo não a aciona automaticamente.

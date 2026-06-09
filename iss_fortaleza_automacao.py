@@ -16,6 +16,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+from tratamento_erros import registrar_evento_execucao
 
 URL_ISS_FORTALEZA = "https://iss.fortaleza.ce.gov.br/grpfor/home.seam"
 
@@ -70,6 +71,7 @@ class DocumentoPortalISS:
     arquivo_pdf: str
     cnpj_prestador: str
     numero_nf: str
+    id_cnae_final: str
     data_emissao: str
     descricao_servico: str
     uf_local_prestacao: str
@@ -77,6 +79,18 @@ class DocumentoPortalISS:
     natureza_operacao: str
     iss_retido: str
     valor_servico: str
+
+
+class PrestadorNaoEncontradoError(RuntimeError):
+    """Sinaliza que o portal não encontrou uma razão social para o CNPJ informado."""
+
+    def __init__(self, cnpj: str, detalhe_tela: str = "") -> None:
+        self.cnpj = cnpj
+        self.detalhe_tela = detalhe_tela.strip()
+        mensagem = f"Nenhuma Razão Social Encontrada para o CNPJ {cnpj}."
+        if self.detalhe_tela:
+            mensagem = f"{mensagem} Detalhe da tela: {self.detalhe_tela}"
+        super().__init__(mensagem)
 
 
 def normalizar_texto(texto: str) -> str:
@@ -107,6 +121,84 @@ def limpar_numero_para_digitacao(numero: str) -> str:
     """Mantém apenas dígitos para o campo de número do documento."""
 
     return re.sub(r"\D+", "", numero or "")
+
+
+def _texto_indica_prestador_nao_encontrado(texto: str) -> bool:
+    """Reconhece mensagens visíveis que indicam ausência de razão social no portal."""
+
+    texto_normalizado = normalizar_texto(texto or "")
+    marcadores = (
+        "nenhuma razao social encontrada",
+        "nenhuma razao social",
+        "nenhum resultado encontrado",
+        "nao foram encontrados",
+    )
+    return any(marcador in texto_normalizado for marcador in marcadores)
+
+
+def registrar_log_funcao2(caminho_log: Path, mensagem: str) -> None:
+    """Registra eventos da função 2 com data e hora para rastrear as linhas ignoradas."""
+
+    caminho_log.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with caminho_log.open("a", encoding="utf-8") as arquivo:
+        arquivo.write(f"[{timestamp}] {mensagem}\n")
+
+
+async def clicar_por_id_com_fallback(page: Page, elemento_id: str) -> None:
+    """Clica em um elemento pelo ID e usa clique via JavaScript se o portal bloquear o evento."""
+
+    locator = page.locator(f"#{elemento_id.replace(':', '\\:')}")
+    try:
+        await locator.click(force=True)
+    except Exception:
+        await page.evaluate(
+            """(id) => {
+                const elemento = document.getElementById(id);
+                if (!elemento) {
+                    throw new Error('Elemento não encontrado: ' + id);
+                }
+                elemento.click();
+            }""",
+            elemento_id,
+        )
+
+
+async def preencher_modal_pesquisar_cnae(page: Page, id_cnae_final: str) -> None:
+    """Preenche o modal de pesquisa de CNAE com o código final da planilha e dispara a busca."""
+
+    registrar_evento_execucao(
+        f"Abrindo modal de pesquisa de CNAE para o código {limpar_numero_para_digitacao(id_cnae_final)}",
+        "ISS Fortaleza",
+    )
+    await page.locator("#digitarDocumentoForm\\:pesquisarCnaeModalContainer").wait_for(
+        state="visible",
+        timeout=10000,
+    )
+    valor_cnae = limpar_numero_para_digitacao(id_cnae_final)
+    campo_cnae = page.locator("#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idCnaePesquisa")
+    await campo_cnae.click(force=True)
+    await page.keyboard.press("Control+A")
+    await page.keyboard.press("Backspace")
+    await page.keyboard.type(valor_cnae, delay=45)
+    # O botão interno do modal dispara a pesquisa AJAX do CNAE escolhido.
+    await page.locator("#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idPesquisar").click(
+        force=True
+    )
+    await page.wait_for_timeout(1200)
+    registrar_evento_execucao(
+        f"Pesquisa de CNAE enviada para {valor_cnae}",
+        "ISS Fortaleza",
+    )
+    # Depois da pesquisa, o portal exibe a linha retornada e precisamos selecioná-la.
+    await page.locator(
+        "#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idDatatableListaCnae\\:0\\:j_id453"
+    ).click(force=True)
+    await page.wait_for_timeout(1200)
+    registrar_evento_execucao(
+        f"CNAE selecionado na lista de resultados: {valor_cnae}",
+        "ISS Fortaleza",
+    )
 
 
 def construir_competencia(mes: int, ano: int) -> CompetenciaTrabalho:
@@ -182,6 +274,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
         "ARQUIVO_PDF",
         "CNPJ_PRESTADOR",
         "NUMERO_NF",
+        "ID_CNAE_FINAL",
         "DATA_EMISSAO",
         "DESCRICAO_SERVICO",
         "UF_LOCAL_PRESTACAO",
@@ -206,6 +299,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 arquivo_pdf=str(linha[colunas["ARQUIVO_PDF"]] or ""),
                 cnpj_prestador=str(linha[colunas["CNPJ_PRESTADOR"]] or ""),
                 numero_nf=str(linha[colunas["NUMERO_NF"]] or ""),
+                id_cnae_final=str(linha[colunas["ID_CNAE_FINAL"]] or ""),
                 data_emissao=str(linha[colunas["DATA_EMISSAO"]] or ""),
                 descricao_servico=str(linha[colunas["DESCRICAO_SERVICO"]] or ""),
                 uf_local_prestacao=str(linha[colunas["UF_LOCAL_PRESTACAO"]] or ""),
@@ -219,7 +313,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
     return documentos
 
 
-async def abrir_navegador_visivel():
+async def abrir_navegador_visivel(url_inicial: str | None = None):
     """Abre um navegador visível e maximizado para o fluxo manual/assistido."""
 
     playwright = await async_playwright().start()
@@ -237,6 +331,13 @@ async def abrir_navegador_visivel():
 
     context = await browser.new_context(viewport=None)
     page = await context.new_page()
+    if url_inicial:
+        await page.goto(
+            url_inicial,
+            wait_until="domcontentloaded",
+            timeout=120000,
+        )
+        await page.bring_to_front()
     return playwright, browser, context, page
 
 
@@ -257,6 +358,31 @@ async def clicar_visivelmente(page: Page, texto: str) -> None:
         except Exception:
             continue
     raise RuntimeError(f"Não foi possível clicar no item visível: {texto}")
+
+
+async def clicar_aba_por_texto(page: Page, texto: str) -> None:
+    """Clica em uma aba/guia visível usando diferentes estratégias de seleção."""
+
+    candidatos = [
+        page.get_by_role("tab", name=texto),
+        page.get_by_role("link", name=texto),
+        page.get_by_role("button", name=texto),
+        page.locator(f'a:has-text("{texto}")'),
+        page.locator(f'li:has-text("{texto}")'),
+        page.locator(f'span:has-text("{texto}")'),
+        page.get_by_text(texto, exact=True),
+        page.get_by_text(texto, exact=False),
+    ]
+
+    for candidato in candidatos:
+        try:
+            if await candidato.first.is_visible():
+                await candidato.first.click(timeout=5000, force=True)
+                return
+        except Exception:
+            continue
+
+    raise RuntimeError(f"Não foi possível clicar na aba visível: {texto}")
 
 
 async def digitar_visivelmente(page: Page, seletor: str, texto: str) -> None:
@@ -300,23 +426,76 @@ async def aguardar_login_manual(page: Page) -> None:
 async def selecionar_competencia_na_tela(page: Page, competencia: CompetenciaTrabalho) -> None:
     """Seleciona o período na tela de manutenção, priorizando os campos visíveis."""
 
-    await page.wait_for_timeout(1000)
-
-    selects = page.locator("select")
-    total_selects = await selects.count()
-    if total_selects == 0:
-        raise RuntimeError(
-            "Não encontrei selects de competência na tela de Manter Escrituração."
+    # A tela do portal carrega em etapas; esperamos a área de competência ficar disponível antes de ler os selects.
+    await page.locator("#manterEscrituracaoForm\\:btnConsultar").wait_for(
+        state="visible",
+        timeout=120000,
+    )
+    try:
+        texto_pagina = await page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        texto_pagina = ""
+    if competencia.nome_mes in texto_pagina and str(competencia.ano) in texto_pagina:
+        registrar_evento_execucao(
+            f"Competência {competencia.rotulo} já estava visível na tela de manutenção; seguindo sem alterar selects.",
+            "ISS Fortaleza",
         )
+        return
+    await page.wait_for_timeout(1200)
 
     mes_textos = [competencia.nome_mes, competencia.nome_mes.upper(), competencia.nome_mes.lower()]
     ano_textos = [str(competencia.ano)]
     combinados = [f"{competencia.nome_mes} {competencia.ano}", f"{competencia.nome_mes}/{competencia.ano}"]
     selecionado = False
+    select_mes = None
+    select_ano = None
+    select_composto = None
+
+    async def _texto_selecionado(select) -> str:
+        return await select.evaluate(
+            """(el) => {
+                const selecionado = el.selectedOptions && el.selectedOptions[0];
+                return selecionado ? (selecionado.textContent || '').trim() : '';
+            }"""
+        )
+
+    async def _coletar_selects_por_fonte() -> list[tuple[str, object]]:
+        """Varre a página principal e todos os frames visíveis para encontrar selects."""
+
+        fontes: list[tuple[str, object]] = [("page", page)]
+        for indice, frame in enumerate(page.frames, start=1):
+            fontes.append((f"frame:{indice}", frame))
+
+        encontrados: list[tuple[str, object]] = []
+        for nome_fonte, fonte in fontes:
+            try:
+                total = await fonte.locator("select").count()
+            except Exception:
+                continue
+
+            for indice in range(total):
+                encontrados.append((nome_fonte, fonte.locator("select").nth(indice)))
+
+        return encontrados
+
+    encontrados: list[tuple[str, object]] = []
+    for _ in range(24):
+        encontrados = await _coletar_selects_por_fonte()
+        if encontrados:
+            break
+        await page.wait_for_timeout(500)
+
+    if not encontrados:
+        registrar_evento_execucao(
+            "Nenhum select de competência foi encontrado na página principal nem nos frames.",
+            "ISS Fortaleza",
+        )
+        raise RuntimeError(
+            "Não encontrei selects de competência na tela de Manter Escrituração."
+        )
 
     # Primeiro tentamos encontrar selects já compostos com mês e ano no mesmo campo.
-    for indice in range(total_selects):
-        select = selects.nth(indice)
+    for nome_fonte, select in encontrados:
         try:
             opcoes = [texto.strip() for texto in await select.locator("option").all_text_contents()]
         except Exception:
@@ -324,32 +503,89 @@ async def selecionar_competencia_na_tela(page: Page, competencia: CompetenciaTra
 
         opcoes_norm = [normalizar_texto(texto) for texto in opcoes]
         if any(normalizar_texto(item) in opcoes_norm for item in combinados):
+            select_composto = select
+            try:
+                valor_atual = normalizar_texto(await _texto_selecionado(select))
+                if any(normalizar_texto(item) == valor_atual for item in combinados):
+                    registrar_evento_execucao(
+                        f"Competência {competencia.rotulo} já estava selecionada em um select composto encontrado em {nome_fonte}.",
+                        "ISS Fortaleza",
+                    )
+                    return
+            except Exception:
+                pass
             for item in combinados:
                 try:
                     await select.select_option(label=item)
                     selecionado = True
+                    registrar_evento_execucao(
+                        f"Competência {competencia.rotulo} selecionada em um select composto encontrado em {nome_fonte}.",
+                        "ISS Fortaleza",
+                    )
                     break
                 except Exception:
                     continue
 
     # Se não houver um seletor composto, procuramos selects de mês e de ano.
-    for indice in range(total_selects):
-        select = selects.nth(indice)
+    for nome_fonte, select in encontrados:
         try:
             opcoes = [texto.strip() for texto in await select.locator("option").all_text_contents()]
         except Exception:
             continue
 
         opcoes_norm = [normalizar_texto(texto) for texto in opcoes]
-        if any(normalizar_texto(mes) in opcoes_norm for mes in mes_textos):
-            await selecionar_opcao_por_texto(select, mes_textos)
-            selecionado = True
-            continue
-        if any(normalizar_texto(ano) in opcoes_norm for ano in ano_textos):
-            await selecionar_opcao_por_texto(select, ano_textos)
-            selecionado = True
+        if select_mes is None and any(normalizar_texto(mes) in opcoes_norm for mes in mes_textos):
+            select_mes = select
+        if select_ano is None and any(normalizar_texto(ano) in opcoes_norm for ano in ano_textos):
+            select_ano = select
+
+    if select_mes is not None:
+        try:
+            mes_atual = normalizar_texto(await _texto_selecionado(select_mes))
+            if any(normalizar_texto(mes) == mes_atual for mes in mes_textos):
+                if select_ano is None:
+                    registrar_evento_execucao(
+                        f"Mês da competência {competencia.rotulo} já estava selecionado.",
+                        "ISS Fortaleza",
+                    )
+                    return
+        except Exception:
+            pass
+        await selecionar_opcao_por_texto(select_mes, mes_textos)
+        selecionado = True
+
+    if select_ano is not None:
+        try:
+            ano_atual = normalizar_texto(await _texto_selecionado(select_ano))
+            if any(normalizar_texto(ano) == ano_atual for ano in ano_textos):
+                if selecionado:
+                    registrar_evento_execucao(
+                        f"Ano da competência {competencia.rotulo} já estava selecionado.",
+                        "ISS Fortaleza",
+                    )
+                    return
+        except Exception:
+            pass
+        await selecionar_opcao_por_texto(select_ano, ano_textos)
+        selecionado = True
 
     if not selecionado:
+        diagnostico = []
+        for nome_fonte, select in encontrados[:12]:
+            try:
+                seletor_id = await select.get_attribute("id")
+                seletor_name = await select.get_attribute("name")
+                opcoes = [texto.strip() for texto in await select.locator("option").all_text_contents()]
+                diagnostico.append(
+                    f"{nome_fonte} | id={seletor_id or ''} | name={seletor_name or ''} | opcoes={', '.join(opcoes[:8])}"
+                )
+            except Exception:
+                continue
+        if diagnostico:
+            registrar_evento_execucao(
+                "Diagnóstico dos selects de competência encontrados: " + " || ".join(diagnostico),
+                "ISS Fortaleza",
+            )
         raise RuntimeError(
             "Não consegui reconhecer os campos de competência automaticamente. "
             "Será necessário ajustar os seletores da tela de Manter Escrituração."
@@ -359,11 +595,20 @@ async def selecionar_competencia_na_tela(page: Page, competencia: CompetenciaTra
 async def selecionar_prestador(page: Page, cnpj: str) -> None:
     """Seleciona o prestador de forma visível, abrindo a sugestão do autocomplete."""
 
+    registrar_evento_execucao(
+        f"Iniciando seleção do prestador para o CNPJ {cnpj}",
+        "ISS Fortaleza",
+    )
     # O rádio de CNPJ precisa estar ativo antes da busca.
     await page.locator("#digitarDocumentoForm\\:tipoPesquisaTomadorRb\\:1").click()
+    registrar_evento_execucao("Tipo de pesquisa alterado para CNPJ", "ISS Fortaleza")
 
     campo_busca = page.locator("#digitarDocumentoForm\\:cpfPesquisaTomador")
     await digitar_visivelmente(page, "#digitarDocumentoForm\\:cpfPesquisaTomador", limpar_cnpj_para_digitacao(cnpj))
+    registrar_evento_execucao(
+        f"CNPJ digitado na pesquisa do prestador: {cnpj}",
+        "ISS Fortaleza",
+    )
 
     # O portal RichFaces exibe o autocomplete em uma lista visível; clicamos na opção
     # apresentada para que o preenchimento do nome aconteça como no fluxo manual.
@@ -373,10 +618,29 @@ async def selecionar_prestador(page: Page, cnpj: str) -> None:
     except PlaywrightTimeoutError:
         pass
 
+    texto_container = ""
+    try:
+        texto_container = await container.inner_text(timeout=2000)
+    except Exception:
+        try:
+            texto_container = await container.text_content(timeout=2000) or ""
+        except Exception:
+            texto_container = ""
+
     sugeridos = container.locator("tr.richfaces_suggestionEntry")
     if await sugeridos.count() > 0:
         await sugeridos.first.click()
+        registrar_evento_execucao(
+            f"Prestador selecionado na lista de sugestões para o CNPJ {cnpj}",
+            "ISS Fortaleza",
+        )
     else:
+        if _texto_indica_prestador_nao_encontrado(texto_container):
+            registrar_evento_execucao(
+                f"Portal retornou nenhuma razão social para o CNPJ {cnpj}",
+                "ISS Fortaleza",
+            )
+            raise PrestadorNaoEncontradoError(cnpj, texto_container)
         # Fallback visível: navega na lista com o teclado caso a linha não tenha sido localizada.
         await campo_busca.focus()
         await page.keyboard.press("ArrowDown")
@@ -388,10 +652,21 @@ async def selecionar_prestador(page: Page, cnpj: str) -> None:
         try:
             valor = await campo_nome.input_value()
             if valor.strip():
+                registrar_evento_execucao(
+                    f"Nome do prestador preenchido com sucesso para o CNPJ {cnpj}",
+                    "ISS Fortaleza",
+                )
                 return
         except Exception:
             pass
         await page.wait_for_timeout(250)
+
+    if _texto_indica_prestador_nao_encontrado(texto_container):
+        registrar_evento_execucao(
+            f"Prestador não encontrado ao finalizar a leitura do campo de nome para o CNPJ {cnpj}",
+            "ISS Fortaleza",
+        )
+        raise PrestadorNaoEncontradoError(cnpj, texto_container)
 
     raise RuntimeError("O prestador não foi selecionado corretamente; o campo de nome continuou vazio.")
 
@@ -399,6 +674,10 @@ async def selecionar_prestador(page: Page, cnpj: str) -> None:
 async def preencher_documento_servico(page: Page, documento: DocumentoPortalISS) -> None:
     """Preenche a aba de serviço com os dados de uma linha da planilha."""
 
+    registrar_evento_execucao(
+        f"Iniciando preenchimento da aba Serviço para a NF {documento.numero_nf} ({documento.cnpj_prestador})",
+        "ISS Fortaleza",
+    )
     await selecionar_opcao_por_texto(
         page.locator("#digitarDocumentoForm\\:tipoDocumentoDigitado"),
         ["NFS-e de Outro Município", "NFS-e de outro município", "707"],
@@ -417,6 +696,16 @@ async def preencher_documento_servico(page: Page, documento: DocumentoPortalISS)
         page.locator("#digitarDocumentoForm\\:statusNfse"),
         ["NORMAL", "Normal", "472"],
     )
+    registrar_evento_execucao(
+        f"Campos iniciais da aba Serviço preenchidos para a NF {documento.numero_nf}",
+        "ISS Fortaleza",
+    )
+    await page.locator("#digitarDocumentoForm\\:idLinkPesquisarCnae").click(force=True)
+    registrar_evento_execucao(
+        f"Botão Pesquisar CNAE acionado para a NF {documento.numero_nf}",
+        "ISS Fortaleza",
+    )
+    await preencher_modal_pesquisar_cnae(page, documento.id_cnae_final)
     await digitar_visivelmente(
         page,
         "#digitarDocumentoForm\\:idDescricaoServico",
@@ -441,72 +730,138 @@ async def preencher_documento_servico(page: Page, documento: DocumentoPortalISS)
         await checkbox_iss.click()
     elif not deve_marcar and await checkbox_iss.is_checked():
         await checkbox_iss.click()
+    registrar_evento_execucao(
+        f"Local de prestação e ISS tratados para a NF {documento.numero_nf}",
+        "ISS Fortaleza",
+    )
 
     await digitar_visivelmente(
         page,
         "#digitarDocumentoForm\\:idValorServicoPrestado",
         limpar_valor_para_digitacao(documento.valor_servico),
     )
+    registrar_evento_execucao(
+        f"Aba Serviço preenchida com sucesso para a NF {documento.numero_nf}",
+        "ISS Fortaleza",
+    )
 
 
 async def executar_fluxo_iss(
     documentos: list[DocumentoPortalISS],
     competencia: CompetenciaTrabalho,
+    caminho_log: Path,
 ) -> None:
-    """Executa o fluxo visual até a revisão final do primeiro documento."""
+    """Executa o fluxo visual até a revisão final do primeiro prestador localizado."""
 
     if not documentos:
         raise RuntimeError("A planilha não contém linhas válidas para a automação.")
 
-    playwright, browser, context, page = await abrir_navegador_visivel()
+    playwright, browser, context, page = await abrir_navegador_visivel(URL_ISS_FORTALEZA)
     try:
-        await page.goto(
-            URL_ISS_FORTALEZA,
-            wait_until="domcontentloaded",
-            timeout=120000,
+        registrar_evento_execucao(
+            f"Fluxo da ISS iniciado com {len(documentos)} documento(s) e competência {competencia.rotulo}",
+            "ISS Fortaleza",
         )
-        await page.bring_to_front()
         await aguardar_login_manual(page)
+        registrar_evento_execucao("Login manual confirmado pelo usuário", "ISS Fortaleza")
 
         print("Login confirmado. Aguardando o menu do portal ficar disponível...")
         await page.get_by_text("Escrituração", exact=False).first.wait_for(timeout=120000)
 
         print("Acessando Escrituração > Manter Escrituração...")
-        await clicar_visivelmente(page, "Escrituração")
-        await page.wait_for_timeout(800)
-        await clicar_visivelmente(page, "Manter Escrituração")
+        await page.locator("a.dropdown-toggle").nth(4).click(force=True)
+        await page.wait_for_timeout(500)
+        await clicar_por_id_com_fallback(page, "formMenuTopo:menuEscrituracao:j_id80")
+        registrar_evento_execucao("Menu Escrituração acionado", "ISS Fortaleza")
+        await page.locator("#manterEscrituracaoForm\\:btnConsultar").wait_for(
+            state="visible",
+            timeout=120000,
+        )
+        registrar_evento_execucao("Tela Manter Escrituração aberta", "ISS Fortaleza")
 
         print(
             f"Selecionando a competência {competencia.nome_mes} {competencia.ano} na tela de manutenção..."
         )
         await selecionar_competencia_na_tela(page, competencia)
+        registrar_evento_execucao(
+            f"Competência selecionada na tela: {competencia.rotulo}",
+            "ISS Fortaleza",
+        )
 
         print("Consultando a competência selecionada...")
-        await clicar_visivelmente(page, "Consultar")
-        await page.wait_for_timeout(1000)
+        await clicar_por_id_com_fallback(page, "manterEscrituracaoForm:btnConsultar")
+        registrar_evento_execucao("Botão Consultar acionado", "ISS Fortaleza")
+        await page.locator("#manterEscrituracaoForm\\:dataTable\\:0\\:linkEscriturar").wait_for(
+            state="visible",
+            timeout=120000,
+        )
 
         print("Abrindo a rotina de escrituração...")
-        await clicar_visivelmente(page, "Escriturar")
+        await clicar_por_id_com_fallback(page, "manterEscrituracaoForm:dataTable:0:linkEscriturar")
+        registrar_evento_execucao("Botão Escriturar acionado", "ISS Fortaleza")
         await page.wait_for_timeout(1000)
 
-        print("Entrando em Serviços Tomados...")
-        await clicar_visivelmente(page, "Serviços Tomados")
-        await page.wait_for_timeout(1000)
+        print("Selecionando a aba Serviços Tomados...")
+        await clicar_aba_por_texto(page, "Serviços Tomados")
+        registrar_evento_execucao("Aba Serviços Tomados acionada", "ISS Fortaleza")
+
+        await page.locator("#servico_tomado_form\\:seamj_id849").wait_for(
+            state="visible",
+            timeout=120000,
+        )
 
         print("Abrindo Digitar Documento...")
-        await clicar_visivelmente(page, "Digitar Documento")
-        await page.wait_for_timeout(1000)
+        await clicar_por_id_com_fallback(page, "servico_tomado_form:seamj_id849")
+        registrar_evento_execucao("Tela Digitar Documento aberta", "ISS Fortaleza")
+        await page.locator("#digitarDocumentoForm\\:tipoPesquisaTomadorRb\\:1").wait_for(
+            state="visible",
+            timeout=120000,
+        )
+        await page.wait_for_timeout(500)
 
-        documento = documentos[0]
         print(
-            f"A planilha possui {len(documentos)} linha(s) válida(s), mas esta versão prepara apenas a primeira "
-            "até a etapa anterior a GRAVAR DOCUMENTO."
+            f"A planilha possui {len(documentos)} linha(s) válida(s). O fluxo vai tentar o primeiro "
+            "prestador encontrado e registrar em log os CNPJs sem razão social."
         )
+        documento: DocumentoPortalISS | None = None
+        for indice, candidato in enumerate(documentos, start=1):
+            print(
+                f"Tentando localizar o prestador da linha {indice}/{len(documentos)}: "
+                f"{candidato.cnpj_prestador}"
+            )
+            try:
+                await selecionar_prestador(page, candidato.cnpj_prestador)
+            except PrestadorNaoEncontradoError as exc:
+                mensagem_log = (
+                    f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
+                    f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
+                    f"{exc}"
+                )
+                registrar_log_funcao2(caminho_log, mensagem_log)
+                print(
+                    f"Prestador não encontrado para {candidato.cnpj_prestador}; "
+                    "avançando para a próxima linha."
+                )
+                continue
+
+            documento = candidato
+            registrar_evento_execucao(
+                f"Prestador localizado para a linha {indice}/{len(documentos)}: {candidato.cnpj_prestador}",
+                "ISS Fortaleza",
+            )
+            break
+
+        if documento is None:
+            raise RuntimeError(
+                "Nenhum prestador da planilha foi localizado no portal. "
+                f"Consulte o log em {caminho_log.name}."
+            )
+
         print(
-            "Selecionando o prestador e preenchendo a aba Serviço com a primeira linha da planilha..."
+            "Selecionando o prestador e preenchendo a aba Serviço com a linha encontrada na planilha..."
         )
-        await selecionar_prestador(page, documento.cnpj_prestador)
         await clicar_visivelmente(page, "Serviço")
+        registrar_evento_execucao("Aba Serviço acionada", "ISS Fortaleza")
         await page.wait_for_timeout(1000)
         await preencher_documento_servico(page, documento)
 
@@ -524,8 +879,13 @@ async def executar_fluxo_iss(
 def executar_automacao_iss(caminho_xlsx: Path, competencia: CompetenciaTrabalho) -> None:
     """Ponto de entrada síncrono para a opção 2 da CLI."""
 
+    registrar_evento_execucao(
+        f"Automação da ISS solicitada com planilha {caminho_xlsx.resolve()} e competência {competencia.rotulo}",
+        "ISS Fortaleza",
+    )
     documentos = carregar_documentos_xlsx(caminho_xlsx)
-    asyncio.run(executar_fluxo_iss(documentos, competencia))
+    caminho_log = caminho_xlsx.with_name(f"{caminho_xlsx.stem}_log_funcao2.txt")
+    asyncio.run(executar_fluxo_iss(documentos, competencia, caminho_log))
 
 
 def _limpar_texto_exibido(texto: str | None) -> str:
@@ -828,14 +1188,12 @@ def executar_extracao_portal_iss(destino_xlsx: Path = Path("iss_extracao.xlsx"))
     """Ponto de entrada síncrono para extrair o conteúdo visível do portal logado."""
 
     async def _executar() -> None:
-        playwright, browser, context, page = await abrir_navegador_visivel()
+        registrar_evento_execucao(
+            f"Extração avulsa do portal ISS iniciada com destino {destino_xlsx.resolve()}",
+            "ISS Fortaleza",
+        )
+        playwright, browser, context, page = await abrir_navegador_visivel(URL_ISS_FORTALEZA)
         try:
-            await page.goto(
-                URL_ISS_FORTALEZA,
-                wait_until="domcontentloaded",
-                timeout=120000,
-            )
-            await page.bring_to_front()
             await aguardar_login_manual(page)
 
             print()
@@ -845,6 +1203,10 @@ def executar_extracao_portal_iss(destino_xlsx: Path = Path("iss_extracao.xlsx"))
             await page.wait_for_timeout(1000)
             dados = await extrair_dados_da_pagina_iss(page)
             exportar_extracao_iss(dados, destino_xlsx)
+            registrar_evento_execucao(
+                f"Extração avulsa concluída com sucesso em {destino_xlsx.resolve()}",
+                "ISS Fortaleza",
+            )
 
             print(f"Extração concluída com sucesso: {destino_xlsx.resolve()}")
             print("O XLSX contém resumo, texto visível, frames, tabelas, elementos e links.")

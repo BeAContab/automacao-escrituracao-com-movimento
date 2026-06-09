@@ -86,13 +86,16 @@ Os testes validam os PDFs atuais da pasta `dados/` e protegem campos fiscais cr�
 - O parser foi validado com os layouts presentes em `dados/` e `dados2/`.
 - Quando alguma NF não preencher todas as colunas, o script gera um log `*_log_extracao.txt` ao lado do XLSX e não exporta a linha para a planilha.
 - Se o PDF for uma imagem escaneada, a extração pode falhar sem OCR.
+- Erros inesperados da execução também são registrados em `log_erro.txt` na raiz do projeto.
+- A execução normal do programa também gera `log_execucao.txt` na raiz, com os marcos principais do fluxo.
 ## Automação da ISS
 
 - A opção 2 agora abre um navegador visível e conduz o fluxo guiado do portal da ISS de Fortaleza.
 - Antes de iniciar o navegador, o programa pergunta o mês de `1` a `12` e o ano em `AAAA`.
+- Em seguida, o programa pergunta qual planilha XLSX será usada na automação, usando `nf_compilado.xlsx` se você apenas pressionar `Enter`.
 - O login continua manual por enquanto, e o programa aguarda confirmação do usuário antes de seguir.
 - O fluxo preenche a tela até a etapa anterior a `GRAVAR DOCUMENTO`, conforme a orientação atual do projeto.
-- A planilha padrão usada pela automação é `nf_compilado.xlsx`, mas você pode informar outro arquivo com `--planilha`.
+- Você também pode informar outro arquivo com `--planilha` ao chamar a CLI.
 
 ## Extração avulsa do portal
 

@@ -9,5 +9,7 @@ __pycache__/
 nf_compilado.xlsx
 iss_extracao.xlsx
 .env
+log_erro.txt
+log_execucao.txt
 *.xlsx
 dados/
