@@ -1,0 +1,13 @@
+brain/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+nf_compilado.xlsx
+iss_extracao.xlsx
+.env
+*.xlsx
+dados/
