@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
@@ -123,6 +124,12 @@ def limpar_numero_para_digitacao(numero: str) -> str:
     return re.sub(r"\D+", "", numero or "")
 
 
+def _somente_digitos(texto: str) -> str:
+    """Normaliza qualquer valor para comparação por dígitos."""
+
+    return re.sub(r"\D+", "", texto or "")
+
+
 def _texto_indica_prestador_nao_encontrado(texto: str) -> bool:
     """Reconhece mensagens visíveis que indicam ausência de razão social no portal."""
 
@@ -145,6 +152,20 @@ def registrar_log_funcao2(caminho_log: Path, mensagem: str) -> None:
         arquivo.write(f"[{timestamp}] {mensagem}\n")
 
 
+async def pausar_para_depuracao(habilitado: bool, mensagem: str) -> None:
+    """Interrompe o fluxo para inspeção manual quando o modo de teste estiver ativo."""
+
+    if not habilitado:
+        return
+    if not sys.stdin.isatty():
+        return
+
+    await asyncio.to_thread(
+        input,
+        f"{mensagem}\nPressione Enter para continuar com o próximo clique...",
+    )
+
+
 async def clicar_por_id_com_fallback(page: Page, elemento_id: str) -> None:
     """Clica em um elemento pelo ID e usa clique via JavaScript se o portal bloquear o evento."""
 
@@ -164,7 +185,11 @@ async def clicar_por_id_com_fallback(page: Page, elemento_id: str) -> None:
         )
 
 
-async def preencher_modal_pesquisar_cnae(page: Page, id_cnae_final: str) -> None:
+async def preencher_modal_pesquisar_cnae(
+    page: Page,
+    id_cnae_final: str,
+    depuracao: bool = False,
+) -> None:
     """Preenche o modal de pesquisa de CNAE com o código final da planilha e dispara a busca."""
 
     registrar_evento_execucao(
@@ -181,6 +206,10 @@ async def preencher_modal_pesquisar_cnae(page: Page, id_cnae_final: str) -> None
     await page.keyboard.press("Control+A")
     await page.keyboard.press("Backspace")
     await page.keyboard.type(valor_cnae, delay=45)
+    await pausar_para_depuracao(
+        depuracao,
+        f"O modal de pesquisa de CNAE está preenchido com {valor_cnae}.",
+    )
     # O botão interno do modal dispara a pesquisa AJAX do CNAE escolhido.
     await page.locator("#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idPesquisar").click(
         force=True
@@ -189,6 +218,10 @@ async def preencher_modal_pesquisar_cnae(page: Page, id_cnae_final: str) -> None
     registrar_evento_execucao(
         f"Pesquisa de CNAE enviada para {valor_cnae}",
         "ISS Fortaleza",
+    )
+    await pausar_para_depuracao(
+        depuracao,
+        f"A pesquisa de CNAE para {valor_cnae} foi enviada. Confirme o resultado na lista.",
     )
     # Depois da pesquisa, o portal exibe a linha retornada e precisamos selecioná-la.
     await page.locator(
@@ -313,7 +346,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
     return documentos
 
 
-async def abrir_navegador_visivel(url_inicial: str | None = None):
+async def abrir_navegador_visivel(url_inicial: str | None = None, depuracao: bool = False):
     """Abre um navegador visível e maximizado para o fluxo manual/assistido."""
 
     playwright = await async_playwright().start()
@@ -321,11 +354,13 @@ async def abrir_navegador_visivel(url_inicial: str | None = None):
         browser = await playwright.chromium.launch(
             channel="chrome",
             headless=False,
+            slow_mo=200 if depuracao else 0,
             args=["--start-maximized"],
         )
     except Exception:
         browser = await playwright.chromium.launch(
             headless=False,
+            slow_mo=200 if depuracao else 0,
             args=["--start-maximized"],
         )
 
@@ -386,13 +421,44 @@ async def clicar_aba_por_texto(page: Page, texto: str) -> None:
 
 
 async def digitar_visivelmente(page: Page, seletor: str, texto: str) -> None:
-    """Limpa o campo e digita o conteúdo como um usuário faria."""
+    """Digita como um usuário, com pequenas pausas entre teclas e validação estável.
+
+    Em campos com máscara ou autocomplete, a digitação humana reduz a chance de o
+    portal limpar o valor por reprocessamento rápido de eventos. A confirmação usa
+    dígitos normalizados para aceitar valores formatados pelo próprio frontend.
+    """
 
     campo = page.locator(seletor)
-    await campo.click()
-    await page.keyboard.press("Control+A")
-    await page.keyboard.press("Backspace")
-    await page.keyboard.type(texto, delay=20)
+    await campo.wait_for(state="visible", timeout=10000)
+    try:
+        await campo.click(force=True)
+        await page.keyboard.press("Control+A")
+        await page.keyboard.press("Backspace")
+        await page.wait_for_timeout(120)
+        await page.keyboard.type(texto, delay=85)
+    except Exception:
+        # Se o campo não aceitar a sequência padrão, tentamos novamente com uma pausa maior.
+        await campo.click(force=True)
+        await page.wait_for_timeout(150)
+        await page.keyboard.press("Control+A")
+        await page.keyboard.press("Backspace")
+        await page.wait_for_timeout(150)
+        await page.keyboard.type(texto, delay=110)
+
+    # Confirma que o valor ficou estável no campo antes de avançar para o próximo clique.
+    esperado_normalizado = _somente_digitos(texto)
+    for _ in range(20):
+        try:
+            valor_atual = await campo.input_value()
+            if valor_atual.strip() == texto.strip():
+                return
+            if esperado_normalizado and _somente_digitos(valor_atual) == esperado_normalizado:
+                return
+        except Exception:
+            pass
+        await page.wait_for_timeout(150)
+
+    raise RuntimeError(f"O campo {seletor} não permaneceu com o valor esperado: {texto}")
 
 
 async def selecionar_opcao_por_texto(locator, textos: list[str]) -> None:
@@ -592,7 +658,7 @@ async def selecionar_competencia_na_tela(page: Page, competencia: CompetenciaTra
         )
 
 
-async def selecionar_prestador(page: Page, cnpj: str) -> None:
+async def selecionar_prestador(page: Page, cnpj: str, depuracao: bool = False) -> None:
     """Seleciona o prestador de forma visível, abrindo a sugestão do autocomplete."""
 
     registrar_evento_execucao(
@@ -603,16 +669,30 @@ async def selecionar_prestador(page: Page, cnpj: str) -> None:
     await page.locator("#digitarDocumentoForm\\:tipoPesquisaTomadorRb\\:1").click()
     registrar_evento_execucao("Tipo de pesquisa alterado para CNPJ", "ISS Fortaleza")
 
+    # O portal faz um reload parcial ao alternar para CNPJ; esperamos o campo ser recriado
+    # e ficar estável antes de começar a digitar.
+    await page.wait_for_timeout(800)
     campo_busca = page.locator("#digitarDocumentoForm\\:cpfPesquisaTomador")
+    await campo_busca.wait_for(state="visible", timeout=10000)
+    await page.wait_for_timeout(300)
+
     await digitar_visivelmente(page, "#digitarDocumentoForm\\:cpfPesquisaTomador", limpar_cnpj_para_digitacao(cnpj))
     registrar_evento_execucao(
         f"CNPJ digitado na pesquisa do prestador: {cnpj}",
         "ISS Fortaleza",
     )
+    await pausar_para_depuracao(
+        depuracao,
+        f"O CNPJ {cnpj} foi digitado. Confira o autocomplete antes da seleção.",
+    )
 
     # O portal RichFaces exibe o autocomplete em uma lista visível; clicamos na opção
     # apresentada para que o preenchimento do nome aconteça como no fluxo manual.
-    container = page.locator("#digitarDocumentoForm\\:j_id189")
+    # O DOM expõe o mesmo id em mais de um nó, então restringimos a busca ao bloco
+    # da pesquisa do tomador para evitar o strict mode violation do Playwright.
+    container = page.locator(
+        "#digitarDocumentoForm\\:divPesquisaTomador [id='digitarDocumentoForm:j_id189']"
+    ).first
     try:
         await container.wait_for(state="visible", timeout=10000)
     except PlaywrightTimeoutError:
@@ -671,7 +751,11 @@ async def selecionar_prestador(page: Page, cnpj: str) -> None:
     raise RuntimeError("O prestador não foi selecionado corretamente; o campo de nome continuou vazio.")
 
 
-async def preencher_documento_servico(page: Page, documento: DocumentoPortalISS) -> None:
+async def preencher_documento_servico(
+    page: Page,
+    documento: DocumentoPortalISS,
+    depuracao: bool = False,
+) -> None:
     """Preenche a aba de serviço com os dados de uma linha da planilha."""
 
     registrar_evento_execucao(
@@ -705,7 +789,7 @@ async def preencher_documento_servico(page: Page, documento: DocumentoPortalISS)
         f"Botão Pesquisar CNAE acionado para a NF {documento.numero_nf}",
         "ISS Fortaleza",
     )
-    await preencher_modal_pesquisar_cnae(page, documento.id_cnae_final)
+    await preencher_modal_pesquisar_cnae(page, documento.id_cnae_final, depuracao=depuracao)
     await digitar_visivelmente(
         page,
         "#digitarDocumentoForm\\:idDescricaoServico",
@@ -750,13 +834,17 @@ async def executar_fluxo_iss(
     documentos: list[DocumentoPortalISS],
     competencia: CompetenciaTrabalho,
     caminho_log: Path,
+    depuracao: bool = False,
 ) -> None:
     """Executa o fluxo visual até a revisão final do primeiro prestador localizado."""
 
     if not documentos:
         raise RuntimeError("A planilha não contém linhas válidas para a automação.")
 
-    playwright, browser, context, page = await abrir_navegador_visivel(URL_ISS_FORTALEZA)
+    playwright, browser, context, page = await abrir_navegador_visivel(
+        URL_ISS_FORTALEZA,
+        depuracao=depuracao,
+    )
     try:
         registrar_evento_execucao(
             f"Fluxo da ISS iniciado com {len(documentos)} documento(s) e competência {competencia.rotulo}",
@@ -767,6 +855,10 @@ async def executar_fluxo_iss(
 
         print("Login confirmado. Aguardando o menu do portal ficar disponível...")
         await page.get_by_text("Escrituração", exact=False).first.wait_for(timeout=120000)
+        await pausar_para_depuracao(
+            depuracao,
+            "O portal foi carregado e o login já foi confirmado.",
+        )
 
         print("Acessando Escrituração > Manter Escrituração...")
         await page.locator("a.dropdown-toggle").nth(4).click(force=True)
@@ -818,6 +910,10 @@ async def executar_fluxo_iss(
             timeout=120000,
         )
         await page.wait_for_timeout(500)
+        await pausar_para_depuracao(
+            depuracao,
+            "A tela Digitar Documento está aberta e pronta para o próximo clique.",
+        )
 
         print(
             f"A planilha possui {len(documentos)} linha(s) válida(s). O fluxo vai tentar o primeiro "
@@ -830,7 +926,7 @@ async def executar_fluxo_iss(
                 f"{candidato.cnpj_prestador}"
             )
             try:
-                await selecionar_prestador(page, candidato.cnpj_prestador)
+                await selecionar_prestador(page, candidato.cnpj_prestador, depuracao=depuracao)
             except PrestadorNaoEncontradoError as exc:
                 mensagem_log = (
                     f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
@@ -863,7 +959,11 @@ async def executar_fluxo_iss(
         await clicar_visivelmente(page, "Serviço")
         registrar_evento_execucao("Aba Serviço acionada", "ISS Fortaleza")
         await page.wait_for_timeout(1000)
-        await preencher_documento_servico(page, documento)
+        await pausar_para_depuracao(
+            depuracao,
+            "A aba Serviço será preenchida agora com a linha já localizada.",
+        )
+        await preencher_documento_servico(page, documento, depuracao=depuracao)
 
         print()
         print("A aba Serviço foi preenchida visivelmente no navegador.")
@@ -876,7 +976,11 @@ async def executar_fluxo_iss(
         await playwright.stop()
 
 
-def executar_automacao_iss(caminho_xlsx: Path, competencia: CompetenciaTrabalho) -> None:
+def executar_automacao_iss(
+    caminho_xlsx: Path,
+    competencia: CompetenciaTrabalho,
+    depuracao: bool = False,
+) -> None:
     """Ponto de entrada síncrono para a opção 2 da CLI."""
 
     registrar_evento_execucao(
@@ -885,7 +989,14 @@ def executar_automacao_iss(caminho_xlsx: Path, competencia: CompetenciaTrabalho)
     )
     documentos = carregar_documentos_xlsx(caminho_xlsx)
     caminho_log = caminho_xlsx.with_name(f"{caminho_xlsx.stem}_log_funcao2.txt")
-    asyncio.run(executar_fluxo_iss(documentos, competencia, caminho_log))
+    asyncio.run(
+        executar_fluxo_iss(
+            documentos,
+            competencia,
+            caminho_log,
+            depuracao=depuracao,
+        )
+    )
 
 
 def _limpar_texto_exibido(texto: str | None) -> str:

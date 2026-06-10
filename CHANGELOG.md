@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## [2026-06-10]
+
+### Corrigido
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: inserção de espera após alternar a pesquisa para `CNPJ`, para respeitar o reload parcial do portal antes da digitação.
+- Impacto: o CNPJ deixa de ser apagado pelo redraw da tela e a etapa de autocomplete fica mais confiável.
+
+## [2026-06-10]
+
+### Alterado
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: a digitação passou a simular mais fielmente a entrada humana, com pausas entre teclas e validação por dígitos normalizados.
+- Impacto: o CNPJ e outros campos mascarados tendem a permanecer visíveis na tela e a reagir melhor ao autocomplete do portal.
+
+## [2026-06-10]
+
+### Corrigido
+- Arquivo: `iss_fortaleza_automacao.py`
+- Motivo: a digitação dos campos do portal passou a usar `fill()` com verificação de estabilidade para evitar o efeito de texto que aparece e desaparece rapidamente.
+- Impacto: o CNPJ e demais campos mascarados ficam mais consistentes em tela antes da seleção do autocomplete e dos próximos cliques.
+
+## [2026-06-10]
+
+### Alterado
+- Arquivos: `iss_fortaleza_automacao.py`, `extrair_nf_pdfs.py`, `README.md`
+- Motivo: inclusão do modo `--debug-funcao2` para abrir o navegador em teste visível e pausar o fluxo nos pontos críticos da função 2.
+- Impacto: a automação ficou mais fácil de depurar em tempo real e o seletor ambíguo do autocomplete do prestador passou a usar um contêiner mais específico.
+
+## [2026-06-10]
+
+### Alterado
+- Arquivo: `extrair_nf_pdfs.py`
+- Motivo: a função 1 passou a oferecer ao usuário a escolha entre iniciar a função 2 ou encerrar o programa logo após a geração do XLSX.
+- Impacto: o fluxo ficou mais contínuo e o usuário pode seguir diretamente para a automação da ISS sem reiniciar o sistema.
+
 ## [2026-06-09]
 
 ### Alterado

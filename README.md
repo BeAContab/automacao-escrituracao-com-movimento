@@ -19,7 +19,7 @@ Modo interativo:
 python main.py
 ```
 
-O script solicita o caminho da pasta com os PDFs e, ao final, sugere iniciar a opção 2.
+O script solicita o caminho da pasta com os PDFs e, ao final, oferece a opção de iniciar a função 2 ou encerrar o programa.
 
 Modo com argumento:
 
@@ -31,6 +31,12 @@ python main.py --modo 1 "C:\caminho\para\pasta\com\pdfs" -o nf_compilado.xlsx
 
 ```bash
 python main.py --modo 2 --competencia "5/2026" --planilha nf_compilado.xlsx
+```
+
+Modo de teste visível da função 2, com pausas extras para inspeção manual:
+
+```bash
+python main.py --modo 2 --competencia "5/2026" --planilha nf_compilado.xlsx --debug-funcao2
 ```
 
 ## Validação

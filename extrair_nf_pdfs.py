@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+import sys
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -1176,6 +1177,58 @@ def solicitar_planilha_automacao() -> Path:
     return Path(entrada)
 
 
+def oferecer_proximo_passo_apos_funcao1(destino: Path, args: argparse.Namespace) -> int:
+    """Pergunta se o usuário quer seguir para a função 2 ou encerrar o programa.
+
+    A planilha recém-gerada vira a entrada padrão da automação da ISS para
+    evitar retrabalho e manter o fluxo contínuo entre as duas etapas.
+    """
+
+    if not sys.stdin.isatty():
+        print(
+            "Próximo passo sugerido: escolha a opção 2 para iniciar a automação visível da ISS de Fortaleza."
+        )
+        return 0
+
+    while True:
+        print()
+        print("A função 1 foi concluída com sucesso.")
+        print(f"Planilha gerada: {destino.resolve()}")
+        print("O que você deseja fazer agora?")
+        print("1 - Iniciar a função 2 (automação visível da ISS de Fortaleza)")
+        print("2 - Encerrar o programa")
+        resposta = input("Digite 1 ou 2: ").strip()
+
+        if resposta == "1":
+            registrar_evento_execucao(
+                "Usuário optou por iniciar a função 2 após a geração do XLSX",
+                "extrair_nf_pdfs.py",
+            )
+            try:
+                competencia = (
+                    interpretar_competencia(args.competencia)
+                    if args.competencia is not None
+                    else solicitar_competencia()
+                )
+            except ValueError as exc:
+                raise SystemExit(f"Competência inválida: {exc}") from exc
+
+            # A planilha gerada na função 1 é a base natural para a automação da ISS.
+            executar_automacao_iss(destino, competencia, depuracao=args.debug_funcao2)
+            return 0
+
+        if resposta == "2":
+            registrar_evento_execucao(
+                "Usuário optou por encerrar o programa após a função 1",
+                "extrair_nf_pdfs.py",
+            )
+            print("Programa encerrado.")
+            return 0
+
+        print("Opção inválida. Digite 1 para iniciar a função 2 ou 2 para encerrar.")
+        print()
+
+
 def construir_argumentos() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extrai dados de NFS-e em PDF, gera XLSX ou executa a automação da ISS."
@@ -1198,6 +1251,11 @@ def construir_argumentos() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Planilha XLSX usada pela automação da ISS.",
+    )
+    parser.add_argument(
+        "--debug-funcao2",
+        action="store_true",
+        help="Abre a função 2 com pausas extras e navegador em modo de teste visível.",
     )
     parser.add_argument(
         "pasta",
@@ -1245,7 +1303,7 @@ def main() -> int:
             f"Modo 2 selecionado com planilha {planilha.resolve()}",
             "extrair_nf_pdfs.py",
         )
-        executar_automacao_iss(planilha, competencia)
+        executar_automacao_iss(planilha, competencia, depuracao=args.debug_funcao2)
         return 0
 
     pasta = args.pasta
@@ -1306,11 +1364,7 @@ def main() -> int:
         f"XLSX gerado em {destino.resolve()} com {len(registros_completos)} linha(s) exportada(s)",
         "extrair_nf_pdfs.py",
     )
-    print()
-    print(
-        "Próximo passo sugerido: escolha a opção 2 para iniciar a automação visível da ISS de Fortaleza."
-    )
-    return 0
+    return oferecer_proximo_passo_apos_funcao1(destino, args)
 
 
 if __name__ == "__main__":
