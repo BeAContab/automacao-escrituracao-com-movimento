@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -23,10 +24,15 @@ except ImportError:  # pragma: no cover - dependência opcional em ambiente sem 
     fitz = None
 
 
+class ErroCotaGemini(Exception):
+    """Exceção levantada quando o limite de cota da API do Gemini é atingido."""
+    pass
+
+
 GEMINI_MODEL_PADRAO = "gemini-2.5-flash"
 GEMINI_MODELOS_FALLBACK = [
+    "gemini-2.5-pro",
     "gemini-2.5-flash-lite",
-    "gemini-flash-lite-latest",
 ]
 
 ESQUEMA_EXTRAIR_NF = {
@@ -43,6 +49,17 @@ ESQUEMA_EXTRAIR_NF = {
         "valor_servico": {"type": ["string", "null"], "description": "Valor total do serviço no padrão brasileiro."},
         "aliquota": {"type": ["string", "null"], "description": "Alíquota percentual no padrão brasileiro."},
         "iss_retido": {"type": ["string", "null"], "description": "SIM ou NÃO."},
+        # Campos adicionais: prefeitura emissora e tributos federais/deduções
+        "prefeitura": {"type": ["string", "null"], "description": "Nome completo da prefeitura emissora, ex: PREFEITURA MUNICIPAL DE FORTALEZA."},
+        "valor_deducoes": {"type": ["string", "null"], "description": "Valor total das deduções permitidas em lei, no padrão brasileiro (0,00 se ausente)."},
+        "descontos_incondicionados": {"type": ["string", "null"], "description": "Valor do desconto incondicionado, no padrão brasileiro (0,00 se ausente)."},
+        "descontos_condicionados": {"type": ["string", "null"], "description": "Valor do desconto condicionado, no padrão brasileiro (0,00 se ausente)."},
+        "outras_retencoes": {"type": ["string", "null"], "description": "Valor de outras retenções federais não discriminadas, no padrão brasileiro (0,00 se ausente)."},
+        "ir": {"type": ["string", "null"], "description": "Valor do IRRF retido, no padrão brasileiro (0,00 se ausente)."},
+        "pis_nao_retido": {"type": ["string", "null"], "description": "Valor do PIS não retido, no padrão brasileiro (0,00 se ausente)."},
+        "cofins_nao_retido": {"type": ["string", "null"], "description": "Valor do COFINS não retido, no padrão brasileiro (0,00 se ausente)."},
+        "csrf": {"type": ["string", "null"], "description": "Valor da CSRF (CSLL+PIS+COFINS retidos), no padrão brasileiro (0,00 se ausente)."},
+        "inss": {"type": ["string", "null"], "description": "Valor do INSS retido, no padrão brasileiro (0,00 se ausente)."},
     },
     "required": [
         "cnpj_prestador",
@@ -56,6 +73,16 @@ ESQUEMA_EXTRAIR_NF = {
         "valor_servico",
         "aliquota",
         "iss_retido",
+        "prefeitura",
+        "valor_deducoes",
+        "descontos_incondicionados",
+        "descontos_condicionados",
+        "outras_retencoes",
+        "ir",
+        "pis_nao_retido",
+        "cofins_nao_retido",
+        "csrf",
+        "inss",
     ],
     "additionalProperties": False,
 }
@@ -120,64 +147,6 @@ def _numero_nf_suspeito(numero_nf: str, texto_local: str) -> bool:
     return not digitos or len(digitos) <= 3
 
 
-def _presente_no_texto(texto: str, valor: str, tipo: str) -> bool:
-    """Verifica se o valor local parece consistente com o texto bruto."""
-
-    if not valor:
-        return False
-
-    if tipo in {"numero_nf", "cnpj_prestador", "valor_servico", "aliquota"}:
-        return _somente_digitos(valor) in _somente_digitos(texto)
-
-    if tipo == "data_emissao":
-        return _somente_digitos(valor) in _somente_digitos(texto)
-
-    if tipo in {"cidade_local_prestacao", "desc_cnae", "descricao_servico"}:
-        return _normalizar_texto(valor) in _normalizar_texto(texto)
-
-    if tipo == "uf_local_prestacao":
-        return _normalizar_texto(valor) in _normalizar_texto(texto)
-
-    return bool(valor.strip())
-
-
-def deve_usar_gemini(
-    texto_local: str,
-    dados_locais: dict[str, str],
-    campos_vazios: list[str],
-) -> bool:
-    """Define quando vale acionar o Gemini como fallback de extração."""
-
-    campos_criticos = {
-        "CNPJ_PRESTADOR",
-        "NUMERO_NF",
-        "DATA_EMISSAO",
-        "DESCRICAO_SERVICO",
-        "UF_LOCAL_PRESTACAO",
-        "CIDADE_LOCAL_PRESTACAO",
-        "VALOR_SERVICO",
-        "ALIQUOTA",
-    }
-
-    if _texto_baixa_confianca(texto_local):
-        return True
-
-    if any(campo in campos_criticos for campo in campos_vazios):
-        return True
-
-    for chave, tipo in [
-        ("numero_nf", "numero_nf"),
-        ("cnpj_prestador", "cnpj_prestador"),
-        ("data_emissao", "data_emissao"),
-        ("cidade_local_prestacao", "cidade_local_prestacao"),
-        ("uf_local_prestacao", "uf_local_prestacao"),
-        ("valor_servico", "valor_servico"),
-        ("aliquota", "aliquota"),
-    ]:
-        if dados_locais.get(chave, "").strip() and not _presente_no_texto(texto_local, dados_locais[chave], tipo):
-            return True
-
-    return False
 
 
 def _obter_chave_gemini() -> str:
@@ -223,6 +192,17 @@ def _normalizar_resposta(resultado: dict[str, Any]) -> dict[str, str]:
         "valor_servico": "",
         "aliquota": "",
         "iss_retido": "",
+        # Campos adicionais de prefeitura e tributos federais
+        "prefeitura": "",
+        "valor_deducoes": "",
+        "descontos_incondicionados": "",
+        "descontos_condicionados": "",
+        "outras_retencoes": "",
+        "ir": "",
+        "pis_nao_retido": "",
+        "cofins_nao_retido": "",
+        "csrf": "",
+        "inss": "",
     }
 
     for chave in campos:
@@ -272,14 +252,32 @@ def _refinar_campos_por_imagem(caminho_pdf: Path, cliente: Any) -> dict[str, str
         "response_mime_type": "application/json",
     }
 
+    import time
+    max_tentativas = 4
+    tempo_espera = 12
+
     for modelo in _modelos_candidatos_gemini():
-        try:
-            resposta = cliente.models.generate_content(
-                model=modelo,
-                contents=[parte_imagem, prompt],
-                config=configuracao,
-            )
-        except Exception:
+        resposta = None
+        for tentativa in range(1, max_tentativas + 1):
+            try:
+                resposta = cliente.models.generate_content(
+                    model=modelo,
+                    contents=[parte_imagem, prompt],
+                    config=configuracao,
+                )
+                break
+            except Exception as exc:
+                mensagem = str(exc).upper()
+                if "RESOURCE_EXHAUSTED" in mensagem or "QUOTA" in mensagem:
+                    if tentativa < max_tentativas:
+                        print(f"Cota excedida no refinamento com modelo {modelo}. Aguardando {tempo_espera}s (Tentativa {tentativa}/{max_tentativas - 1})...", flush=True)
+                        time.sleep(tempo_espera)
+                        continue
+                    else:
+                        break
+                break
+
+        if resposta is None:
             continue
 
         texto_resposta = getattr(resposta, "text", "") or ""
@@ -313,10 +311,8 @@ def _refinar_campos_por_imagem(caminho_pdf: Path, cliente: Any) -> dict[str, str
 def extrair_campos_gemini(
     caminho_pdf: Path,
     texto_local: str,
-    dados_locais: dict[str, str],
-    campos_vazios: list[str],
 ) -> dict[str, str]:
-    """Consulta o Gemini para completar ou corrigir campos problemáticos da NF."""
+    """Consulta o Gemini para extrair todos os campos da NF."""
 
     if genai is None or types is None:
         return {}
@@ -325,27 +321,38 @@ def extrair_campos_gemini(
     if not chave:
         return {}
 
-    if not deve_usar_gemini(texto_local, dados_locais, campos_vazios):
-        return {}
-
     cliente = genai.Client(api_key=chave)
-    prompt = (
-        "Você é um extrator fiscal. Leia o PDF anexado e retorne apenas JSON válido. "
-        "Preencha os campos da NFS-e com o maior cuidado possível. "
-        "Priorize o documento em caso de conflito e corrija valores que estejam visíveis, "
-        "mas não foram capturados corretamente pelo parser local. "
-        "Regras de formatação:\n"
-        "- numero_nf: somente dígitos.\n"
-        "- data_emissao: DD/MM/AAAA.\n"
-        "- cnpj_prestador: 00.000.000/0000-00.\n"
+    from datetime import datetime
+    data_atual_str = datetime.now().strftime("%d/%m/%Y")
+
+    instrucoes_formatacao = (
+        "Regras de formatação e Negócio:\n"
+        "- numero_nf: somente dígitos. NUNCA invente números que não constam no documento.\n"
+        f"- data_emissao: DD/MM/AAAA. A data NUNCA pode ser anterior a 3 meses da data atual ({data_atual_str}). Se for muito antiga ou não constar, retorne vazio.\n"
+        "- cnpj_prestador: 00.000.000/0000-00. NUNCA invente um CNPJ que não consta no documento.\n"
+        "- id_cnae e desc_cnae: Para notas da PREFEITURA MUNICIPAL DE PETROLINA, o CNAE (código completo de 6 dígitos) DEVE ser extraído EXCLUSIVAMENTE do campo rotulado como 'SERVIÇO NACIONAL'. Ignore 'SERVIÇO NBS' ou 'SERVIÇO'.\n"
         "- valor_servico: número no padrão brasileiro, sem símbolo de moeda.\n"
         "- aliquota: percentual numérico, por exemplo 5,00.\n"
         "- uf_local_prestacao: duas letras.\n"
         "- cidade_local_prestacao: nome da cidade.\n"
         "- iss_retido: SIM ou NÃO.\n"
-        "Se algum campo realmente não existir no documento, devolva string vazia.\n\n"
-        f"Campos já extraídos localmente:\n{json.dumps(dados_locais, ensure_ascii=False, indent=2)}\n\n"
-        f"Campos em branco ou suspeitos: {', '.join(campos_vazios) if campos_vazios else 'nenhum'}"
+        "- prefeitura: nome completo da prefeitura emissora em maiúsculas, ex: PREFEITURA MUNICIPAL DE FORTALEZA.\n"
+        "- valor_deducoes: valor das deduções em lei no padrão brasileiro (use 0,00 se não houver).\n"
+        "- descontos_incondicionados: valor dos descontos incondicionados no padrão brasileiro (use 0,00 se não houver).\n"
+        "- descontos_condicionados: valor dos descontos condicionados no padrão brasileiro (use 0,00 se não houver).\n"
+        "- outras_retencoes: outras retenções federais não classificadas, no padrão brasileiro (use 0,00 se não houver).\n"
+        "- ir: valor do IRRF retido, no padrão brasileiro (use 0,00 se não houver).\n"
+        "- pis_nao_retido: valor do PIS não retido, no padrão brasileiro (use 0,00 se não houver).\n"
+        "- cofins_nao_retido: valor do COFINS não retido, no padrão brasileiro (use 0,00 se não houver).\n"
+        "- csrf: valor da CSRF (CSLL+PIS+COFINS retidos juntos), no padrão brasileiro (use 0,00 se não houver).\n"
+        "- inss: valor do INSS retido, no padrão brasileiro (use 0,00 se não houver).\n"
+        "Se algum campo realmente não existir no documento, devolva string vazia para textuais ou 0,00 para monetários.\n"
+    )
+
+    prompt = (
+        "Você é um extrator fiscal. Leia o PDF anexado e retorne apenas JSON válido. "
+        "Preencha todos os campos da NFS-e com o maior cuidado possível, extraindo as informações diretamente do documento.\n\n"
+        f"{instrucoes_formatacao}"
     )
 
     # Enviamos o PDF em memória para evitar falhas com nomes de arquivo com acentos.
@@ -358,19 +365,34 @@ def extrair_campos_gemini(
         "response_json_schema": ESQUEMA_EXTRAIR_NF,
     }
 
+    import time
+    max_tentativas = 4
+    tempo_espera = 12
+
     for modelo in _modelos_candidatos_gemini():
-        try:
-            resposta = cliente.models.generate_content(
-                model=modelo,
-                contents=[parte_pdf, prompt],
-                config=configuracao,
-            )
-        except Exception as exc:
-            mensagem = str(exc).upper()
-            if "RESOURCE_EXHAUSTED" in mensagem or "QUOTA" in mensagem:
-                continue
-            if "NOT_FOUND" in mensagem or "MODEL" in mensagem:
-                continue
+        resposta = None
+        for tentativa in range(1, max_tentativas + 1):
+            try:
+                resposta = cliente.models.generate_content(
+                    model=modelo,
+                    contents=[parte_pdf, prompt],
+                    config=configuracao,
+                )
+                break
+            except Exception as exc:
+                mensagem = str(exc).upper()
+                if "RESOURCE_EXHAUSTED" in mensagem or "QUOTA" in mensagem:
+                    if tentativa < max_tentativas:
+                        print(f"Cota excedida temporariamente no modelo {modelo}. Aguardando {tempo_espera}s para tentar novamente (Tentativa {tentativa}/{max_tentativas - 1})...", flush=True)
+                        time.sleep(tempo_espera)
+                        continue
+                    else:
+                        raise ErroCotaGemini("Limite de cota da API do Gemini excedido (RESOURCE_EXHAUSTED) após múltiplas tentativas.") from exc
+                if "NOT_FOUND" in mensagem or "MODEL" in mensagem:
+                    break
+                break
+
+        if resposta is None:
             continue
 
         texto_resposta = getattr(resposta, "text", "") or ""

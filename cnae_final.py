@@ -16,9 +16,19 @@ from urllib.request import Request, urlopen
 
 from openpyxl import load_workbook
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL_PADRAO = "llama-3.1-8b-instant"
-LIMITE_CANDIDATOS_GROQ = 10
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:  # pragma: no cover
+    genai = None
+    types = None
+
+GEMINI_MODEL_PADRAO = "gemini-2.5-flash"
+GEMINI_MODELOS_FALLBACK = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash-lite",
+]
+LIMITE_CANDIDATOS_GEMINI = 10
 
 
 @dataclass(frozen=True)
@@ -184,7 +194,7 @@ def _selecionar_candidatos(
     descricao_servico: str,
     id_cnae: str,
     oficiais: tuple[CnaeOficial, ...],
-    limite: int = LIMITE_CANDIDATOS_GROQ,
+    limite: int = LIMITE_CANDIDATOS_GEMINI,
 ) -> list[CnaeOficial]:
     """Escolhe um subconjunto pequeno de CNAEs para a IA analisar com mais foco."""
 
@@ -199,18 +209,31 @@ def _selecionar_candidatos(
     return ranqueados[:limite]
 
 
-def _obter_chave_groq() -> str:
-    """Lê a chave da Groq do ambiente ou do arquivo .env local."""
+def _obter_chave_gemini() -> str:
+    """Lê a chave do Gemini do ambiente ou do arquivo .env local."""
 
     _carregar_env_local()
-    return os.getenv("GROQ_API_KEY", "").strip()
+    return (
+        os.getenv("GEMINI_API_KEY", "").strip()
+        or os.getenv("GOOGLE_API_KEY", "").strip()
+    )
 
 
-def _obter_modelo_groq() -> str:
-    """Permite trocar o modelo por variavel de ambiente, mantendo um padrao economico."""
+def _obter_modelo_gemini() -> str:
+    """Retorna o modelo padrão do Gemini para a classificação de CNAE."""
 
     _carregar_env_local()
-    return os.getenv("GROQ_MODEL", GROQ_MODEL_PADRAO).strip() or GROQ_MODEL_PADRAO
+    return os.getenv("GEMINI_MODEL", GEMINI_MODEL_PADRAO).strip() or GEMINI_MODEL_PADRAO
+
+
+def _modelos_candidatos_gemini() -> list[str]:
+    """Lista os modelos candidatos do Gemini para classificação de CNAE."""
+
+    candidatos = [_obter_modelo_gemini()]
+    for modelo in GEMINI_MODELOS_FALLBACK:
+        if modelo not in candidatos:
+            candidatos.append(modelo)
+    return candidatos
 
 
 def _normalizar_codigo_cnae(codigo: str) -> str:
@@ -220,7 +243,7 @@ def _normalizar_codigo_cnae(codigo: str) -> str:
 
 
 def _pontuar_descricao_oficial(desc_cnae: str, candidata: CnaeOficial) -> float:
-    """Mede o quanto a descri??o extra?da parece a descri??o oficial da CNAE."""
+    """Mete o quanto a descrição extraída parece a descrição oficial da CNAE."""
 
     score = _pontuar_texto(desc_cnae, candidata)
     descricao_normalizada = _normalizar_texto(desc_cnae)
@@ -237,7 +260,7 @@ def _resolver_por_descricao_explicita(
     desc_cnae: str,
     oficiais: tuple[CnaeOficial, ...],
 ) -> tuple[str, str] | None:
-    """Tenta resolver o CNAE apenas pela descri??o vis?vel no PDF."""
+    """Tenta resolver o CNAE apenas pela descrição visível no PDF."""
 
     if not desc_cnae.strip() or not oficiais:
         return None
@@ -273,7 +296,7 @@ def _classificar_localmente(
     id_cnae: str,
     oficiais: tuple[CnaeOficial, ...],
 ) -> tuple[str, str]:
-    """Fallback local quando a Groq não estiver disponível ou falhar."""
+    """Fallback local quando a IA não estiver disponível ou falhar."""
 
     candidatos = _selecionar_candidatos(desc_cnae, descricao_servico, id_cnae, oficiais, limite=1)
     if not candidatos:
@@ -282,84 +305,71 @@ def _classificar_localmente(
     return melhor.codigo, melhor.descricao
 
 
-def _chamar_groq(
+def _chamar_gemini(
     desc_cnae: str,
     descricao_servico: str,
     id_cnae: str,
     candidatos: list[CnaeOficial],
 ) -> tuple[str, str]:
-    """Consulta a Groq com JSON Object Mode para escolher um único CNAE oficial."""
+    """Consulta o Gemini para escolher um único CNAE oficial a partir de candidatos."""
 
-    chave = _obter_chave_groq()
+    if genai is None or types is None:
+        raise RuntimeError("SDK do Gemini (google-genai) não instalado.")
+
+    chave = _obter_chave_gemini()
     if not chave:
-        raise RuntimeError("GROQ_API_KEY não configurada.")
+        raise RuntimeError("GEMINI_API_KEY não configurada.")
 
-    modelo = _obter_modelo_groq()
-    payload = {
-        "model": modelo,
-        "temperature": 0,
-        "max_completion_tokens": 120,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Você é um especialista em CNAE. "
-                    "Escolha exatamente um item da lista oficial que melhor corresponda à NFS-e. "
-                    "Baseie-se principalmente em DESC_CNAE_PDF e use DESCRICAO_SERVICO apenas como apoio. "
-                    "Responda somente com JSON válido, sem texto extra, no formato "
-                    '{"id_cnae_final":"...","desc_cnae_final":"..."}.'
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "desc_cnae_pdf": desc_cnae,
-                        "descricao_servico": descricao_servico,
-                        "id_cnae_extraido": id_cnae,
-                        "candidatos_oficiais": [
-                            {"codigo": candidata.codigo, "descricao": candidata.descricao}
-                            for candidata in candidatos
-                        ],
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-        ],
+    cliente = genai.Client(api_key=chave)
+
+    esquema_resposta = {
+        "type": "object",
+        "properties": {
+            "id_cnae_final": {"type": "string", "description": "Código CNAE final escolhido da lista oficial."},
+            "desc_cnae_final": {"type": "string", "description": "Descrição oficial do CNAE escolhido."},
+        },
+        "required": ["id_cnae_final", "desc_cnae_final"],
+        "additionalProperties": False,
     }
 
-    requisicao = Request(
-        GROQ_API_URL,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {chave}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    prompt = (
+        "Você é um especialista em CNAE. "
+        "Escolha exatamente um item da lista oficial que melhor corresponda à NFS-e. "
+        "Baseie-se principalmente em DESC_CNAE_PDF e use DESCRICAO_SERVICO apenas como apoio.\n\n"
+        f"Dados da nota fiscal:\n"
+        f"- desc_cnae_pdf: {desc_cnae}\n"
+        f"- descricao_servico: {descricao_servico}\n"
+        f"- id_cnae_extraido: {id_cnae}\n\n"
+        f"Candidatos oficiais:\n"
+        f"{json.dumps([{'codigo': c.codigo, 'descricao': c.descricao} for c in candidatos], ensure_ascii=False, indent=2)}"
     )
 
-    try:
-        with urlopen(requisicao, timeout=60) as resposta:
-            corpo = json.loads(resposta.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Falha ao consultar a Groq: {exc}") from exc
+    configuracao = {
+        "temperature": 0,
+        "response_mime_type": "application/json",
+        "response_json_schema": esquema_resposta,
+    }
 
-    try:
-        conteudo = corpo["choices"][0]["message"]["content"]
-        if isinstance(conteudo, str):
-            resultado = json.loads(conteudo)
-        else:
-            resultado = conteudo
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Resposta da Groq em formato inesperado.") from exc
+    for modelo in _modelos_candidatos_gemini():
+        try:
+            resposta = cliente.models.generate_content(
+                model=modelo,
+                contents=prompt,
+                config=configuracao,
+            )
+            texto_resposta = getattr(resposta, "text", "") or ""
+            if not texto_resposta:
+                continue
 
-    id_cnae_final = str(resultado.get("id_cnae_final", "")).strip()
-    desc_cnae_final = str(resultado.get("desc_cnae_final", "")).strip()
-    if not id_cnae_final or not desc_cnae_final:
-        raise RuntimeError("Resposta da Groq sem CNAE final completo.")
+            resultado = json.loads(texto_resposta)
+            id_cnae_final = str(resultado.get("id_cnae_final", "")).strip()
+            desc_cnae_final = str(resultado.get("desc_cnae_final", "")).strip()
+            if id_cnae_final and desc_cnae_final:
+                return id_cnae_final, desc_cnae_final
+        except Exception:
+            continue
 
-    return id_cnae_final, desc_cnae_final
+    raise RuntimeError("Todas as chamadas aos modelos do Gemini falharam ou retornaram dados inválidos.")
 
 
 def resolver_cnae_final(
@@ -368,7 +378,7 @@ def resolver_cnae_final(
     id_cnae: str = "",
     caminho_oficial: str = "cnae_oficial.xlsx",
 ) -> tuple[str, str]:
-    """Resolve o CNAE final com Groq quando poss?vel e fallback local quando necess?rio."""
+    """Resolve o CNAE final com Gemini quando possível e fallback local quando necessário."""
 
     try:
         oficiais = carregar_cnaes_oficiais(caminho_oficial)
@@ -384,7 +394,7 @@ def resolver_cnae_final(
         return id_cnae.strip(), desc_cnae.strip()
 
     try:
-        return _chamar_groq(desc_cnae, descricao_servico, id_cnae, candidatos)
+        return _chamar_gemini(desc_cnae, descricao_servico, id_cnae, candidatos)
     except Exception:
         return _classificar_localmente(desc_cnae, descricao_servico, id_cnae, oficiais)
 

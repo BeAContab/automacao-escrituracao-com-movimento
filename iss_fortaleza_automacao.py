@@ -1,26 +1,57 @@
 """Automação visível do portal da ISS de Fortaleza.
 
-Este módulo concentra o fluxo do navegador para manter `extrair_nf_pdfs.py`
-responsável apenas pela extração dos PDFs e pela orquestração da CLI.
+Este módulo concentra o fluxo do navegador usando Selenium WebDriver para manter
+`extrair_nf_pdfs.py` responsável apenas pela extração dos PDFs e pela orquestração
+da CLI.
 """
 
 from __future__ import annotations
 
-import asyncio
+import os
 import re
+import subprocess
 import sys
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+from selenium import webdriver
+from selenium.common.exceptions import (
+    ElementNotInteractableException,
+    JavascriptException,
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+    WebDriverException,
+)
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.select import Select
+from selenium.webdriver.support.wait import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 from tratamento_erros import registrar_evento_execucao
 
-URL_ISS_FORTALEZA = "https://iss.fortaleza.ce.gov.br/grpfor/home.seam"
+# ---------------------------------------------------------------------------
+# Constantes
+# ---------------------------------------------------------------------------
 
+URL_ISS_FORTALEZA = "https://iss.fortaleza.ce.gov.br/grpfor/home.seam"
+PORTA_DEBUG_CHROME_PADRAO = 9222
+PERFIL_CHROME_FUNCAO2_PADRAO = Path("brain/navegador_funcao2_profile")
+
+# Mapeamentos de mês por nome (normalizado sem acento)
 MESES_POR_NOME = {
     "janeiro": 1,
     "fevereiro": 2,
@@ -35,6 +66,27 @@ MESES_POR_NOME = {
     "novembro": 11,
     "dezembro": 12,
 }
+
+# Abreviações dos meses usadas no calendário do portal
+MESES_ABREVIADOS_PORTAL = {
+    1: "jan",
+    2: "fev",
+    3: "mar",
+    4: "abr",
+    5: "mai",
+    6: "jun",
+    7: "jul",
+    8: "ago",
+    9: "set",
+    10: "out",
+    11: "nov",
+    12: "dez",
+}
+
+
+# ---------------------------------------------------------------------------
+# Estruturas de dados
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -70,6 +122,7 @@ class DocumentoPortalISS:
     """Linha da planilha que será transportada para o formulário do portal."""
 
     arquivo_pdf: str
+    prefeitura: str
     cnpj_prestador: str
     numero_nf: str
     id_cnae_final: str
@@ -82,6 +135,11 @@ class DocumentoPortalISS:
     valor_servico: str
 
 
+# ---------------------------------------------------------------------------
+# Exceções customizadas
+# ---------------------------------------------------------------------------
+
+
 class PrestadorNaoEncontradoError(RuntimeError):
     """Sinaliza que o portal não encontrou uma razão social para o CNPJ informado."""
 
@@ -92,6 +150,15 @@ class PrestadorNaoEncontradoError(RuntimeError):
         if self.detalhe_tela:
             mensagem = f"{mensagem} Detalhe da tela: {self.detalhe_tela}"
         super().__init__(mensagem)
+
+
+class CompetenciaSemEscriturarDisponivelError(RuntimeError):
+    """Sinaliza que a competência consultada não liberou o botão de escriturar."""
+
+
+# ---------------------------------------------------------------------------
+# Utilitários de texto
+# ---------------------------------------------------------------------------
 
 
 def normalizar_texto(texto: str) -> str:
@@ -143,6 +210,11 @@ def _texto_indica_prestador_nao_encontrado(texto: str) -> bool:
     return any(marcador in texto_normalizado for marcador in marcadores)
 
 
+# ---------------------------------------------------------------------------
+# Logging da função 2
+# ---------------------------------------------------------------------------
+
+
 def registrar_log_funcao2(caminho_log: Path, mensagem: str) -> None:
     """Registra eventos da função 2 com data e hora para rastrear as linhas ignoradas."""
 
@@ -152,86 +224,9 @@ def registrar_log_funcao2(caminho_log: Path, mensagem: str) -> None:
         arquivo.write(f"[{timestamp}] {mensagem}\n")
 
 
-async def pausar_para_depuracao(habilitado: bool, mensagem: str) -> None:
-    """Interrompe o fluxo para inspeção manual quando o modo de teste estiver ativo."""
-
-    if not habilitado:
-        return
-    if not sys.stdin.isatty():
-        return
-
-    await asyncio.to_thread(
-        input,
-        f"{mensagem}\nPressione Enter para continuar com o próximo clique...",
-    )
-
-
-async def clicar_por_id_com_fallback(page: Page, elemento_id: str) -> None:
-    """Clica em um elemento pelo ID e usa clique via JavaScript se o portal bloquear o evento."""
-
-    locator = page.locator(f"#{elemento_id.replace(':', '\\:')}")
-    try:
-        await locator.click(force=True)
-    except Exception:
-        await page.evaluate(
-            """(id) => {
-                const elemento = document.getElementById(id);
-                if (!elemento) {
-                    throw new Error('Elemento não encontrado: ' + id);
-                }
-                elemento.click();
-            }""",
-            elemento_id,
-        )
-
-
-async def preencher_modal_pesquisar_cnae(
-    page: Page,
-    id_cnae_final: str,
-    depuracao: bool = False,
-) -> None:
-    """Preenche o modal de pesquisa de CNAE com o código final da planilha e dispara a busca."""
-
-    registrar_evento_execucao(
-        f"Abrindo modal de pesquisa de CNAE para o código {limpar_numero_para_digitacao(id_cnae_final)}",
-        "ISS Fortaleza",
-    )
-    await page.locator("#digitarDocumentoForm\\:pesquisarCnaeModalContainer").wait_for(
-        state="visible",
-        timeout=10000,
-    )
-    valor_cnae = limpar_numero_para_digitacao(id_cnae_final)
-    campo_cnae = page.locator("#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idCnaePesquisa")
-    await campo_cnae.click(force=True)
-    await page.keyboard.press("Control+A")
-    await page.keyboard.press("Backspace")
-    await page.keyboard.type(valor_cnae, delay=45)
-    await pausar_para_depuracao(
-        depuracao,
-        f"O modal de pesquisa de CNAE está preenchido com {valor_cnae}.",
-    )
-    # O botão interno do modal dispara a pesquisa AJAX do CNAE escolhido.
-    await page.locator("#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idPesquisar").click(
-        force=True
-    )
-    await page.wait_for_timeout(1200)
-    registrar_evento_execucao(
-        f"Pesquisa de CNAE enviada para {valor_cnae}",
-        "ISS Fortaleza",
-    )
-    await pausar_para_depuracao(
-        depuracao,
-        f"A pesquisa de CNAE para {valor_cnae} foi enviada. Confirme o resultado na lista.",
-    )
-    # Depois da pesquisa, o portal exibe a linha retornada e precisamos selecioná-la.
-    await page.locator(
-        "#digitarDocumentoForm\\:idFormularioPesquisaCnae\\:idDatatableListaCnae\\:0\\:j_id453"
-    ).click(force=True)
-    await page.wait_for_timeout(1200)
-    registrar_evento_execucao(
-        f"CNAE selecionado na lista de resultados: {valor_cnae}",
-        "ISS Fortaleza",
-    )
+# ---------------------------------------------------------------------------
+# Competência
+# ---------------------------------------------------------------------------
 
 
 def construir_competencia(mes: int, ano: int) -> CompetenciaTrabalho:
@@ -294,6 +289,41 @@ def solicitar_competencia() -> CompetenciaTrabalho:
             print()
 
 
+def solicitar_nova_competencia_para_repetir(
+    competencia_atual: CompetenciaTrabalho,
+) -> CompetenciaTrabalho:
+    """Pergunta ao usuário outra competência para reiniciar a seleção De/Até."""
+
+    while True:
+        texto = input(
+            f"A competência {competencia_atual.rotulo} está sem o botão Escriturar habilitado. "
+            "Informe outra competência para voltar aos campos De e Até (ou pressione Enter para cancelar): "
+        ).strip()
+        if not texto:
+            raise SystemExit(
+                "A automação foi interrompida porque não foi informada uma nova competência."
+            )
+        try:
+            return interpretar_competencia(texto)
+        except ValueError as exc:
+            print(f"Competência inválida: {exc}")
+            print()
+
+
+def solicitar_planilha_automacao() -> Path:
+    """Pergunta ao usuário qual planilha XLSX será usada na automação."""
+
+    texto = input(
+        "Informe o caminho da planilha XLSX de automação (Enter para usar nf_compilado.xlsx): "
+    ).strip().strip('"')
+    return Path(texto) if texto else Path("nf_compilado.xlsx")
+
+
+# ---------------------------------------------------------------------------
+# Carregamento da planilha
+# ---------------------------------------------------------------------------
+
+
 def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
     """Lê a planilha `nf_compilado.xlsx` e devolve as linhas prontas para o portal."""
 
@@ -305,6 +335,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
 
     campos_obrigatorios = [
         "ARQUIVO_PDF",
+        "PREFEITURA",
         "CNPJ_PRESTADOR",
         "NUMERO_NF",
         "ID_CNAE_FINAL",
@@ -330,6 +361,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
         documentos.append(
             DocumentoPortalISS(
                 arquivo_pdf=str(linha[colunas["ARQUIVO_PDF"]] or ""),
+                prefeitura=str(linha[colunas["PREFEITURA"]] or ""),
                 cnpj_prestador=str(linha[colunas["CNPJ_PRESTADOR"]] or ""),
                 numero_nf=str(linha[colunas["NUMERO_NF"]] or ""),
                 id_cnae_final=str(linha[colunas["ID_CNAE_FINAL"]] or ""),
@@ -342,486 +374,887 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 valor_servico=str(linha[colunas["VALOR_SERVICO"]] or ""),
             )
         )
-
     return documentos
 
 
-async def abrir_navegador_visivel(url_inicial: str | None = None, depuracao: bool = False):
-    """Abre um navegador visível e maximizado para o fluxo manual/assistido."""
-
-    playwright = await async_playwright().start()
-    try:
-        browser = await playwright.chromium.launch(
-            channel="chrome",
-            headless=False,
-            slow_mo=200 if depuracao else 0,
-            args=["--start-maximized"],
-        )
-    except Exception:
-        browser = await playwright.chromium.launch(
-            headless=False,
-            slow_mo=200 if depuracao else 0,
-            args=["--start-maximized"],
-        )
-
-    context = await browser.new_context(viewport=None)
-    page = await context.new_page()
-    if url_inicial:
-        await page.goto(
-            url_inicial,
-            wait_until="domcontentloaded",
-            timeout=120000,
-        )
-        await page.bring_to_front()
-    return playwright, browser, context, page
+# ---------------------------------------------------------------------------
+# Inicialização do navegador Chrome com Selenium
+# ---------------------------------------------------------------------------
 
 
-async def clicar_visivelmente(page: Page, texto: str) -> None:
-    """Clica em um elemento visível procurando por texto, botão, link ou título."""
+def _criar_opcoes_chrome(
+    depuracao: bool = False,
+    perfil_persistente: Path | None = None,
+) -> Options:
+    """Monta as opções do Chrome para o Selenium, incluindo proteções anti-detecção."""
 
-    candidatos = [
-        page.get_by_role("button", name=texto),
-        page.get_by_role("link", name=texto),
-        page.locator(f'[title="{texto}"]'),
-        page.locator(f'[aria-label="{texto}"]'),
-        page.get_by_text(texto, exact=False),
-    ]
-    for candidato in candidatos:
+    opcoes = Options()
+    opcoes.add_argument("--start-maximized")
+    opcoes.add_argument("--no-first-run")
+    opcoes.add_argument("--no-default-browser-check")
+    # Oculta a flag de automação no navegador para evitar bloqueios do portal
+    opcoes.add_argument("--disable-blink-features=AutomationControlled")
+    opcoes.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opcoes.add_experimental_option("useAutomationExtension", False)
+    if perfil_persistente:
+        perfil_persistente.mkdir(parents=True, exist_ok=True)
+        opcoes.add_argument(f"--user-data-dir={perfil_persistente.resolve()}")
+    return opcoes
+
+
+def abrir_navegador_visivel(depuracao: bool = False) -> WebDriver:
+    """Abre um Chrome visível e maximizado, gerenciado pelo webdriver-manager."""
+
+    opcoes = _criar_opcoes_chrome(depuracao=depuracao)
+    servico = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=servico, options=opcoes)
+    # Remove o atributo webdriver para evitar a detecção pelo portal
+    driver.execute_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    driver.get(URL_ISS_FORTALEZA)
+    return driver
+
+
+def abrir_navegador_com_perfil_persistente(
+    perfil_persistente: Path,
+    depuracao: bool = False,
+) -> WebDriver:
+    """Abre o Chrome com perfil de usuário persistente para manter login entre execuções."""
+
+    opcoes = _criar_opcoes_chrome(depuracao=depuracao, perfil_persistente=perfil_persistente)
+    servico = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=servico, options=opcoes)
+    driver.execute_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    driver.get(URL_ISS_FORTALEZA)
+    registrar_evento_execucao(
+        f"Navegador com perfil persistente aberto: {perfil_persistente.resolve()}",
+        "ISS Fortaleza",
+    )
+    return driver
+
+
+# ---------------------------------------------------------------------------
+# Esperas e cliques com Selenium
+# ---------------------------------------------------------------------------
+
+
+def _aguardar_elemento(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    timeout: int = 10,
+) -> WebElement:
+    """Aguarda um elemento ficar visível e retorna o WebElement."""
+
+    return WebDriverWait(driver, timeout).until(
+        EC.visibility_of_element_located((by, seletor))
+    )
+
+
+def _aguardar_elemento_clicavel(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    timeout: int = 10,
+) -> WebElement:
+    """Aguarda um elemento ficar clicável (visível + habilitado) e o retorna."""
+
+    return WebDriverWait(driver, timeout).until(
+        EC.element_to_be_clickable((by, seletor))
+    )
+
+
+def _clicar_com_espera(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    descricao: str,
+    timeout: int = 10,
+) -> WebElement:
+    """Aguarda o elemento e efetua o clique, com fallback via JavaScript e retry para elementos obsoletos."""
+
+    for tentativa in range(3):
         try:
-            await candidato.first.click(timeout=5000)
-            return
-        except Exception:
-            continue
-    raise RuntimeError(f"Não foi possível clicar no item visível: {texto}")
+            elemento = _aguardar_elemento_clicavel(driver, by, seletor, timeout=timeout)
+            try:
+                elemento.click()
+            except (ElementNotInteractableException, WebDriverException) as exc:
+                if isinstance(exc, StaleElementReferenceException):
+                    raise
+                # Fallback via JavaScript para elementos que bloqueiam o clique nativo
+                driver.execute_script("arguments[0].click();", elemento)
+            return elemento
+        except StaleElementReferenceException:
+            if tentativa == 2:
+                raise
+            time.sleep(0.5)
 
 
-async def clicar_aba_por_texto(page: Page, texto: str) -> None:
-    """Clica em uma aba/guia visível usando diferentes estratégias de seleção."""
+def _clicar_por_id(driver: WebDriver, elemento_id: str, timeout: int = 10) -> None:
+    """Clica em um elemento pelo ID com fallback via JavaScript."""
 
-    candidatos = [
-        page.get_by_role("tab", name=texto),
-        page.get_by_role("link", name=texto),
-        page.get_by_role("button", name=texto),
-        page.locator(f'a:has-text("{texto}")'),
-        page.locator(f'li:has-text("{texto}")'),
-        page.locator(f'span:has-text("{texto}")'),
-        page.get_by_text(texto, exact=True),
-        page.get_by_text(texto, exact=False),
-    ]
-
-    for candidato in candidatos:
-        try:
-            if await candidato.first.is_visible():
-                await candidato.first.click(timeout=5000, force=True)
-                return
-        except Exception:
-            continue
-
-    raise RuntimeError(f"Não foi possível clicar na aba visível: {texto}")
+    _clicar_com_espera(driver, By.ID, elemento_id, f"elemento ID={elemento_id}", timeout=timeout)
 
 
-async def digitar_visivelmente(page: Page, seletor: str, texto: str) -> None:
-    """Digita como um usuário, com pequenas pausas entre teclas e validação estável.
+def _pausar_para_depuracao(
+    driver: WebDriver,
+    habilitado: bool,
+    mensagem: str,
+) -> None:
+    """Interrompe o fluxo para inspeção manual quando o modo de depuração estiver ativo."""
 
-    Em campos com máscara ou autocomplete, a digitação humana reduz a chance de o
-    portal limpar o valor por reprocessamento rápido de eventos. A confirmação usa
-    dígitos normalizados para aceitar valores formatados pelo próprio frontend.
+    if not habilitado:
+        return
+    print(mensagem)
+    if sys.stdin.isatty():
+        input(f"{mensagem}\nPressione Enter para continuar com o próximo clique...")
+
+
+# ---------------------------------------------------------------------------
+# Digitação e seleção de campos
+# ---------------------------------------------------------------------------
+
+
+def _digitar_campo(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    texto: str,
+    delay_ms: int = 80,
+) -> None:
+    """Localiza o campo, limpa e digita o texto tecla por tecla com pequena pausa entre elas.
+
+    Possui lógica de retry para se recuperar caso o elemento mude sob AJAX durante a digitação.
     """
 
-    campo = page.locator(seletor)
-    await campo.wait_for(state="visible", timeout=10000)
-    try:
-        await campo.click(force=True)
-        await page.keyboard.press("Control+A")
-        await page.keyboard.press("Backspace")
-        await page.wait_for_timeout(120)
-        await page.keyboard.type(texto, delay=85)
-    except Exception:
-        # Se o campo não aceitar a sequência padrão, tentamos novamente com uma pausa maior.
-        await campo.click(force=True)
-        await page.wait_for_timeout(150)
-        await page.keyboard.press("Control+A")
-        await page.keyboard.press("Backspace")
-        await page.wait_for_timeout(150)
-        await page.keyboard.type(texto, delay=110)
-
-    # Confirma que o valor ficou estável no campo antes de avançar para o próximo clique.
-    esperado_normalizado = _somente_digitos(texto)
-    for _ in range(20):
+    for tentativa in range(3):
         try:
-            valor_atual = await campo.input_value()
-            if valor_atual.strip() == texto.strip():
-                return
-            if esperado_normalizado and _somente_digitos(valor_atual) == esperado_normalizado:
-                return
-        except Exception:
-            pass
-        await page.wait_for_timeout(150)
+            campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
+            campo.click()
+            campo.send_keys(Keys.CONTROL + "a")
+            campo.send_keys(Keys.BACKSPACE)
+            time.sleep(0.12)
 
-    raise RuntimeError(f"O campo {seletor} não permaneceu com o valor esperado: {texto}")
+            # Digita caractere por caractere para disparar os eventos key* do portal
+            for caractere in texto:
+                campo.send_keys(caractere)
+                time.sleep(delay_ms / 1000)
+
+            # Verifica se o valor ficou estável antes de seguir
+            esperado_digits = _somente_digitos(texto)
+            for _ in range(20):
+                try:
+                    valor_atual = campo.get_attribute("value") or ""
+                    if valor_atual.strip() == texto.strip():
+                        return
+                    if esperado_digits and _somente_digitos(valor_atual) == esperado_digits:
+                        return
+                except StaleElementReferenceException:
+                    raise
+                time.sleep(0.15)
+
+            raise RuntimeError(f"O campo {seletor} não permaneceu com o valor esperado: {texto}")
+        except StaleElementReferenceException:
+            if tentativa == 2:
+                raise
+            time.sleep(0.5)
 
 
-async def selecionar_opcao_por_texto(locator, textos: list[str]) -> None:
-    """Seleciona a primeira opção disponível a partir de uma lista de rótulos."""
+def _selecionar_opcao_por_texto(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    textos: list[str],
+    timeout: int = 10,
+) -> None:
+    """Seleciona a primeira opção disponível em um <select> a partir de uma lista de rótulos."""
 
-    ultimo_erro: Exception | None = None
-    for texto in textos:
+    for tentativa in range(4):
         try:
-            await locator.select_option(label=texto)
-            return
-        except Exception as exc:
-            ultimo_erro = exc
-        try:
-            await locator.select_option(value=texto)
-            return
-        except Exception as exc:
-            ultimo_erro = exc
-            continue
-    raise RuntimeError(f"Não foi possível selecionar nenhuma opção entre: {textos}") from ultimo_erro
+            elemento = _aguardar_elemento_clicavel(driver, by, seletor, timeout=timeout)
+            select = Select(elemento)
+
+            # 1. Tenta correspondência exata normalizada (ignora caixa e acentos)
+            for texto in textos:
+                texto_norm = normalizar_texto(texto)
+                for opcao in select.options:
+                    opcao_texto_norm = normalizar_texto(opcao.text)
+                    opcao_valor_norm = normalizar_texto(opcao.get_attribute("value") or "")
+                    if (texto_norm == opcao_texto_norm) or (texto_norm == opcao_valor_norm):
+                        select.select_by_value(opcao.get_attribute("value"))
+                        return
+
+            # 2. Tenta correspondência parcial normalizada (ex: "Fortaleza" contido em "Fortaleza - CE")
+            for texto in textos:
+                texto_norm = normalizar_texto(texto)
+                for opcao in select.options:
+                    opcao_texto_norm = normalizar_texto(opcao.text)
+                    if texto_norm in opcao_texto_norm:
+                        # Ignora placeholders de instruções como "selecione" ou "escolha"
+                        if "selecione" in opcao_texto_norm or "escolha" in opcao_texto_norm:
+                            continue
+                        select.select_by_value(opcao.get_attribute("value"))
+                        return
+
+            raise NoSuchElementException(f"Nenhuma das opções {textos} foi localizada no select.")
+            
+        except (StaleElementReferenceException, NoSuchElementException) as exc:
+            if tentativa == 3:
+                raise RuntimeError(
+                    f"Não foi possível selecionar nenhuma opção entre {textos} após várias tentativas."
+                ) from exc
+            time.sleep(0.5)
 
 
-async def aguardar_login_manual(page: Page) -> None:
-    """Mostra a instrução e aguarda o usuário concluir o login manual."""
+# ---------------------------------------------------------------------------
+# Aguardando login manual
+# ---------------------------------------------------------------------------
+
+
+def aguardar_login_manual(driver: WebDriver) -> None:
+    """Mostra a instrução e aguarda o usuário concluir o login manual no terminal."""
 
     print("O navegador foi aberto no portal da ISS de Fortaleza.")
     print("Faça o login manualmente e, quando terminar, volte aqui e pressione Enter.")
     input("Pressione Enter somente após o login estar concluído...")
-    await page.wait_for_timeout(1000)
+    time.sleep(1)
 
 
-async def selecionar_competencia_na_tela(page: Page, competencia: CompetenciaTrabalho) -> None:
-    """Seleciona o período na tela de manutenção, priorizando os campos visíveis."""
+def aguardar_login_manual_por_arquivo(driver: WebDriver, caminho_confirmacao: Path) -> None:
+    """Espera até que o arquivo de confirmação seja criado pelo operador."""
 
-    # A tela do portal carrega em etapas; esperamos a área de competência ficar disponível antes de ler os selects.
-    await page.locator("#manterEscrituracaoForm\\:btnConsultar").wait_for(
-        state="visible",
-        timeout=120000,
-    )
+    caminho_confirmacao.parent.mkdir(parents=True, exist_ok=True)
+    if caminho_confirmacao.exists():
+        caminho_confirmacao.unlink()
+
+    print("O navegador foi aberto no portal da ISS de Fortaleza.")
+    print("Faça o login manualmente e, ao terminar, crie o arquivo de confirmação para continuar.")
+    print(f"Arquivo de confirmação esperado: {caminho_confirmacao.resolve()}")
+
+    while not caminho_confirmacao.exists():
+        time.sleep(1)
+
+    # Evita que o próximo teste reutilize a mesma confirmação antiga
     try:
-        texto_pagina = await page.locator("body").inner_text(timeout=5000)
+        caminho_confirmacao.unlink()
     except Exception:
-        texto_pagina = ""
-    if competencia.nome_mes in texto_pagina and str(competencia.ano) in texto_pagina:
+        pass
+
+    time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Seleção de competência via calendário RichFaces
+# ---------------------------------------------------------------------------
+
+
+def _valor_campo_competencia(driver: WebDriver, base_id: str) -> str:
+    """Lê o valor do campo de data do calendário RichFaces."""
+
+    try:
+        campo = driver.find_element(By.ID, f"{base_id}InputDate")
+        return campo.get_attribute("value") or ""
+    except NoSuchElementException:
+        return ""
+
+
+def _abrir_editor_calendario(driver: WebDriver, base_id: str, rotulo: str) -> None:
+    """Clica no botão de edição do calendário RichFaces para abrir o editor de mês/ano."""
+
+    # O botão de edição fica no cabeçalho do calendário
+    botao = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable(
+            (By.CSS_SELECTOR, f"#{base_id}Header .rich-calendar-tool-btn")
+        )
+    )
+    botao.click()
+    # Aguarda o botão OK do editor ficar visível como sinal de abertura do editor
+    WebDriverWait(driver, 10).until(
+        EC.visibility_of_element_located((By.ID, f"{base_id}DateEditorButtonOk"))
+    )
+
+
+def _selecionar_mes_no_editor(driver: WebDriver, base_id: str, competencia: CompetenciaTrabalho) -> None:
+    """Clica no mês desejado na grade do editor do calendário RichFaces."""
+
+    indice_mes = competencia.mes - 1
+    id_mes = f"{base_id}DateEditorLayoutM{indice_mes}"
+    _clicar_por_id(driver, id_mes)
+
+
+def _selecionar_ano_no_editor(driver: WebDriver, base_id: str, competencia: CompetenciaTrabalho) -> None:
+    """Navega pelos anos do editor do calendário RichFaces e clica no ano desejado."""
+
+    for _ in range(20):
+        anos_visiveis: list[tuple[int, WebElement]] = []
+        for indice in range(10):
+            id_ano = f"{base_id}DateEditorLayoutY{indice}"
+            try:
+                el = driver.find_element(By.ID, id_ano)
+                if not el.is_displayed():
+                    continue
+                texto = el.text.strip()
+                if texto.isdigit():
+                    anos_visiveis.append((int(texto), el))
+            except NoSuchElementException:
+                continue
+
+        for ano_visivel, el_ano in anos_visiveis:
+            if ano_visivel == competencia.ano:
+                el_ano.click()
+                return
+
+        if not anos_visiveis:
+            raise RuntimeError(
+                f"Não consegui ler os anos visíveis no calendário de competência ({base_id})."
+            )
+
+        menor_ano = min(a for a, _ in anos_visiveis)
+        maior_ano = max(a for a, _ in anos_visiveis)
+
+        # Navega para esquerda ou direita conforme o ano-alvo
+        if competencia.ano < menor_ano:
+            sinal = "<"
+        else:
+            sinal = ">"
+
+        try:
+            botoes = driver.find_elements(By.CSS_SELECTOR, f"#{base_id} .rich-calendar-editor-btn")
+            clicou = False
+            for btn in botoes:
+                if btn.text.strip() == sinal and btn.is_displayed():
+                    btn.click()
+                    clicou = True
+                    break
+            if not clicou:
+                raise RuntimeError("Botão de navegação do calendário não encontrado.")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Não consegui navegar no calendário para chegar ao ano {competencia.ano}."
+            ) from exc
+
+        time.sleep(0.25)
+
+    raise RuntimeError(
+        f"Não consegui localizar o ano {competencia.ano} no calendário de competência ({base_id})."
+    )
+
+
+def _confirmar_editor_calendario(driver: WebDriver, base_id: str, esperado: str) -> None:
+    """Clica em OK no editor do calendário e confirma que o campo assumiu o valor esperado."""
+
+    _clicar_por_id(driver, f"{base_id}DateEditorButtonOk")
+    # Aguarda o campo de data refletir o valor confirmado
+    WebDriverWait(driver, 10).until(
+        lambda d: (
+            lambda el: el is not None and el.get_attribute("value") == esperado
+        )(d.find_element(By.ID, f"{base_id}InputDate"))
+    )
+
+
+def _selecionar_campo_competencia(
+    driver: WebDriver,
+    base_id: str,
+    rotulo: str,
+    competencia: CompetenciaTrabalho,
+) -> None:
+    """Seleciona o mês e o ano no calendário RichFaces de um campo de competência."""
+
+    esperado = f"{competencia.mes:02d}/{competencia.ano}"
+    valor_atual = _valor_campo_competencia(driver, base_id)
+
+    if valor_atual == esperado:
         registrar_evento_execucao(
-            f"Competência {competencia.rotulo} já estava visível na tela de manutenção; seguindo sem alterar selects.",
+            f"Campo {rotulo} da competência já estava em {esperado}.",
             "ISS Fortaleza",
         )
         return
-    await page.wait_for_timeout(1200)
 
-    mes_textos = [competencia.nome_mes, competencia.nome_mes.upper(), competencia.nome_mes.lower()]
-    ano_textos = [str(competencia.ano)]
-    combinados = [f"{competencia.nome_mes} {competencia.ano}", f"{competencia.nome_mes}/{competencia.ano}"]
-    selecionado = False
-    select_mes = None
-    select_ano = None
-    select_composto = None
+    _abrir_editor_calendario(driver, base_id, rotulo)
+    _selecionar_mes_no_editor(driver, base_id, competencia)
+    _selecionar_ano_no_editor(driver, base_id, competencia)
+    _confirmar_editor_calendario(driver, base_id, esperado)
+    registrar_evento_execucao(
+        f"Campo {rotulo} da competência ajustado para {esperado}.",
+        "ISS Fortaleza",
+    )
 
-    async def _texto_selecionado(select) -> str:
-        return await select.evaluate(
-            """(el) => {
-                const selecionado = el.selectedOptions && el.selectedOptions[0];
-                return selecionado ? (selecionado.textContent || '').trim() : '';
-            }"""
-        )
 
-    async def _coletar_selects_por_fonte() -> list[tuple[str, object]]:
-        """Varre a página principal e todos os frames visíveis para encontrar selects."""
+def selecionar_competencia_na_tela_richfaces(
+    driver: WebDriver,
+    competencia: CompetenciaTrabalho,
+) -> None:
+    """Seleciona a competência nos calendários `De` e `Até` usando o editor do RichFaces."""
 
-        fontes: list[tuple[str, object]] = [("page", page)]
-        for indice, frame in enumerate(page.frames, start=1):
-            fontes.append((f"frame:{indice}", frame))
+    # Garante que a tela carregou antes de tentar acessar os calendários
+    WebDriverWait(driver, 120).until(
+        EC.element_to_be_clickable((By.ID, "manterEscrituracaoForm:btnConsultar"))
+    )
+    time.sleep(1.2)
 
-        encontrados: list[tuple[str, object]] = []
-        for nome_fonte, fonte in fontes:
-            try:
-                total = await fonte.locator("select").count()
-            except Exception:
-                continue
+    _selecionar_campo_competencia(driver, "manterEscrituracaoForm:dataInicial", "De", competencia)
+    _selecionar_campo_competencia(driver, "manterEscrituracaoForm:dataFinal", "Até", competencia)
+    registrar_evento_execucao(
+        f"Competência selecionada na tela: {competencia.rotulo}",
+        "ISS Fortaleza",
+    )
 
-            for indice in range(total):
-                encontrados.append((nome_fonte, fonte.locator("select").nth(indice)))
 
-        return encontrados
+# ---------------------------------------------------------------------------
+# Botão Escriturar
+# ---------------------------------------------------------------------------
 
-    encontrados: list[tuple[str, object]] = []
-    for _ in range(24):
-        encontrados = await _coletar_selects_por_fonte()
-        if encontrados:
-            break
-        await page.wait_for_timeout(500)
 
-    if not encontrados:
-        registrar_evento_execucao(
-            "Nenhum select de competência foi encontrado na página principal nem nos frames.",
-            "ISS Fortaleza",
-        )
-        raise RuntimeError(
-            "Não encontrei selects de competência na tela de Manter Escrituração."
-        )
+def aguardar_botao_escriturar(driver: WebDriver, timeout: int = 120) -> bool:
+    """Espera a consulta retornar e verifica se o botão de escriturar está habilitado."""
 
-    # Primeiro tentamos encontrar selects já compostos com mês e ano no mesmo campo.
-    for nome_fonte, select in encontrados:
+    id_ativo = "manterEscrituracaoForm:dataTable:0:linkEscriturar"
+    id_desabilitado = "manterEscrituracaoForm:dataTable:0:linkEscriturarDesabilitado"
+
+    prazo = time.monotonic() + timeout
+    while time.monotonic() < prazo:
         try:
-            opcoes = [texto.strip() for texto in await select.locator("option").all_text_contents()]
-        except Exception:
-            continue
-
-        opcoes_norm = [normalizar_texto(texto) for texto in opcoes]
-        if any(normalizar_texto(item) in opcoes_norm for item in combinados):
-            select_composto = select
-            try:
-                valor_atual = normalizar_texto(await _texto_selecionado(select))
-                if any(normalizar_texto(item) == valor_atual for item in combinados):
-                    registrar_evento_execucao(
-                        f"Competência {competencia.rotulo} já estava selecionada em um select composto encontrado em {nome_fonte}.",
-                        "ISS Fortaleza",
-                    )
-                    return
-            except Exception:
-                pass
-            for item in combinados:
-                try:
-                    await select.select_option(label=item)
-                    selecionado = True
-                    registrar_evento_execucao(
-                        f"Competência {competencia.rotulo} selecionada em um select composto encontrado em {nome_fonte}.",
-                        "ISS Fortaleza",
-                    )
-                    break
-                except Exception:
-                    continue
-
-    # Se não houver um seletor composto, procuramos selects de mês e de ano.
-    for nome_fonte, select in encontrados:
-        try:
-            opcoes = [texto.strip() for texto in await select.locator("option").all_text_contents()]
-        except Exception:
-            continue
-
-        opcoes_norm = [normalizar_texto(texto) for texto in opcoes]
-        if select_mes is None and any(normalizar_texto(mes) in opcoes_norm for mes in mes_textos):
-            select_mes = select
-        if select_ano is None and any(normalizar_texto(ano) in opcoes_norm for ano in ano_textos):
-            select_ano = select
-
-    if select_mes is not None:
-        try:
-            mes_atual = normalizar_texto(await _texto_selecionado(select_mes))
-            if any(normalizar_texto(mes) == mes_atual for mes in mes_textos):
-                if select_ano is None:
-                    registrar_evento_execucao(
-                        f"Mês da competência {competencia.rotulo} já estava selecionado.",
-                        "ISS Fortaleza",
-                    )
-                    return
-        except Exception:
+            el = driver.find_element(By.ID, id_ativo)
+            if el.is_displayed():
+                return True
+        except NoSuchElementException:
             pass
-        await selecionar_opcao_por_texto(select_mes, mes_textos)
-        selecionado = True
-
-    if select_ano is not None:
         try:
-            ano_atual = normalizar_texto(await _texto_selecionado(select_ano))
-            if any(normalizar_texto(ano) == ano_atual for ano in ano_textos):
-                if selecionado:
-                    registrar_evento_execucao(
-                        f"Ano da competência {competencia.rotulo} já estava selecionado.",
-                        "ISS Fortaleza",
-                    )
-                    return
-        except Exception:
+            el = driver.find_element(By.ID, id_desabilitado)
+            if el.is_displayed():
+                return False
+        except NoSuchElementException:
             pass
-        await selecionar_opcao_por_texto(select_ano, ano_textos)
-        selecionado = True
+        time.sleep(0.5)
 
-    if not selecionado:
-        diagnostico = []
-        for nome_fonte, select in encontrados[:12]:
-            try:
-                seletor_id = await select.get_attribute("id")
-                seletor_name = await select.get_attribute("name")
-                opcoes = [texto.strip() for texto in await select.locator("option").all_text_contents()]
-                diagnostico.append(
-                    f"{nome_fonte} | id={seletor_id or ''} | name={seletor_name or ''} | opcoes={', '.join(opcoes[:8])}"
-                )
-            except Exception:
-                continue
-        if diagnostico:
-            registrar_evento_execucao(
-                "Diagnóstico dos selects de competência encontrados: " + " || ".join(diagnostico),
-                "ISS Fortaleza",
-            )
-        raise RuntimeError(
-            "Não consegui reconhecer os campos de competência automaticamente. "
-            "Será necessário ajustar os seletores da tela de Manter Escrituração."
+    raise CompetenciaSemEscriturarDisponivelError(
+        "Não consegui identificar se a competência consultada liberou o botão de escriturar."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tela de Escrituração Fiscal
+# ---------------------------------------------------------------------------
+
+
+def aguardar_tela_escrituracao_fiscal(driver: WebDriver, timeout: int = 120) -> None:
+    """Espera a tela de Escrituração Fiscal ficar pronta após o clique em Escriturar."""
+
+    prazo = time.monotonic() + timeout
+    while time.monotonic() < prazo:
+        try:
+            el = driver.find_element(By.ID, "tabEncerramentoEscrituracao")
+            if el.is_displayed():
+                return
+        except NoSuchElementException:
+            pass
+        try:
+            el = driver.find_element(By.ID, "aba_tomados_lbl")
+            if el.is_displayed():
+                return
+        except NoSuchElementException:
+            pass
+        time.sleep(0.25)
+
+    raise RuntimeError(
+        "A tela de Escrituração Fiscal não ficou visível após o clique em Escriturar."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Aba Serviços Tomados
+# ---------------------------------------------------------------------------
+
+
+def clicar_aba_servicos_tomados(driver: WebDriver) -> None:
+    """Clica na aba 'Serviços Tomados' com estratégia específica para o portal RichFaces."""
+
+    # Aguarda a tela de Escrituração Fiscal aparecer primeiro
+    WebDriverWait(driver, 120).until(
+        EC.visibility_of_element_located((By.ID, "tabEncerramentoEscrituracao"))
+    )
+    try:
+        _clicar_por_id(driver, "aba_tomados_lbl", timeout=120)
+        return
+    except Exception:
+        pass
+
+    # Fallback: busca o elemento pelo onclick
+    try:
+        el = driver.find_element(By.CSS_SELECTOR, '[onclick*="atualizarDadosDaAbaTomados"]')
+        el.click()
+    except NoSuchElementException:
+        raise RuntimeError("Não foi possível clicar na aba 'Serviços Tomados'.")
+
+
+# ---------------------------------------------------------------------------
+# Tela Digitar Documento
+# ---------------------------------------------------------------------------
+
+
+def aguardar_tela_digitar_documento(driver: WebDriver, timeout: int = 120) -> None:
+    """Espera a tela de Digitar Documento carregar por completo."""
+
+    WebDriverWait(driver, timeout).until(
+        EC.visibility_of_element_located((By.ID, "digitarDocumentoForm"))
+    )
+    WebDriverWait(driver, timeout).until(
+        EC.visibility_of_element_located((By.ID, "digitarDocumentoForm:divPesquisaTomador"))
+    )
+    # Aguarda o rádio de CNPJ aparecer como confirmação final de carregamento
+    WebDriverWait(driver, timeout).until(
+        EC.visibility_of_element_located(
+            (By.ID, "digitarDocumentoForm:tipoPesquisaTomadorRb:1")
         )
+    )
 
 
-async def selecionar_prestador(page: Page, cnpj: str, depuracao: bool = False) -> None:
-    """Seleciona o prestador de forma visível, abrindo a sugestão do autocomplete."""
+# ---------------------------------------------------------------------------
+# Seleção do prestador (CNPJ + autocomplete)
+# ---------------------------------------------------------------------------
+
+
+def selecionar_prestador(
+    driver: WebDriver,
+    cnpj: str,
+    depuracao: bool = False,
+) -> None:
+    """Seleciona o prestador de forma visível, acionando o autocomplete do portal."""
 
     registrar_evento_execucao(
         f"Iniciando seleção do prestador para o CNPJ {cnpj}",
         "ISS Fortaleza",
     )
-    # O rádio de CNPJ precisa estar ativo antes da busca.
-    await page.locator("#digitarDocumentoForm\\:tipoPesquisaTomadorRb\\:1").click()
+    aguardar_tela_digitar_documento(driver)
+
+    # Ativa o modo de pesquisa por CNPJ
+    _clicar_por_id(driver, "digitarDocumentoForm:tipoPesquisaTomadorRb:1")
     registrar_evento_execucao("Tipo de pesquisa alterado para CNPJ", "ISS Fortaleza")
 
-    # O portal faz um reload parcial ao alternar para CNPJ; esperamos o campo ser recriado
-    # e ficar estável antes de começar a digitar.
-    await page.wait_for_timeout(800)
-    campo_busca = page.locator("#digitarDocumentoForm\\:cpfPesquisaTomador")
-    await campo_busca.wait_for(state="visible", timeout=10000)
-    await page.wait_for_timeout(300)
+    # Pausa para o portal recriar o campo de CNPJ após a alternância
+    time.sleep(0.8)
 
-    await digitar_visivelmente(page, "#digitarDocumentoForm\\:cpfPesquisaTomador", limpar_cnpj_para_digitacao(cnpj))
+    # Digita o CNPJ para disparar o autocomplete do RichFaces
+    _digitar_campo(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:cpfPesquisaTomador",
+        limpar_cnpj_para_digitacao(cnpj),
+        delay_ms=80,
+    )
     registrar_evento_execucao(
         f"CNPJ digitado na pesquisa do prestador: {cnpj}",
         "ISS Fortaleza",
     )
-    await pausar_para_depuracao(
+    _pausar_para_depuracao(
+        driver,
         depuracao,
         f"O CNPJ {cnpj} foi digitado. Confira o autocomplete antes da seleção.",
     )
 
-    # O portal RichFaces exibe o autocomplete em uma lista visível; clicamos na opção
-    # apresentada para que o preenchimento do nome aconteça como no fluxo manual.
-    # O DOM expõe o mesmo id em mais de um nó, então restringimos a busca ao bloco
-    # da pesquisa do tomador para evitar o strict mode violation do Playwright.
-    container = page.locator(
-        "#digitarDocumentoForm\\:divPesquisaTomador [id='digitarDocumentoForm:j_id189']"
-    ).first
+    # Aguarda o container do autocomplete aparecer (timeout tolerante)
+    container_id = "digitarDocumentoForm:j_id189"
+    texto_container = ""
+    container = None
     try:
-        await container.wait_for(state="visible", timeout=10000)
-    except PlaywrightTimeoutError:
+        WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.ID, container_id))
+        )
+        container = driver.find_element(By.ID, container_id)
+        texto_container = container.text or ""
+    except TimeoutException:
         pass
 
-    texto_container = ""
+    # Verifica se há sugestões disponíveis na lista do autocomplete
     try:
-        texto_container = await container.inner_text(timeout=2000)
-    except Exception:
-        try:
-            texto_container = await container.text_content(timeout=2000) or ""
-        except Exception:
-            texto_container = ""
+        if container:
+            sugestoes = container.find_elements(By.CSS_SELECTOR, "tr.richfaces_suggestionEntry")
+        else:
+            sugestoes = []
 
-    sugeridos = container.locator("tr.richfaces_suggestionEntry")
-    if await sugeridos.count() > 0:
-        await sugeridos.first.click()
-        registrar_evento_execucao(
-            f"Prestador selecionado na lista de sugestões para o CNPJ {cnpj}",
-            "ISS Fortaleza",
-        )
-    else:
-        if _texto_indica_prestador_nao_encontrado(texto_container):
+        if sugestoes and sugestoes[0].is_displayed():
+            sugestoes[0].click()
             registrar_evento_execucao(
-                f"Portal retornou nenhuma razão social para o CNPJ {cnpj}",
+                f"Prestador selecionado na lista de sugestões para o CNPJ {cnpj}",
                 "ISS Fortaleza",
             )
+        else:
+            if _texto_indica_prestador_nao_encontrado(texto_container):
+                raise PrestadorNaoEncontradoError(cnpj, texto_container)
+            # Fallback via teclado quando não há sugestão visível clicável
+            campo = driver.find_element(By.ID, "digitarDocumentoForm:cpfPesquisaTomador")
+            campo.send_keys(Keys.ARROW_DOWN)
+            campo.send_keys(Keys.RETURN)
+    except PrestadorNaoEncontradoError:
+        raise
+    except Exception:
+        if _texto_indica_prestador_nao_encontrado(texto_container):
             raise PrestadorNaoEncontradoError(cnpj, texto_container)
-        # Fallback visível: navega na lista com o teclado caso a linha não tenha sido localizada.
-        await campo_busca.focus()
-        await page.keyboard.press("ArrowDown")
-        await page.keyboard.press("Enter")
 
-    # Garante que o campo do nome foi preenchido antes de seguir.
-    campo_nome = page.locator("#digitarDocumentoForm\\:idNome")
+    # Confirma que o campo do nome do prestador foi preenchido
     for _ in range(20):
         try:
-            valor = await campo_nome.input_value()
-            if valor.strip():
+            campo_nome = driver.find_element(By.ID, "digitarDocumentoForm:idNome")
+            if campo_nome.get_attribute("value", ).strip():
                 registrar_evento_execucao(
                     f"Nome do prestador preenchido com sucesso para o CNPJ {cnpj}",
                     "ISS Fortaleza",
                 )
                 return
-        except Exception:
+        except (NoSuchElementException, StaleElementReferenceException):
             pass
-        await page.wait_for_timeout(250)
+        time.sleep(0.25)
 
     if _texto_indica_prestador_nao_encontrado(texto_container):
-        registrar_evento_execucao(
-            f"Prestador não encontrado ao finalizar a leitura do campo de nome para o CNPJ {cnpj}",
-            "ISS Fortaleza",
-        )
         raise PrestadorNaoEncontradoError(cnpj, texto_container)
 
-    raise RuntimeError("O prestador não foi selecionado corretamente; o campo de nome continuou vazio.")
+    detalhe = texto_container or "O campo de nome continuou vazio após a busca do CNPJ."
+    registrar_evento_execucao(
+        f"Portal não retornou um prestador selecionável para o CNPJ {cnpj}",
+        "ISS Fortaleza",
+    )
+    raise PrestadorNaoEncontradoError(cnpj, detalhe)
 
 
-async def preencher_documento_servico(
-    page: Page,
+# ---------------------------------------------------------------------------
+# Modal de pesquisa de CNAE
+# ---------------------------------------------------------------------------
+
+
+def _forcar_abertura_modal_cnae(driver: WebDriver) -> None:
+    """Chama a API nativa do RichFaces via JavaScript para forçar a abertura do modal."""
+
+    try:
+        driver.execute_script("Richfaces.showModalPanel('pesquisarCnaeModal')")
+    except JavascriptException:
+        # Fallback: chama a função com prefixo alternativo que alguns portais usam
+        driver.execute_script("RichFaces.showModalPanel('pesquisarCnaeModal')")
+
+
+def preencher_modal_pesquisar_cnae(
+    driver: WebDriver,
+    id_cnae_final: str,
+    depuracao: bool = False,
+) -> None:
+    """Preenche o modal de pesquisa de CNAE com o código final da planilha e dispara a busca.
+
+    Caso o modal não apareça dentro do tempo padrão após o clique, utiliza a API
+    nativa do RichFaces via JavaScript para forçá-lo a abrir — estratégia de
+    fallback que corrige o timeout observado quando o JSF ainda está reprocessando.
+    """
+
+    valor_cnae = limpar_numero_para_digitacao(id_cnae_final)
+    registrar_evento_execucao(
+        f"Abrindo modal de pesquisa de CNAE para o código {valor_cnae}",
+        "ISS Fortaleza",
+    )
+
+    # Tenta aguardar o modal ficar visível normalmente
+    try:
+        WebDriverWait(driver, 8).until(
+            EC.visibility_of_element_located(
+                (By.ID, "digitarDocumentoForm:pesquisarCnaeModalContainer")
+            )
+        )
+    except TimeoutException:
+        # Fallback via JavaScript: força o RichFaces a exibir o modal
+        registrar_evento_execucao(
+            "Modal de CNAE não abriu sozinho; forçando via JavaScript do RichFaces.",
+            "ISS Fortaleza",
+        )
+        _forcar_abertura_modal_cnae(driver)
+        # Aguarda mais tempo após a chamada forçada
+        WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located(
+                (By.ID, "digitarDocumentoForm:pesquisarCnaeModalContainer")
+            )
+        )
+
+    # Preenche o campo de pesquisa dentro do modal
+    _digitar_campo(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:idFormularioPesquisaCnae:idCnaePesquisa",
+        valor_cnae,
+        delay_ms=45,
+    )
+    _pausar_para_depuracao(
+        driver,
+        depuracao,
+        f"O modal de pesquisa de CNAE está preenchido com {valor_cnae}.",
+    )
+
+    # Dispara a pesquisa AJAX do CNAE escolhido
+    _clicar_por_id(driver, "digitarDocumentoForm:idFormularioPesquisaCnae:idPesquisar")
+    time.sleep(1.2)
+    registrar_evento_execucao(
+        f"Pesquisa de CNAE enviada para {valor_cnae}",
+        "ISS Fortaleza",
+    )
+    _pausar_para_depuracao(
+        driver,
+        depuracao,
+        f"A pesquisa de CNAE para {valor_cnae} foi enviada. Confirme o resultado na lista.",
+    )
+
+    # Seleciona a primeira linha de resultado retornada pelo portal
+    # O ID do link de seleção usa um índice dinâmico; buscamos com seletor parcial
+    seletor_resultado = (
+        "[id^='digitarDocumentoForm:idFormularioPesquisaCnae:idDatatableListaCnae:0:']"
+    )
+    el_resultado = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, seletor_resultado))
+    )
+    el_resultado.click()
+    time.sleep(1.2)
+    registrar_evento_execucao(
+        f"CNAE selecionado na lista de resultados: {valor_cnae}",
+        "ISS Fortaleza",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Preenchimento da aba Serviço
+# ---------------------------------------------------------------------------
+
+
+def preencher_documento_servico(
+    driver: WebDriver,
     documento: DocumentoPortalISS,
     depuracao: bool = False,
 ) -> None:
     """Preenche a aba de serviço com os dados de uma linha da planilha."""
 
+    # Ativa a aba Serviço real do portal antes de preencher os campos
+    _clicar_por_id(driver, "digitarDocumentoForm:abaServico_lbl")
+    registrar_evento_execucao("Aba Serviço acionada", "ISS Fortaleza")
+    time.sleep(0.5)
+
+    # Aguarda os campos da aba Serviço ficarem disponíveis
+    WebDriverWait(driver, 120).until(
+        EC.visibility_of_element_located((By.ID, "digitarDocumentoForm"))
+    )
+    WebDriverWait(driver, 120).until(
+        EC.visibility_of_element_located((By.ID, "digitarDocumentoForm:tipoDocumentoDigitado"))
+    )
+    WebDriverWait(driver, 120).until(
+        EC.visibility_of_element_located((By.ID, "digitarDocumentoForm:statusNfse"))
+    )
+    registrar_evento_execucao(
+        "Formulário da aba Serviço ficou visível e pronto para preenchimento",
+        "ISS Fortaleza",
+    )
+
     registrar_evento_execucao(
         f"Iniciando preenchimento da aba Serviço para a NF {documento.numero_nf} ({documento.cnpj_prestador})",
         "ISS Fortaleza",
     )
-    await selecionar_opcao_por_texto(
-        page.locator("#digitarDocumentoForm\\:tipoDocumentoDigitado"),
+
+    # Tipo de documento
+    _selecionar_opcao_por_texto(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:tipoDocumentoDigitado",
         ["NFS-e de Outro Município", "NFS-e de outro município", "707"],
     )
-    await digitar_visivelmente(
-        page,
-        "#digitarDocumentoForm\\:numeroDocumentoDigitado",
+
+    # Número da nota fiscal
+    _digitar_campo(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:numeroDocumentoDigitado",
         limpar_numero_para_digitacao(documento.numero_nf),
     )
-    await digitar_visivelmente(
-        page,
-        "#digitarDocumentoForm\\:dataEmissaoInputDate",
+
+    # Data de emissão
+    _digitar_campo(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:dataEmissaoInputDate",
         documento.data_emissao,
     )
-    await selecionar_opcao_por_texto(
-        page.locator("#digitarDocumentoForm\\:statusNfse"),
+
+    # Status NFSE
+    _selecionar_opcao_por_texto(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:statusNfse",
         ["NORMAL", "Normal", "472"],
     )
     registrar_evento_execucao(
         f"Campos iniciais da aba Serviço preenchidos para a NF {documento.numero_nf}",
         "ISS Fortaleza",
     )
-    await page.locator("#digitarDocumentoForm\\:idLinkPesquisarCnae").click(force=True)
+
+    # Pausa de estabilização para o JSF reprocessar após selecionar o Status
+    time.sleep(1.2)
+
+    # Abre o modal de pesquisa de CNAE
+    _clicar_por_id(driver, "digitarDocumentoForm:idLinkPesquisarCnae")
     registrar_evento_execucao(
         f"Botão Pesquisar CNAE acionado para a NF {documento.numero_nf}",
         "ISS Fortaleza",
     )
-    await preencher_modal_pesquisar_cnae(page, documento.id_cnae_final, depuracao=depuracao)
-    await digitar_visivelmente(
-        page,
-        "#digitarDocumentoForm\\:idDescricaoServico",
+
+    # Preenche o modal de CNAE (com fallback via JavaScript)
+    preencher_modal_pesquisar_cnae(driver, documento.id_cnae_final, depuracao=depuracao)
+
+    # Descrição do serviço
+    _digitar_campo(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:idDescricaoServico",
         documento.descricao_servico,
     )
-    await selecionar_opcao_por_texto(
-        page.locator("#digitarDocumentoForm\\:comboEscolherEstadoLocalPrestacao"),
+
+    # UF de prestação
+    _selecionar_opcao_por_texto(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:comboEscolherEstadoLocalPrestacao",
         [documento.uf_local_prestacao],
     )
-    await selecionar_opcao_por_texto(
-        page.locator("#digitarDocumentoForm\\:comboEscolherCidadeLocalPrestacao"),
+
+    # Cidade de prestação
+    _selecionar_opcao_por_texto(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:comboEscolherCidadeLocalPrestacao",
         [documento.cidade_local_prestacao],
     )
-    await selecionar_opcao_por_texto(
-        page.locator("#digitarDocumentoForm\\:comboEscolherLocalPrestacao"),
+
+    # Natureza da operação
+    _selecionar_opcao_por_texto(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:comboEscolherLocalPrestacao",
         [documento.natureza_operacao],
     )
 
-    checkbox_iss = page.locator('input[name="digitarDocumentoForm:j_id361"]')
+    # Checkbox ISS retido
     deve_marcar = normalizar_texto(documento.iss_retido).startswith("sim")
-    if deve_marcar and not await checkbox_iss.is_checked():
-        await checkbox_iss.click()
-    elif not deve_marcar and await checkbox_iss.is_checked():
-        await checkbox_iss.click()
+    try:
+        checkbox_iss = driver.find_element(By.NAME, "digitarDocumentoForm:j_id361")
+        marcado_agora = checkbox_iss.is_selected()
+        if deve_marcar and not marcado_agora:
+            checkbox_iss.click()
+        elif not deve_marcar and marcado_agora:
+            checkbox_iss.click()
+    except NoSuchElementException:
+        pass
     registrar_evento_execucao(
         f"Local de prestação e ISS tratados para a NF {documento.numero_nf}",
         "ISS Fortaleza",
     )
 
-    await digitar_visivelmente(
-        page,
-        "#digitarDocumentoForm\\:idValorServicoPrestado",
+    # Valor do serviço
+    _digitar_campo(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:idValorServicoPrestado",
         limpar_valor_para_digitacao(documento.valor_servico),
     )
     registrar_evento_execucao(
@@ -830,87 +1263,141 @@ async def preencher_documento_servico(
     )
 
 
-async def executar_fluxo_iss(
+# ---------------------------------------------------------------------------
+# Fluxo principal da ISS
+# ---------------------------------------------------------------------------
+
+
+def executar_fluxo_iss(
     documentos: list[DocumentoPortalISS],
     competencia: CompetenciaTrabalho,
     caminho_log: Path,
     depuracao: bool = False,
+    aguardar_login_por_arquivo: bool = False,
+    caminho_confirmacao_login: Path | None = None,
+    reutilizar_navegador: bool = False,
+    perfil_navegador: Path = PERFIL_CHROME_FUNCAO2_PADRAO,
 ) -> None:
-    """Executa o fluxo visual até a revisão final do primeiro prestador localizado."""
+    """Executa o fluxo visual completo do portal da ISS até o preenchimento do formulário."""
 
     if not documentos:
         raise RuntimeError("A planilha não contém linhas válidas para a automação.")
 
-    playwright, browser, context, page = await abrir_navegador_visivel(
-        URL_ISS_FORTALEZA,
-        depuracao=depuracao,
-    )
+    # Abre o Chrome com ou sem perfil persistente, conforme solicitado
+    if reutilizar_navegador:
+        driver = abrir_navegador_com_perfil_persistente(perfil_navegador, depuracao=depuracao)
+    else:
+        driver = abrir_navegador_visivel(depuracao=depuracao)
+
     try:
         registrar_evento_execucao(
             f"Fluxo da ISS iniciado com {len(documentos)} documento(s) e competência {competencia.rotulo}",
             "ISS Fortaleza",
         )
-        await aguardar_login_manual(page)
+
+        # Aguarda login manual do operador
+        if aguardar_login_por_arquivo:
+            caminho = caminho_confirmacao_login or Path("brain/funcao2_login_ok.flag")
+            aguardar_login_manual_por_arquivo(driver, caminho)
+        else:
+            aguardar_login_manual(driver)
         registrar_evento_execucao("Login manual confirmado pelo usuário", "ISS Fortaleza")
 
         print("Login confirmado. Aguardando o menu do portal ficar disponível...")
-        await page.get_by_text("Escrituração", exact=False).first.wait_for(timeout=120000)
-        await pausar_para_depuracao(
+        try:
+            WebDriverWait(driver, 120).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, "//*[contains(text(), 'Escrituração') or contains(text(), 'Escrituracao')]")
+                )
+            )
+        except TimeoutException:
+            registrar_evento_execucao(
+                "Timeout ao aguardar menu Escrituração visível", "ISS Fortaleza"
+            )
+            print("AVISO: Timeout ao aguardar menu Escrituração. Prosseguindo mesmo assim...")
+        _pausar_para_depuracao(
+            driver,
             depuracao,
             "O portal foi carregado e o login já foi confirmado.",
         )
 
+        # Navega para Escrituração > Manter Escrituração
         print("Acessando Escrituração > Manter Escrituração...")
-        await page.locator("a.dropdown-toggle").nth(4).click(force=True)
-        await page.wait_for_timeout(500)
-        await clicar_por_id_com_fallback(page, "formMenuTopo:menuEscrituracao:j_id80")
+        menus = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-toggle")
+        if len(menus) > 4:
+            menus[4].click()
+            time.sleep(0.5)
+        _clicar_por_id(driver, "formMenuTopo:menuEscrituracao:j_id80")
         registrar_evento_execucao("Menu Escrituração acionado", "ISS Fortaleza")
-        await page.locator("#manterEscrituracaoForm\\:btnConsultar").wait_for(
-            state="visible",
-            timeout=120000,
+
+        WebDriverWait(driver, 120).until(
+            EC.element_to_be_clickable((By.ID, "manterEscrituracaoForm:btnConsultar"))
         )
         registrar_evento_execucao("Tela Manter Escrituração aberta", "ISS Fortaleza")
 
+        # Seleciona a competência nos calendários De e Até
         print(
             f"Selecionando a competência {competencia.nome_mes} {competencia.ano} na tela de manutenção..."
         )
-        await selecionar_competencia_na_tela(page, competencia)
-        registrar_evento_execucao(
-            f"Competência selecionada na tela: {competencia.rotulo}",
-            "ISS Fortaleza",
-        )
+        selecionar_competencia_na_tela_richfaces(driver, competencia)
 
+        # Aciona a consulta da competência
         print("Consultando a competência selecionada...")
-        await clicar_por_id_com_fallback(page, "manterEscrituracaoForm:btnConsultar")
+        _clicar_por_id(driver, "manterEscrituracaoForm:btnConsultar")
         registrar_evento_execucao("Botão Consultar acionado", "ISS Fortaleza")
-        await page.locator("#manterEscrituracaoForm\\:dataTable\\:0\\:linkEscriturar").wait_for(
-            state="visible",
-            timeout=120000,
-        )
 
+        # Loop para lidar com competências sem botão Escriturar habilitado
+        while True:
+            botao_escriturar_habilitado = aguardar_botao_escriturar(driver)
+            if botao_escriturar_habilitado:
+                break
+
+            mensagem_sem_escriturar = (
+                f"A competência {competencia.rotulo} está desabilitada para escriturar. "
+                "Escolha outro mês para continuar a automação."
+            )
+            print(mensagem_sem_escriturar)
+            registrar_evento_execucao(mensagem_sem_escriturar, "ISS Fortaleza")
+
+            if not sys.stdin.isatty():
+                raise CompetenciaSemEscriturarDisponivelError(mensagem_sem_escriturar)
+
+            competencia = solicitar_nova_competencia_para_repetir(competencia)
+            print(
+                f"Reiniciando a seleção da competência {competencia.nome_mes} {competencia.ano} "
+                "a partir dos campos De e Até..."
+            )
+            registrar_evento_execucao(
+                f"Nova competência informada pelo usuário para retry: {competencia.rotulo}",
+                "ISS Fortaleza",
+            )
+            selecionar_competencia_na_tela_richfaces(driver, competencia)
+            _clicar_por_id(driver, "manterEscrituracaoForm:btnConsultar")
+            registrar_evento_execucao("Botão Consultar acionado", "ISS Fortaleza")
+
+        # Abre o formulário de escrituração
         print("Abrindo a rotina de escrituração...")
-        await clicar_por_id_com_fallback(page, "manterEscrituracaoForm:dataTable:0:linkEscriturar")
+        _clicar_por_id(driver, "manterEscrituracaoForm:dataTable:0:linkEscriturar")
         registrar_evento_execucao("Botão Escriturar acionado", "ISS Fortaleza")
-        await page.wait_for_timeout(1000)
+        aguardar_tela_escrituracao_fiscal(driver)
+        registrar_evento_execucao("Tela Escrituração Fiscal aberta", "ISS Fortaleza")
 
+        # Clica na aba Serviços Tomados
         print("Selecionando a aba Serviços Tomados...")
-        await clicar_aba_por_texto(page, "Serviços Tomados")
+        clicar_aba_servicos_tomados(driver)
         registrar_evento_execucao("Aba Serviços Tomados acionada", "ISS Fortaleza")
 
-        await page.locator("#servico_tomado_form\\:seamj_id849").wait_for(
-            state="visible",
-            timeout=120000,
+        # Aguarda e clica no botão Digitar Documento
+        WebDriverWait(driver, 120).until(
+            EC.visibility_of_element_located((By.ID, "servico_tomado_form:seamj_id849"))
         )
-
         print("Abrindo Digitar Documento...")
-        await clicar_por_id_com_fallback(page, "servico_tomado_form:seamj_id849")
+        _clicar_por_id(driver, "servico_tomado_form:seamj_id849")
         registrar_evento_execucao("Tela Digitar Documento aberta", "ISS Fortaleza")
-        await page.locator("#digitarDocumentoForm\\:tipoPesquisaTomadorRb\\:1").wait_for(
-            state="visible",
-            timeout=120000,
-        )
-        await page.wait_for_timeout(500)
-        await pausar_para_depuracao(
+        aguardar_tela_digitar_documento(driver)
+        time.sleep(0.5)
+        _pausar_para_depuracao(
+            driver,
             depuracao,
             "A tela Digitar Documento está aberta e pronta para o próximo clique.",
         )
@@ -919,14 +1406,28 @@ async def executar_fluxo_iss(
             f"A planilha possui {len(documentos)} linha(s) válida(s). O fluxo vai tentar o primeiro "
             "prestador encontrado e registrar em log os CNPJs sem razão social."
         )
+
+        # Itera os prestadores da planilha até encontrar um válido
         documento: DocumentoPortalISS | None = None
         for indice, candidato in enumerate(documentos, start=1):
+            # Imunidade para notas emitidas pela própria Prefeitura de Fortaleza
+            prefeitura_normalizada = normalizar_texto(candidato.prefeitura).upper()
+            if prefeitura_normalizada == "PREFEITURA MUNICIPAL DE FORTALEZA":
+                mensagem_log = (
+                    f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
+                    f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
+                    f"IGNORADO: Nota emitida pela Prefeitura de Fortaleza"
+                )
+                registrar_log_funcao2(caminho_log, mensagem_log)
+                print(f"Linha {indice}/{len(documentos)} ignorada: Nota da Prefeitura de Fortaleza.")
+                continue
+
             print(
                 f"Tentando localizar o prestador da linha {indice}/{len(documentos)}: "
                 f"{candidato.cnpj_prestador}"
             )
             try:
-                await selecionar_prestador(page, candidato.cnpj_prestador, depuracao=depuracao)
+                selecionar_prestador(driver, candidato.cnpj_prestador, depuracao=depuracao)
             except PrestadorNaoEncontradoError as exc:
                 mensagem_log = (
                     f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
@@ -956,32 +1457,56 @@ async def executar_fluxo_iss(
         print(
             "Selecionando o prestador e preenchendo a aba Serviço com a linha encontrada na planilha..."
         )
-        await clicar_visivelmente(page, "Serviço")
-        registrar_evento_execucao("Aba Serviço acionada", "ISS Fortaleza")
-        await page.wait_for_timeout(1000)
-        await pausar_para_depuracao(
+        _pausar_para_depuracao(
+            driver,
             depuracao,
-            "A aba Serviço será preenchida agora com a linha já localizada.",
+            "O formulário da aba Serviço será preenchido agora com a linha já localizada.",
         )
-        await preencher_documento_servico(page, documento, depuracao=depuracao)
+        preencher_documento_servico(driver, documento, depuracao=depuracao)
 
         print()
         print("A aba Serviço foi preenchida visivelmente no navegador.")
         print("A gravação do documento ainda não será automatizada, conforme sua orientação.")
         print("Revise a tela no navegador e, se quiser encerrar, volte ao terminal.")
         input("Pressione Enter para encerrar esta sessão automatizada e manter a tela aberta...")
+
     finally:
-        await context.close()
-        await browser.close()
-        await playwright.stop()
+        # Mantém o navegador aberto em modo de sessão persistente; fecha nos demais casos
+        if not reutilizar_navegador:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        else:
+            registrar_evento_execucao(
+                "Sessão persistente da função 2 preservada para reutilização em nova execução",
+                "ISS Fortaleza",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Ponto de entrada síncrono exposto para a CLI
+# ---------------------------------------------------------------------------
 
 
 def executar_automacao_iss(
     caminho_xlsx: Path,
     competencia: CompetenciaTrabalho,
     depuracao: bool = False,
+    usar_inspector: bool = False,
+    aguardar_login_por_arquivo: bool = False,
+    caminho_confirmacao_login: Path | None = None,
+    reutilizar_navegador: bool = False,
+    perfil_navegador: Path = PERFIL_CHROME_FUNCAO2_PADRAO,
+    porta_debug_navegador: int = PORTA_DEBUG_CHROME_PADRAO,
 ) -> None:
-    """Ponto de entrada síncrono para a opção 2 da CLI."""
+    """Ponto de entrada síncrono para a opção 2 da CLI.
+
+    O parâmetro `usar_inspector` não é mais aplicável com Selenium e é mantido
+    apenas para compatibilidade de assinatura com o código da CLI.
+    O parâmetro `porta_debug_navegador` foi removido do fluxo ativo pois o
+    Selenium gerencia o driver de forma nativa; é mantido para compatibilidade.
+    """
 
     registrar_evento_execucao(
         f"Automação da ISS solicitada com planilha {caminho_xlsx.resolve()} e competência {competencia.rotulo}",
@@ -989,14 +1514,21 @@ def executar_automacao_iss(
     )
     documentos = carregar_documentos_xlsx(caminho_xlsx)
     caminho_log = caminho_xlsx.with_name(f"{caminho_xlsx.stem}_log_funcao2.txt")
-    asyncio.run(
-        executar_fluxo_iss(
-            documentos,
-            competencia,
-            caminho_log,
-            depuracao=depuracao,
-        )
+    executar_fluxo_iss(
+        documentos,
+        competencia,
+        caminho_log,
+        depuracao=depuracao,
+        aguardar_login_por_arquivo=aguardar_login_por_arquivo,
+        caminho_confirmacao_login=caminho_confirmacao_login,
+        reutilizar_navegador=reutilizar_navegador,
+        perfil_navegador=perfil_navegador,
     )
+
+
+# ---------------------------------------------------------------------------
+# Extração avulsa do portal (funcionalidade auxiliar mantida)
+# ---------------------------------------------------------------------------
 
 
 def _limpar_texto_exibido(texto: str | None) -> str:
@@ -1005,188 +1537,47 @@ def _limpar_texto_exibido(texto: str | None) -> str:
     return " ".join((texto or "").split()).strip()
 
 
-async def _coletar_textos_de_frames(page: Page) -> list[dict[str, str]]:
-    """Captura o texto visível dos frames para não perder conteúdo carregado em iframe."""
-
-    frames: list[dict[str, str]] = []
-    for indice, frame in enumerate(page.frames, start=1):
-        try:
-            texto = await frame.locator("body").inner_text(timeout=5000)
-        except Exception:
-            continue
-
-        texto_limpo = _limpar_texto_exibido(texto)
-        if not texto_limpo:
-            continue
-
-        frames.append(
-            {
-                "indice": str(indice),
-                "url": frame.url,
-                "texto": texto_limpo,
-            }
-        )
-
-    return frames
-
-
-async def _coletar_links_visiveis(page: Page) -> list[dict[str, str]]:
-    """Lista os links visíveis da página para apoiar o diagnóstico do portal."""
-
-    links: list[dict[str, str]] = []
-    total = await page.locator("a").count()
-    for indice in range(total):
-        elemento = page.locator("a").nth(indice)
-        try:
-            if not await elemento.is_visible():
-                continue
-            texto = _limpar_texto_exibido(await elemento.inner_text(timeout=2000))
-            href = await elemento.get_attribute("href") or ""
-        except Exception:
-            continue
-
-        if not texto and not href:
-            continue
-
-        links.append(
-            {
-                "indice": str(len(links) + 1),
-                "texto": texto,
-                "href": href,
-            }
-        )
-
-    return links
-
-
-async def _coletar_elementos_visiveis(page: Page) -> list[dict[str, str]]:
-    """Captura campos e botões visíveis para documentar a tela atual do portal."""
-
-    seletor = "input, select, textarea, button"
-    elementos: list[dict[str, str]] = []
-    total = await page.locator(seletor).count()
-
-    for indice in range(total):
-        elemento = page.locator(seletor).nth(indice)
-        try:
-            if not await elemento.is_visible():
-                continue
-        except Exception:
-            continue
-
-        try:
-            dados = await elemento.evaluate(
-                """
-                (el) => {
-                  const tag = el.tagName.toLowerCase();
-                  const id = el.id || '';
-                  const name = el.name || '';
-                  const type = el.getAttribute('type') || '';
-                  const placeholder = el.getAttribute('placeholder') || '';
-                  const aria = el.getAttribute('aria-label') || '';
-                  const disabled = !!el.disabled;
-                  const checked = !!el.checked;
-                  const texto = tag === 'button' ? (el.innerText || '').trim() : '';
-                  const valor = typeof el.value === 'string' ? el.value : '';
-                  let selecionado = '';
-                  if (tag === 'select') {
-                    selecionado = Array.from(el.selectedOptions || [])
-                      .map((opcao) => (opcao.textContent || '').trim())
-                      .filter(Boolean)
-                      .join(' | ');
-                  }
-
-                  let rotulo = '';
-                  if (id) {
-                    const labelFor = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-                    if (labelFor) {
-                      rotulo = (labelFor.innerText || '').trim();
-                    }
-                  }
-                  if (!rotulo) {
-                    const labelPai = el.closest('label');
-                    if (labelPai) {
-                      rotulo = (labelPai.innerText || '').trim();
-                    }
-                  }
-
-                  return { tag, type, id, name, placeholder, aria, disabled, checked, texto, valor, selecionado, rotulo };
-                }
-                """
-            )
-        except Exception:
-            continue
-
-        elementos.append(
-            {
-                "indice": str(len(elementos) + 1),
-                "tag": str(dados.get("tag", "")),
-                "tipo": str(dados.get("type", "")),
-                "id": str(dados.get("id", "")),
-                "name": str(dados.get("name", "")),
-                "rotulo": str(dados.get("rotulo", "")),
-                "texto": str(dados.get("texto", "")),
-                "valor": str(dados.get("valor", "")),
-                "selecionado": str(dados.get("selecionado", "")),
-                "placeholder": str(dados.get("placeholder", "")),
-                "aria_label": str(dados.get("aria", "")),
-                "checked": "sim" if dados.get("checked") else "nao",
-                "disabled": "sim" if dados.get("disabled") else "nao",
-            }
-        )
-
-    return elementos
-
-
-async def _coletar_tabelas_visiveis(page: Page) -> list[dict[str, object]]:
-    """Lê as tabelas visíveis da página para exportar a grade apresentada ao usuário."""
-
-    return await page.evaluate(
-        """
-        () => {
-          const visivel = (el) => !!(el && el.getClientRects && el.getClientRects().length);
-
-          return Array.from(document.querySelectorAll('table'))
-            .filter(visivel)
-            .map((table, indice) => {
-              const legenda = (table.querySelector('caption')?.innerText || '').trim();
-              const linhas = Array.from(table.querySelectorAll('tr'))
-                .map((linha) => Array.from(linha.querySelectorAll('th,td')).map((celula) => (celula.innerText || '').replace(/\\s+/g, ' ').trim()))
-                .filter((linha) => linha.some(Boolean));
-
-              return {
-                indice: indice + 1,
-                legenda,
-                linhas,
-              };
-            });
-        }
-        """
-    )
-
-
-async def extrair_dados_da_pagina_iss(page: Page) -> dict[str, object]:
+def extrair_dados_da_pagina_iss(driver: WebDriver) -> dict[str, object]:
     """Coleta o conteúdo visível da tela logada para exportação e análise posterior."""
 
-    titulo = await page.title()
-    url = page.url
+    titulo = driver.title
+    url = driver.current_url
 
     try:
-        texto_bruto = await page.locator("body").inner_text(timeout=10000)
+        texto_bruto = driver.find_element(By.TAG_NAME, "body").text
     except Exception:
         texto_bruto = ""
 
-    dados = {
+    dados: dict[str, object] = {
         "titulo": titulo,
         "url": url,
         "extraido_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "texto_visivel": [linha.strip() for linha in texto_bruto.splitlines() if linha.strip()],
-        "frames": await _coletar_textos_de_frames(page),
-        "tabelas": await _coletar_tabelas_visiveis(page),
-        "elementos": await _coletar_elementos_visiveis(page),
-        "links": await _coletar_links_visiveis(page),
+        "elementos": _coletar_elementos_visiveis(driver),
     }
     return dados
+
+
+def _coletar_elementos_visiveis(driver: WebDriver) -> list[dict[str, str]]:
+    """Captura campos e botões visíveis para documentar a tela atual do portal."""
+
+    elementos: list[dict[str, str]] = []
+    for tag in ("input", "select", "textarea", "button"):
+        for el in driver.find_elements(By.TAG_NAME, tag):
+            try:
+                if not el.is_displayed():
+                    continue
+                elementos.append({
+                    "tag": tag,
+                    "id": el.get_attribute("id") or "",
+                    "name": el.get_attribute("name") or "",
+                    "type": el.get_attribute("type") or "",
+                    "value": el.get_attribute("value") or "",
+                    "texto": el.text or "",
+                })
+            except StaleElementReferenceException:
+                continue
+    return elementos
 
 
 def _aplicar_cabecalho(aba) -> None:
@@ -1197,8 +1588,18 @@ def _aplicar_cabecalho(aba) -> None:
         celula.fill = PatternFill("solid", fgColor="1F4E78")
 
 
+def ajustar_largura_colunas(aba) -> None:
+    """Ajusta a largura das colunas da aba para facilitar a leitura."""
+
+    for coluna in aba.columns:
+        largura_max = max(
+            (len(str(celula.value)) if celula.value else 0) for celula in coluna
+        )
+        aba.column_dimensions[coluna[0].column_letter].width = min(largura_max + 4, 80)
+
+
 def exportar_extracao_iss(dados: dict[str, object], destino: Path) -> None:
-    """Exporta a página extraída para XLSX com abas auxiliares de diagnóstico."""
+    """Exporta a página extraída para XLSX."""
 
     wb = Workbook()
 
@@ -1208,11 +1609,8 @@ def exportar_extracao_iss(dados: dict[str, object], destino: Path) -> None:
     aba_resumo.append(["Título", dados.get("titulo", "")])
     aba_resumo.append(["URL", dados.get("url", "")])
     aba_resumo.append(["Extraído em", dados.get("extraido_em", "")])
-    aba_resumo.append(["Quantidade de linhas de texto", len(dados.get("texto_visivel", []))])
-    aba_resumo.append(["Quantidade de frames", len(dados.get("frames", []))])
-    aba_resumo.append(["Quantidade de tabelas", len(dados.get("tabelas", []))])
-    aba_resumo.append(["Quantidade de elementos", len(dados.get("elementos", []))])
-    aba_resumo.append(["Quantidade de links", len(dados.get("links", []))])
+    aba_resumo.append(["Linhas de texto", len(dados.get("texto_visivel", []))])
+    aba_resumo.append(["Elementos", len(dados.get("elementos", []))])
     _aplicar_cabecalho(aba_resumo)
 
     aba_texto = wb.create_sheet("Texto")
@@ -1221,72 +1619,18 @@ def exportar_extracao_iss(dados: dict[str, object], destino: Path) -> None:
         aba_texto.append([indice, linha])
     _aplicar_cabecalho(aba_texto)
 
-    aba_frames = wb.create_sheet("Frames")
-    aba_frames.append(["Frame", "URL", "Conteúdo"])
-    for frame in dados.get("frames", []):
-        aba_frames.append([
-            frame.get("indice", ""),
-            frame.get("url", ""),
-            frame.get("texto", ""),
-        ])
-    _aplicar_cabecalho(aba_frames)
-
-    aba_tabelas = wb.create_sheet("Tabelas")
-    aba_tabelas.append(["Tabela", "Linha", "Coluna", "Valor"])
-    for tabela in dados.get("tabelas", []):
-        indice_tabela = tabela.get("indice", "")
-        legenda = tabela.get("legenda", "")
-        linhas = tabela.get("linhas", [])
-        if legenda:
-            aba_tabelas.append([indice_tabela, 0, 0, f"Legenda: {legenda}"])
-        for indice_linha, linha in enumerate(linhas, start=1):
-            for indice_coluna, valor in enumerate(linha, start=1):
-                aba_tabelas.append([indice_tabela, indice_linha, indice_coluna, valor])
-    _aplicar_cabecalho(aba_tabelas)
-
     aba_elementos = wb.create_sheet("Elementos")
-    aba_elementos.append(
-        [
-            "Indice",
-            "Tag",
-            "Tipo",
-            "ID",
-            "Name",
-            "Rotulo",
-            "Texto",
-            "Valor",
-            "Selecionado",
-            "Placeholder",
-            "Aria label",
-            "Checked",
-            "Disabled",
-        ]
-    )
-    for elemento in dados.get("elementos", []):
-        aba_elementos.append(
-            [
-                elemento.get("indice", ""),
-                elemento.get("tag", ""),
-                elemento.get("tipo", ""),
-                elemento.get("id", ""),
-                elemento.get("name", ""),
-                elemento.get("rotulo", ""),
-                elemento.get("texto", ""),
-                elemento.get("valor", ""),
-                elemento.get("selecionado", ""),
-                elemento.get("placeholder", ""),
-                elemento.get("aria_label", ""),
-                elemento.get("checked", ""),
-                elemento.get("disabled", ""),
-            ]
-        )
+    aba_elementos.append(["Tag", "ID", "Name", "Type", "Value", "Texto"])
+    for el in dados.get("elementos", []):
+        aba_elementos.append([
+            el.get("tag", ""),
+            el.get("id", ""),
+            el.get("name", ""),
+            el.get("type", ""),
+            el.get("value", ""),
+            el.get("texto", ""),
+        ])
     _aplicar_cabecalho(aba_elementos)
-
-    aba_links = wb.create_sheet("Links")
-    aba_links.append(["Indice", "Texto", "Href"])
-    for link in dados.get("links", []):
-        aba_links.append([link.get("indice", ""), link.get("texto", ""), link.get("href", "")])
-    _aplicar_cabecalho(aba_links)
 
     for aba in wb.worksheets:
         ajustar_largura_colunas(aba)
@@ -1298,33 +1642,30 @@ def exportar_extracao_iss(dados: dict[str, object], destino: Path) -> None:
 def executar_extracao_portal_iss(destino_xlsx: Path = Path("iss_extracao.xlsx")) -> None:
     """Ponto de entrada síncrono para extrair o conteúdo visível do portal logado."""
 
-    async def _executar() -> None:
+    registrar_evento_execucao(
+        f"Extração avulsa do portal ISS iniciada com destino {destino_xlsx.resolve()}",
+        "ISS Fortaleza",
+    )
+    driver = abrir_navegador_visivel()
+    try:
+        aguardar_login_manual(driver)
+
+        print()
+        print("Quando estiver na tela exata da qual deseja extrair os dados, volte ao terminal.")
+        input("Pressione Enter para capturar a página atual...")
+
+        time.sleep(1)
+        dados = extrair_dados_da_pagina_iss(driver)
+        exportar_extracao_iss(dados, destino_xlsx)
         registrar_evento_execucao(
-            f"Extração avulsa do portal ISS iniciada com destino {destino_xlsx.resolve()}",
+            f"Extração avulsa concluída com sucesso em {destino_xlsx.resolve()}",
             "ISS Fortaleza",
         )
-        playwright, browser, context, page = await abrir_navegador_visivel(URL_ISS_FORTALEZA)
+
+        print(f"Extração concluída com sucesso: {destino_xlsx.resolve()}")
+        input("Pressione Enter para encerrar esta sessão automatizada e fechar o navegador...")
+    finally:
         try:
-            await aguardar_login_manual(page)
-
-            print()
-            print("Quando estiver na tela exata da qual deseja extrair os dados, volte ao terminal.")
-            input("Pressione Enter para capturar a página atual...")
-
-            await page.wait_for_timeout(1000)
-            dados = await extrair_dados_da_pagina_iss(page)
-            exportar_extracao_iss(dados, destino_xlsx)
-            registrar_evento_execucao(
-                f"Extração avulsa concluída com sucesso em {destino_xlsx.resolve()}",
-                "ISS Fortaleza",
-            )
-
-            print(f"Extração concluída com sucesso: {destino_xlsx.resolve()}")
-            print("O XLSX contém resumo, texto visível, frames, tabelas, elementos e links.")
-            input("Pressione Enter para encerrar esta sessão automatizada e fechar o navegador...")
-        finally:
-            await context.close()
-            await browser.close()
-            await playwright.stop()
-
-    asyncio.run(_executar())
+            driver.quit()
+        except Exception:
+            pass
