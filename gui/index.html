@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html class="dark" lang="pt-BR">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>BeAContab - Automação Fiscal</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Outfit:wght@600;700;900&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+              "background": "#10131a",
+              "surface": "#10131a",
+              "surface-container-low": "#191b23",
+              "surface-container-highest": "#32353c",
+              "on-background": "#e1e2ec",
+              "on-surface": "#e1e2ec",
+              "on-surface-variant": "#c2c6d6",
+              "primary": "#adc6ff",
+              "on-primary": "#002e6a",
+              "secondary": "#4cd7f6",
+              "on-secondary": "#003640",
+              "secondary-container": "#03b5d3",
+              "on-secondary-container": "#00424e",
+              "tertiary": "#ffb786",
+              "error": "#ffb4ab",
+              "error-container": "#93000a",
+            },
+            "fontFamily": {
+              "headline-xl": ["Outfit"],
+              "headline-lg": ["Outfit"],
+              "headline-lg-mobile": ["Outfit"],
+              "body-md": ["Inter"],
+              "body-sm": ["Inter"],
+              "mono-console": ["JetBrains Mono"],
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        .glass-card, .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+        .neon-pulse { animation: pulse-cyan 2s infinite; }
+        @keyframes pulse-cyan {
+            0% { box-shadow: 0 0 0 0 rgba(76, 215, 246, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(76, 215, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 215, 246, 0); }
+        }
+        .progress-pulse {
+            position: relative; overflow: hidden;
+        }
+        .progress-pulse::after {
+            content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            animation: progress-slide 1.5s infinite;
+        }
+        @keyframes progress-slide { 100% { left: 100%; } }
+        .custom-scrollbar::-webkit-scrollbar, .terminal-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar-thumb, .terminal-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1); border-radius: 10px;
+        }
+        .neon-glow-cyan { box-shadow: 0 0 15px rgba(6, 182, 212, 0.4); }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .blink { animation: blink 1s infinite; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden selection:bg-secondary/30">
+
+<!-- Sidebar -->
+<aside class="w-[280px] h-screen fixed left-0 top-0 bg-surface-container-low/50 backdrop-blur-xl border-r border-white/10 shadow-xl flex flex-col p-6 z-50">
+    <div class="flex items-center gap-3 mb-10">
+        <div>
+            <h1 class="font-headline-lg text-[24px] font-bold text-primary leading-tight">BeAContab</h1>
+            <p class="text-xs text-on-surface-variant font-medium tracking-widest uppercase">Fiscal Automation</p>
+        </div>
+    </div>
+    
+    <nav class="flex-1 space-y-2">
+        <a id="btn-aba-extracao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-secondary font-bold border-r-2 border-secondary bg-white/5 transition-colors">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">psychology</span>
+            <span>Extração & Auditoria IA</span>
+        </a>
+        <a id="btn-aba-automacao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
+            <span class="material-symbols-outlined">robot_2</span>
+            <span>Automação ISS Fortaleza</span>
+        </a>
+    </nav>
+</aside>
+
+<!-- Top Navbar -->
+<header class="docked full-width top-0 sticky z-40 bg-surface/30 backdrop-blur-md border-b border-white/10 flex justify-between items-center h-16 px-6 ml-[280px]">
+    <div class="flex items-center gap-4">
+        <h2 id="header-title" class="font-headline-lg text-[20px] font-black text-primary">Painel Central</h2>
+    </div>
+    <div class="flex items-center gap-6">
+        <button onclick="window.pywebview.api.fechar_app()" class="text-on-surface-variant hover:text-error transition-colors">
+            <span class="material-symbols-outlined">close</span>
+        </button>
+    </div>
+</header>
+
+<!-- Main Content: Extração -->
+<main id="aba-extracao" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
+    <div class="flex items-end justify-between">
+        <div class="space-y-1">
+            <div class="flex items-center gap-3">
+                <h3 class="font-headline-xl text-[32px] font-bold">Extração & Auditoria IA</h3>
+                <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/15 text-secondary rounded-full text-xs font-bold neon-pulse">
+                    <span class="w-2 h-2 rounded-full bg-secondary"></span>
+                    IA Ativa
+                </span>
+            </div>
+            <p class="text-on-surface-variant">Processamento inteligente de documentos fiscais via Gemini AI</p>
+        </div>
+    </div>
+
+    <!-- Instructions Menu -->
+    <div class="glass-card p-4 rounded-xl border border-secondary/30 bg-secondary/5">
+        <h4 class="font-bold text-secondary mb-2 flex items-center gap-2">
+            <span class="material-symbols-outlined">info</span>
+            Como obter sua chave de API (Google Gemini)
+        </h4>
+        <p class="text-sm text-on-surface-variant mb-2">Para utilizar a IA de extração (e opcionalmente na automação), você precisa de uma API Key gratuita do Google Gemini.</p>
+        <ol class="list-decimal list-inside text-sm text-on-surface-variant space-y-1">
+            <li>Acesse <a href="#" onclick="window.pywebview.api.abrir_link('https://aistudio.google.com/app/apikey')" class="text-primary underline">Google AI Studio</a> e faça login.</li>
+            <li>Clique em <strong>"Get API key"</strong> e depois em <strong>"Create API key"</strong>.</li>
+            <li>Copie a chave gerada e cole no campo abaixo.</li>
+        </ol>
+    </div>
+
+    <!-- Automation Controls -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1 glass-card p-6 rounded-2xl space-y-6">
+            <h4 class="font-bold flex items-center gap-2">
+                <span class="material-symbols-outlined text-secondary">settings_input_component</span>
+                Configurações
+            </h4>
+            <div class="space-y-4">
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Pasta Origem (PDFs)</label>
+                    <div class="flex gap-2">
+                        <input id="input-pasta-origem" class="flex-1 bg-black/20 border border-white/10 rounded-lg py-2 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a pasta"/>
+                        <button onclick="selecionarPastaOrigem()" class="bg-surface-container-highest px-4 rounded-lg text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Pasta Destino (Excel)</label>
+                    <div class="flex gap-2">
+                        <input id="input-pasta-destino" class="flex-1 bg-black/20 border border-white/10 rounded-lg py-2 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a pasta"/>
+                        <button onclick="selecionarPastaDestino()" class="bg-surface-container-highest px-4 rounded-lg text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest text-secondary">Chave de API do Gemini (Obrigatório)</label>
+                    <input id="api-key-extracao" class="w-full bg-black/20 border border-secondary/50 focus:border-secondary rounded-lg py-2 px-3 text-sm font-mono-console outline-none text-white" type="password" placeholder="AIzaSy..."/>
+                </div>
+            </div>
+            <div class="pt-4 border-t border-white/10">
+                <button id="btn-iniciar-extracao" onclick="iniciarExtracao()" class="w-full h-14 bg-gradient-to-r from-primary to-secondary text-on-primary rounded-xl font-black flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all group">
+                    <span class="material-symbols-outlined group-hover:translate-y-[-2px] transition-transform">rocket_launch</span>
+                    Iniciar Extração com Gemini
+                </button>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 glass-card p-6 rounded-2xl flex flex-col">
+            <div class="flex items-center justify-between mb-6">
+                <h4 class="font-bold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-secondary">analytics</span>
+                    Monitoramento de Execução
+                </h4>
+            </div>
+            <div class="flex-1 bg-black/40 rounded-xl border border-white/5 p-4 font-mono-console text-xs space-y-1.5 custom-scrollbar overflow-y-auto max-h-[300px]" id="log-extracao">
+                <p class="text-on-surface-variant opacity-60">Aguardando início...</p>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Main Content: Automação -->
+<main id="aba-automacao" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6 hidden">
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+            <h1 class="font-headline-xl text-[32px] font-bold text-on-surface">Automação ISS Fortaleza</h1>
+            <div class="flex items-center gap-3 mt-2">
+                <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-full">
+                    <span class="w-2 h-2 rounded-full bg-secondary blink"></span>
+                    <span class="text-secondary font-bold text-xs">Robô Pronto</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-12 gap-6">
+        <div class="col-span-12 lg:col-span-4 space-y-6">
+            <section class="glass-panel rounded-2xl p-6 border-white/5 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
+                <h3 class="font-headline-lg-mobile text-[20px] font-bold text-on-surface mb-6 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-secondary">tune</span>
+                    Parâmetros da Tarefa
+                </h3>
+                <div class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Arquivo Excel Origem</label>
+                        <div class="flex gap-2">
+                            <input id="input-excel-automacao" class="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a planilha"/>
+                            <button onclick="selecionarExcelAutomacao()" class="bg-surface-container-highest px-4 rounded-xl text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest text-primary">Chave API (Opcional - Correção CNAE)</label>
+                        <input id="api-key-automacao" class="w-full bg-black/40 border border-primary/30 focus:border-primary rounded-xl py-3 px-4 text-sm font-mono-console outline-none text-white" type="password" placeholder="AIzaSy..."/>
+                    </div>
+                    <button id="btn-iniciar-automacao" onclick="iniciarAutomacao()" class="w-full bg-secondary-container text-on-secondary-container py-4 rounded-xl font-bold text-lg hover:scale-[1.02] active:scale-95 transition-all neon-glow-cyan flex items-center justify-center gap-3">
+                        <span class="material-symbols-outlined font-bold">play_arrow</span>
+                        Iniciar Escrituração
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <div class="col-span-12 lg:col-span-8">
+            <section class="h-full flex flex-col glass-panel rounded-2xl border-white/5 overflow-hidden">
+                <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-mono-console text-on-surface-variant">console_output.log</span>
+                    </div>
+                </div>
+                <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll overflow-y-auto h-[450px]" id="log-automacao">
+                    <p class="text-on-surface-variant opacity-60">Initializing BeAContab Shell...</p>
+                </div>
+            </section>
+        </div>
+    </div>
+</main>
+
+<script>
+    // Tab Navigation Logic
+    const btnExtracao = document.getElementById('btn-aba-extracao');
+    const btnAutomacao = document.getElementById('btn-aba-automacao');
+    const abaExtracao = document.getElementById('aba-extracao');
+    const abaAutomacao = document.getElementById('aba-automacao');
+    const headerTitle = document.getElementById('header-title');
+
+    function setActiveTab(tab) {
+        btnExtracao.classList.remove('text-secondary', 'border-secondary', 'bg-white/5');
+        btnExtracao.classList.add('text-on-surface-variant');
+        btnAutomacao.classList.remove('text-secondary', 'border-secondary', 'bg-white/5');
+        btnAutomacao.classList.add('text-on-surface-variant');
+
+        abaExtracao.classList.add('hidden');
+        abaAutomacao.classList.add('hidden');
+
+        if (tab === 'extracao') {
+            btnExtracao.classList.add('text-secondary', 'border-secondary', 'bg-white/5');
+            btnExtracao.classList.remove('text-on-surface-variant');
+            abaExtracao.classList.remove('hidden');
+            headerTitle.innerText = "Extração & Auditoria IA";
+        } else {
+            btnAutomacao.classList.add('text-secondary', 'border-secondary', 'bg-white/5');
+            btnAutomacao.classList.remove('text-on-surface-variant');
+            abaAutomacao.classList.remove('hidden');
+            headerTitle.innerText = "Automação ISS Fortaleza";
+        }
+    }
+
+    btnExtracao.addEventListener('click', () => setActiveTab('extracao'));
+    btnAutomacao.addEventListener('click', () => setActiveTab('automacao'));
+
+    // Synchronize API Key inputs
+    document.getElementById('api-key-extracao').addEventListener('input', (e) => {
+        document.getElementById('api-key-automacao').value = e.target.value;
+    });
+    document.getElementById('api-key-automacao').addEventListener('input', (e) => {
+        document.getElementById('api-key-extracao').value = e.target.value;
+    });
+
+    // API Integration wrappers
+    async function selecionarPastaOrigem() {
+        if(window.pywebview) {
+            const folder = await window.pywebview.api.selecionar_pasta();
+            if(folder) document.getElementById('input-pasta-origem').value = folder;
+        }
+    }
+
+    async function selecionarPastaDestino() {
+        if(window.pywebview) {
+            const folder = await window.pywebview.api.selecionar_pasta();
+            if(folder) document.getElementById('input-pasta-destino').value = folder;
+        }
+    }
+
+    async function selecionarExcelAutomacao() {
+        if(window.pywebview) {
+            const file = await window.pywebview.api.selecionar_arquivo();
+            if(file) document.getElementById('input-excel-automacao').value = file;
+        }
+    }
+
+    function addLogExtracao(msg, isError=false) {
+        const logContainer = document.getElementById('log-extracao');
+        const p = document.createElement('p');
+        p.innerText = msg;
+        if(isError) p.className = "text-error";
+        else p.className = "text-secondary";
+        logContainer.appendChild(p);
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function addLogAutomacao(msg, isError=false) {
+        const logContainer = document.getElementById('log-automacao');
+        const p = document.createElement('p');
+        p.innerText = msg;
+        if(isError) p.className = "text-error";
+        else p.className = "text-[#a3defe]";
+        logContainer.appendChild(p);
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    // Expose log functions to python
+    window.log_extracao = addLogExtracao;
+    window.log_automacao = addLogAutomacao;
+
+    async function iniciarExtracao() {
+        const inputOrigem = document.getElementById('input-pasta-origem').value;
+        const inputDestino = document.getElementById('input-pasta-destino').value;
+        const apiKey = document.getElementById('api-key-extracao').value;
+        
+        if (!inputOrigem || !inputDestino) {
+            addLogExtracao("Selecione a pasta de origem e destino.", true);
+            return;
+        }
+        if (!apiKey) {
+            addLogExtracao("A Chave de API do Gemini é obrigatória para esta função.", true);
+            return;
+        }
+
+        document.getElementById('btn-iniciar-extracao').disabled = true;
+        addLogExtracao("Iniciando motor de extração...");
+        
+        if(window.pywebview) {
+            await window.pywebview.api.iniciar_extracao(inputOrigem, inputDestino, apiKey);
+        }
+        document.getElementById('btn-iniciar-extracao').disabled = false;
+    }
+
+    async function iniciarAutomacao() {
+        const inputExcel = document.getElementById('input-excel-automacao').value;
+        const apiKey = document.getElementById('api-key-automacao').value;
+        const mes = document.getElementById('select-mes-automacao').value;
+        const ano = document.getElementById('select-ano-automacao').value;
+        const competencia = `${mes}/${ano}`;
+        
+        if (!inputExcel) {
+            addLogAutomacao("Selecione o arquivo Excel de origem.", true);
+            return;
+        }
+
+        document.getElementById('btn-iniciar-automacao').disabled = true;
+        addLogAutomacao(`Iniciando portal da ISS Fortaleza (Competência: ${competencia})...`);
+        
+        if(window.pywebview) {
+            await window.pywebview.api.iniciar_automacao(inputExcel, apiKey, competencia);
+        }
+        document.getElementById('btn-iniciar-automacao').disabled = false;
+    }
+</script>
+</body>
+</html>

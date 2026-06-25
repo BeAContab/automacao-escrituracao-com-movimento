@@ -311,13 +311,14 @@ def _refinar_campos_por_imagem(caminho_pdf: Path, cliente: Any) -> dict[str, str
 def extrair_campos_gemini(
     caminho_pdf: Path,
     texto_local: str,
+    api_key: str | None = None,
 ) -> dict[str, str]:
     """Consulta o Gemini para extrair todos os campos da NF."""
 
     if genai is None or types is None:
         return {}
 
-    chave = _obter_chave_gemini()
+    chave = api_key or _obter_chave_gemini()
     if not chave:
         return {}
 

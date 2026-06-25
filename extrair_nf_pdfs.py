@@ -287,9 +287,9 @@ def determinar_natureza_operacao(cidade_local_prestacao: str) -> str:
 
 
 
-def extrair_nota_fiscal(caminho_pdf: Path) -> NotaFiscalExtraida:
+def extrair_nota_fiscal(caminho_pdf: Path, api_key: str = None) -> NotaFiscalExtraida:
     texto = ler_texto_pdf(caminho_pdf)
-    dados_gemini = extrair_campos_gemini(caminho_pdf, texto)
+    dados_gemini = extrair_campos_gemini(caminho_pdf, texto, api_key)
     
     prefeitura = dados_gemini.get("prefeitura", "")
     cnpj_prestador = dados_gemini.get("cnpj_prestador", "")

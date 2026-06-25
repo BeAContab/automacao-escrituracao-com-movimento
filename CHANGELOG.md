@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## [2.0.0] - 2026-06-25
+
+### Adicionado
+- Arquivos:
+  - `app.py`
+  - `gui/index.html`
+- Motivo: criação de um App Desktop Nativo (GUI) para substituir a interação exclusivamente por linha de comando, atendendo à necessidade do usuário de uma interface instalável (futuro `.exe`).
+- Impacto:
+  - Implementado o wrapper principal com `pywebview` no arquivo `app.py`.
+  - Criada a interface gráfica em `gui/index.html` (SPA) englobando as funcionalidades de Extração de NF (Aba 1) e Automação ISS Fortaleza (Aba 2), com design responsivo, tokens Lumina Automation e suporte nativo ao TailwindCSS via CDN.
+  - O aplicativo transmite os logs de processamento em tempo real diretamente para o painel de console da interface HTML através da injeção de dependência via Javascript (`window.pywebview.api`).
+  - Incluído menu de instruções de como obter a API Key na interface da primeira Aba.
+
+### Alterado
+- Arquivos:
+  - `gemini_extracao.py`
+  - `extrair_nf_pdfs.py`
+  - `requirements.txt`
+- Motivo: suporte à injeção dinâmica de chave da API pela interface gráfica.
+- Impacto:
+  - O parâmetro `api_key` agora pode ser passado ativamente da UI, contornando a exigência de usar exclusivamente arquivos `.env`.
+  - Adicionada a dependência `pywebview>=4.4.1` ao `requirements.txt`.
 ## [1.9.1] - 2026-06-25
 
 ### Adicionado
