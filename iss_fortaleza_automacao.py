@@ -41,7 +41,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-from tratamento_erros import registrar_evento_execucao
+from tratamento_erros import registrar_evento_execucao, configurar_pasta_logs
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -133,6 +133,15 @@ class DocumentoPortalISS:
     natureza_operacao: str
     iss_retido: str
     valor_servico: str
+    valor_deducoes: str = ""
+    descontos_incondicionados: str = ""
+    descontos_condicionados: str = ""
+    outras_retencoes: str = ""
+    ir: str = ""
+    pis_nao_retido: str = ""
+    cofins_nao_retido: str = ""
+    csrf: str = ""
+    inss: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +183,26 @@ def limpar_cnpj_para_digitacao(cnpj: str) -> str:
     """Retorna apenas os dígitos do CNPJ para uma digitação mais estável."""
 
     return re.sub(r"\D+", "", cnpj or "")
+
+
+def _formatar_celula_para_string_de_valor(valor: Any) -> str:
+    """Normaliza valores numéricos lidos do Excel para formato de string brasileiro."""
+    if valor is None:
+        return "0,00"
+    if isinstance(valor, (int, float)):
+        return f"{valor:.2f}".replace(".", ",")
+    
+    texto = str(valor).strip()
+    if not texto:
+        return "0,00"
+    # Se for string formatada em padrão americano com ponto decimal, ex: "1500.50"
+    if "." in texto and "," not in texto:
+        try:
+            val_f = float(texto)
+            return f"{val_f:.2f}".replace(".", ",")
+        except ValueError:
+            pass
+    return texto
 
 
 def limpar_valor_para_digitacao(valor: str) -> str:
@@ -358,6 +387,17 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
         if not any(valor is not None and str(valor).strip() for valor in linha):
             continue
 
+        valor_servico = _formatar_celula_para_string_de_valor(linha[colunas["VALOR_SERVICO"]]) if "VALOR_SERVICO" in colunas else "0,00"
+        valor_deducoes = _formatar_celula_para_string_de_valor(linha[colunas["VALOR_DEDUCOES"]]) if "VALOR_DEDUCOES" in colunas else "0,00"
+        descontos_incondicionados = _formatar_celula_para_string_de_valor(linha[colunas["DESCONTOS_INCONDICIONADOS"]]) if "DESCONTOS_INCONDICIONADOS" in colunas else "0,00"
+        descontos_condicionados = _formatar_celula_para_string_de_valor(linha[colunas["DESCONTOS_CONDICIONADOS"]]) if "DESCONTOS_CONDICIONADOS" in colunas else "0,00"
+        outras_retencoes = _formatar_celula_para_string_de_valor(linha[colunas["OUTRAS_RETENCOES"]]) if "OUTRAS_RETENCOES" in colunas else "0,00"
+        ir = _formatar_celula_para_string_de_valor(linha[colunas["IR"]]) if "IR" in colunas else "0,00"
+        pis_nao_retido = _formatar_celula_para_string_de_valor(linha[colunas["PIS_NAO_RETIDO"]]) if "PIS_NAO_RETIDO" in colunas else "0,00"
+        cofins_nao_retido = _formatar_celula_para_string_de_valor(linha[colunas["COFINS_NAO_RETIDO"]]) if "COFINS_NAO_RETIDO" in colunas else "0,00"
+        csrf = _formatar_celula_para_string_de_valor(linha[colunas["CSRF (CSLL + PIS + Cofins Retidos)"]]) if "CSRF (CSLL + PIS + Cofins Retidos)" in colunas else "0,00"
+        inss = _formatar_celula_para_string_de_valor(linha[colunas["INSS"]]) if "INSS" in colunas else "0,00"
+
         documentos.append(
             DocumentoPortalISS(
                 arquivo_pdf=str(linha[colunas["ARQUIVO_PDF"]] or ""),
@@ -371,7 +411,16 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 cidade_local_prestacao=str(linha[colunas["CIDADE_LOCAL_PRESTACAO"]] or ""),
                 natureza_operacao=str(linha[colunas["NATUREZA_OPERACAO"]] or ""),
                 iss_retido=str(linha[colunas["ISS_RETIDO"]] or ""),
-                valor_servico=str(linha[colunas["VALOR_SERVICO"]] or ""),
+                valor_servico=valor_servico,
+                valor_deducoes=valor_deducoes,
+                descontos_incondicionados=descontos_incondicionados,
+                descontos_condicionados=descontos_condicionados,
+                outras_retencoes=outras_retencoes,
+                ir=ir,
+                pis_nao_retido=pis_nao_retido,
+                cofins_nao_retido=cofins_nao_retido,
+                csrf=csrf,
+                inss=inss,
             )
         )
     return documentos
@@ -557,6 +606,36 @@ def _digitar_campo(
                 time.sleep(0.15)
 
             raise RuntimeError(f"O campo {seletor} não permaneceu com o valor esperado: {texto}")
+        except StaleElementReferenceException:
+            if tentativa == 2:
+                raise
+            time.sleep(0.5)
+
+
+def _definir_valor_instantaneo(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    texto: str,
+) -> None:
+    """Define o valor de um campo de texto instantaneamente executando JavaScript no navegador.
+
+    Isso é utilizado para campos de textos muito longos, como a descrição dos serviços,
+    evitando o gargalo de tempo da digitação caractere por caractere via Selenium.
+    Dispara os eventos 'input' e 'change' para garantir que os ouvintes de eventos da página
+    e o estado do JSF reconheçam a alteração do valor.
+    """
+    for tentativa in range(3):
+        try:
+            campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
+            driver.execute_script(
+                "arguments[0].value = arguments[1];"
+                "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));"
+                "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+                campo,
+                texto,
+            )
+            return
         except StaleElementReferenceException:
             if tentativa == 2:
                 raise
@@ -1116,6 +1195,28 @@ def preencher_modal_pesquisar_cnae(
     )
 
 
+def _digitar_campo_se_nao_zero(
+    driver: WebDriver,
+    seletor_id: str,
+    valor: str,
+) -> None:
+    """Preenche o campo apenas se o valor for numérico e diferente de zero."""
+    if not valor:
+        return
+
+    # Remove tudo que não for dígito para checar se é zero
+    digitos = re.sub(r"\D+", "", valor)
+    if not digitos or int(digitos) == 0:
+        return
+
+    _digitar_campo(
+        driver,
+        By.ID,
+        seletor_id,
+        limpar_valor_para_digitacao(valor),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Preenchimento da aba Serviço
 # ---------------------------------------------------------------------------
@@ -1202,8 +1303,8 @@ def preencher_documento_servico(
     # Preenche o modal de CNAE (com fallback via JavaScript)
     preencher_modal_pesquisar_cnae(driver, documento.id_cnae_final, depuracao=depuracao)
 
-    # Descrição do serviço
-    _digitar_campo(
+    # Descrição do serviço preenchida de forma instantânea via JS
+    _definir_valor_instantaneo(
         driver,
         By.ID,
         "digitarDocumentoForm:idDescricaoServico",
@@ -1250,13 +1351,18 @@ def preencher_documento_servico(
         "ISS Fortaleza",
     )
 
-    # Valor do serviço
-    _digitar_campo(
-        driver,
-        By.ID,
-        "digitarDocumentoForm:idValorServicoPrestado",
-        limpar_valor_para_digitacao(documento.valor_servico),
-    )
+    # Valor do serviço e retenções/deduções (somente preenche se não for zero)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idValorServicoPrestado", documento.valor_servico)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idValorDeducoes", documento.valor_deducoes)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idDescontosIncondicionados", documento.descontos_incondicionados)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idDescontosCondicionados", documento.descontos_condicionados)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idOutrasRetencoes", documento.outras_retencoes)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idIR", documento.ir)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idPis", documento.pis_nao_retido)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idConfins", documento.cofins_nao_retido)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idCSLL", documento.csrf)
+    _digitar_campo_se_nao_zero(driver, "digitarDocumentoForm:idINSS", documento.inss)
+
     registrar_evento_execucao(
         f"Aba Serviço preenchida com sucesso para a NF {documento.numero_nf}",
         "ISS Fortaleza",
@@ -1277,6 +1383,8 @@ def executar_fluxo_iss(
     caminho_confirmacao_login: Path | None = None,
     reutilizar_navegador: bool = False,
     perfil_navegador: Path = PERFIL_CHROME_FUNCAO2_PADRAO,
+    callback_progresso: Any = None,
+    executando_em_gui: bool = False,
 ) -> None:
     """Executa o fluxo visual completo do portal da ISS até o preenchimento do formulário."""
 
@@ -1403,14 +1511,33 @@ def executar_fluxo_iss(
         )
 
         print(
-            f"A planilha possui {len(documentos)} linha(s) válida(s). O fluxo vai tentar o primeiro "
-            "prestador encontrado e registrar em log os CNPJs sem razão social."
+            f"A planilha possui {len(documentos)} linha(s) válida(s). O fluxo iniciará o processamento em lote."
         )
 
-        # Itera os prestadores da planilha até encontrar um válido
-        documento: DocumentoPortalISS | None = None
+        pasta_log = caminho_log.parent
+        if pasta_log.name != "log":
+            pasta_log = pasta_log / "log"
+        pasta_log.mkdir(parents=True, exist_ok=True)
+        
+        # Limpa arquivos de logs anteriores para esta execução
+        for nome in ["log_escrituradas_sucesso.txt", "log_nao_cadastrados.txt", "log_prefeitura_fortaleza.txt"]:
+            caminho_antigo = pasta_log / nome
+            if caminho_antigo.exists():
+                try:
+                    caminho_antigo.unlink()
+                except Exception:
+                    pass
+
+        configurar_pasta_logs(pasta_log)
+        notas_sucesso: list[str] = []
+        notas_nao_cadastradas: list[str] = []
+
         for indice, candidato in enumerate(documentos, start=1):
-            # Imunidade para notas emitidas pela própria Prefeitura de Fortaleza
+            if callback_progresso:
+                try:
+                    callback_progresso(indice, len(documentos))
+                except Exception:
+                    pass
             prefeitura_normalizada = normalizar_texto(candidato.prefeitura).upper()
             if prefeitura_normalizada == "PREFEITURA MUNICIPAL DE FORTALEZA":
                 mensagem_log = (
@@ -1420,11 +1547,23 @@ def executar_fluxo_iss(
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
                 print(f"Linha {indice}/{len(documentos)} ignorada: Nota da Prefeitura de Fortaleza.")
+                
+                # Grava no log exclusivo de Fortaleza em tempo real
+                caminho_fortaleza = pasta_log / "log_prefeitura_fortaleza.txt"
+                try:
+                    if not caminho_fortaleza.exists():
+                        with open(caminho_fortaleza, "w", encoding="utf-8") as f:
+                            f.write("As seguintes notas fiscais foram ignoradas por terem sido emitidas pela Prefeitura Municipal de Fortaleza:\n\n")
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with open(caminho_fortaleza, "a", encoding="utf-8") as f:
+                        f.write(f"[{timestamp}] {candidato.arquivo_pdf} - CNPJ: {candidato.cnpj_prestador} - NF: {candidato.numero_nf}\n")
+                except Exception as exc_fort:
+                    print(f"Erro ao registrar log de Fortaleza: {exc_fort}")
                 continue
 
             print(
-                f"Tentando localizar o prestador da linha {indice}/{len(documentos)}: "
-                f"{candidato.cnpj_prestador}"
+                f"Processando linha {indice}/{len(documentos)}: "
+                f"{candidato.cnpj_prestador} - NF {candidato.numero_nf}"
             )
             try:
                 selecionar_prestador(driver, candidato.cnpj_prestador, depuracao=depuracao)
@@ -1435,40 +1574,73 @@ def executar_fluxo_iss(
                     f"{exc}"
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
-                print(
-                    f"Prestador não encontrado para {candidato.cnpj_prestador}; "
-                    "avançando para a próxima linha."
-                )
+                nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
+                notas_nao_cadastradas.append(nf_info)
+                print(f"Prestador não encontrado para {candidato.cnpj_prestador}; avançando.")
+                
+                # Grava no log de prestadores não cadastrados em tempo real
+                caminho_nao_cadastrados = pasta_log / "log_nao_cadastrados.txt"
+                try:
+                    if not caminho_nao_cadastrados.exists():
+                        with open(caminho_nao_cadastrados, "w", encoding="utf-8") as f:
+                            f.write("As seguintes notas fiscais não puderam ser escrituradas pois os prestadores correspondentes não estavam cadastrados no portal da ISS Fortaleza:\n\n")
+                    with open(caminho_nao_cadastrados, "a", encoding="utf-8") as f:
+                        f.write(f"- {nf_info}\n")
+                except Exception as exc_nc:
+                    print(f"Erro ao salvar log de não cadastrados em tempo real: {exc_nc}")
                 continue
 
-            documento = candidato
-            registrar_evento_execucao(
-                f"Prestador localizado para a linha {indice}/{len(documentos)}: {candidato.cnpj_prestador}",
-                "ISS Fortaleza",
-            )
-            break
+            try:
+                preencher_documento_servico(driver, candidato, depuracao=depuracao)
+                
+                # Gravar documento
+                print("Gravando documento no portal...")
+                registrar_evento_execucao(f"Gravando NF {candidato.numero_nf}", "ISS Fortaleza")
+                try:
+                    _clicar_por_id(driver, "digitarDocumentoForm:j_id477", timeout=15)
+                except Exception:
+                    el = driver.find_element(By.XPATH, "//*[@id='digitarDocumentoForm:j_id477'] | //input[@value='Gravar' or @value='Gravar Documento']")
+                    driver.execute_script("arguments[0].click();", el)
 
-        if documento is None:
-            raise RuntimeError(
-                "Nenhum prestador da planilha foi localizado no portal. "
-                f"Consulte o log em {caminho_log.name}."
-            )
+                # Aguarda feedback do portal
+                WebDriverWait(driver, 15).until(
+                    EC.text_to_be_present_in_element((By.XPATH, '//*[@id="content"]/legend/h2'), "Documento digitado com Sucesso")
+                )
+                registrar_evento_execucao(f"Sucesso na gravação da NF {candidato.numero_nf}", "ISS Fortaleza")
+                nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
+                notas_sucesso.append(nf_info)
+                
+                # Grava no log de sucesso em tempo real
+                caminho_sucesso = pasta_log / "log_escrituradas_sucesso.txt"
+                try:
+                    if not caminho_sucesso.exists():
+                        with open(caminho_sucesso, "w", encoding="utf-8") as f:
+                            f.write("As seguintes notas fiscais foram escrituradas e gravadas com sucesso no portal:\n\n")
+                    with open(caminho_sucesso, "a", encoding="utf-8") as f:
+                        f.write(f"- {nf_info}\n")
+                except Exception as exc_suc:
+                    print(f"Erro ao salvar log de sucesso em tempo real: {exc_suc}")
 
-        print(
-            "Selecionando o prestador e preenchendo a aba Serviço com a linha encontrada na planilha..."
-        )
-        _pausar_para_depuracao(
-            driver,
-            depuracao,
-            "O formulário da aba Serviço será preenchido agora com a linha já localizada.",
-        )
-        preencher_documento_servico(driver, documento, depuracao=depuracao)
+            except Exception as exc:
+                registrar_evento_execucao(f"Falha ao processar NF {candidato.numero_nf}: {exc}", "ISS Fortaleza")
+                print(f"Erro ao processar NF {candidato.numero_nf}: {exc}")
+                registrar_log_funcao2(caminho_log, f"ERRO ao processar {candidato.arquivo_pdf}: {exc}")
+
+            finally:
+                # Clica em Digitar novo documento para limpar o formulário para a próxima linha
+                try:
+                    _clicar_com_espera(driver, By.XPATH, '//*[@id="j_id165:novo"]', "botão Novo Documento", timeout=15)
+                    time.sleep(2)
+                except Exception as exc:
+                    print(f"Não foi possível clicar em 'Novo documento': {exc}. O fluxo pode falhar na próxima iteração.")
 
         print()
-        print("A aba Serviço foi preenchida visivelmente no navegador.")
-        print("A gravação do documento ainda não será automatizada, conforme sua orientação.")
-        print("Revise a tela no navegador e, se quiser encerrar, volte ao terminal.")
-        input("Pressione Enter para encerrar esta sessão automatizada e manter a tela aberta...")
+        print("Gravação de documentos em lote concluída.")
+        if not executando_em_gui:
+            print("Revise a tela no navegador e, se quiser encerrar, volte ao terminal.")
+            input("Pressione Enter para encerrar esta sessão automatizada e manter a tela aberta...")
+        else:
+            print("Execução da GUI concluída. O navegador permanecerá aberto.")
 
     finally:
         # Mantém o navegador aberto em modo de sessão persistente; fecha nos demais casos
@@ -1499,6 +1671,8 @@ def executar_automacao_iss(
     reutilizar_navegador: bool = False,
     perfil_navegador: Path = PERFIL_CHROME_FUNCAO2_PADRAO,
     porta_debug_navegador: int = PORTA_DEBUG_CHROME_PADRAO,
+    callback_progresso: Any = None,
+    executando_em_gui: bool = False,
 ) -> None:
     """Ponto de entrada síncrono para a opção 2 da CLI.
 
@@ -1513,7 +1687,7 @@ def executar_automacao_iss(
         "ISS Fortaleza",
     )
     documentos = carregar_documentos_xlsx(caminho_xlsx)
-    caminho_log = caminho_xlsx.with_name(f"{caminho_xlsx.stem}_log_funcao2.txt")
+    caminho_log = caminho_xlsx.parent / "log" / f"{caminho_xlsx.stem}_log_funcao2.txt"
     executar_fluxo_iss(
         documentos,
         competencia,
@@ -1523,6 +1697,8 @@ def executar_automacao_iss(
         caminho_confirmacao_login=caminho_confirmacao_login,
         reutilizar_navegador=reutilizar_navegador,
         perfil_navegador=perfil_navegador,
+        callback_progresso=callback_progresso,
+        executando_em_gui=executando_em_gui,
     )
 
 

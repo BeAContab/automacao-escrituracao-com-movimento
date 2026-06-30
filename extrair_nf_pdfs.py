@@ -27,8 +27,48 @@ from iss_fortaleza_automacao import (
     solicitar_competencia,
 )
 from cnae_final import enriquecer_registros_cnae_final
-from gemini_extracao import extrair_campos_gemini, ErroCotaGemini
-from tratamento_erros import registrar_erro, registrar_evento_execucao
+from gemini_extracao import (
+    extrair_campos_gemini,
+    extrair_campos_gemini_somente_texto,
+    extrair_campos_groq,
+    ErroCotaGemini,
+    ErroCotaGroq,
+)
+from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pasta_logs
+
+def _eh_documento_ou_telefone(valor: str) -> bool:
+    """Retorna True se o valor tiver características ou tamanho de CPF, CNPJ ou telefone."""
+    if not valor:
+        return False
+    # Remove tudo exceto dígitos
+    digitos = re.sub(r"\D+", "", valor)
+    
+    # CNPJ (14 dígitos)
+    if len(digitos) == 14:
+        return True
+        
+    # CPF (11 dígitos) ou celular com DDD (11 dígitos)
+    if len(digitos) == 11:
+        return True
+        
+    # Telefone fixo com DDD (10 dígitos)
+    if len(digitos) == 10:
+        return True
+        
+    # Telefone sem DDD (8 ou 9 dígitos)
+    if len(digitos) in (8, 9):
+        return True
+        
+    # Outras validações por expressões regulares
+    if re.search(r"\d{3}\.\d{3}\.\d{3}-\d{2}", valor): # CPF
+        return True
+    if re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", valor): # CNPJ
+        return True
+    if re.search(r"\(\d{2}\)\s?\d{4,5}-\d{4}", valor): # Telefone formatado
+        return True
+        
+    return False
+
 
 @dataclass
 class NotaFiscalExtraida:
@@ -58,8 +98,16 @@ class NotaFiscalExtraida:
     cofins_nao_retido: str = "0,00"
     csrf: str = "0,00"
     inss: str = "0,00"
-    analisado_pela_ia: str = "NÃO"
-    revisao_manual: str = ""
+    modelo_ia: str = ""
+
+    def __post_init__(self) -> None:
+        # Garante que o ID CNAE sempre contenha numeração e não seja CPF, CNPJ ou telefone
+        if self.id_cnae:
+            if not any(c.isdigit() for c in self.id_cnae) or _eh_documento_ou_telefone(self.id_cnae):
+                self.id_cnae = ""
+        if self.id_cnae_final:
+            if not any(c.isdigit() for c in self.id_cnae_final) or _eh_documento_ou_telefone(self.id_cnae_final):
+                self.id_cnae_final = ""
 
     def como_linha(self) -> list[str]:
         return [
@@ -88,8 +136,7 @@ class NotaFiscalExtraida:
             self.aliquota,
             self.id_cnae_final,
             self.desc_cnae_final,
-            self.analisado_pela_ia,
-            self.revisao_manual,
+            self.modelo_ia,
         ]
 
     def campos_vazios(self) -> list[str]:
@@ -287,31 +334,58 @@ def determinar_natureza_operacao(cidade_local_prestacao: str) -> str:
 
 
 
-def extrair_nota_fiscal(caminho_pdf: Path, api_key: str = None) -> NotaFiscalExtraida:
+def extrair_nota_fiscal(
+    caminho_pdf: Path,
+    usar_gemini: bool = True,
+    usar_groq: bool = True,
+    gemini_key: str | None = None,
+    groq_key: str | None = None,
+) -> NotaFiscalExtraida:
     texto = ler_texto_pdf(caminho_pdf)
-    dados_gemini = extrair_campos_gemini(caminho_pdf, texto, api_key)
     
-    prefeitura = dados_gemini.get("prefeitura", "")
-    cnpj_prestador = dados_gemini.get("cnpj_prestador", "")
-    numero_nf = dados_gemini.get("numero_nf", "")
-    data_emissao = dados_gemini.get("data_emissao", "")
-    id_cnae = dados_gemini.get("id_cnae", "")
-    desc_cnae = dados_gemini.get("desc_cnae", "")
-    descricao_servico = dados_gemini.get("descricao_servico", "")
-    uf_local_prestacao = dados_gemini.get("uf_local_prestacao", "")
-    cidade_local_prestacao = dados_gemini.get("cidade_local_prestacao", "")
-    iss_retido = dados_gemini.get("iss_retido", "").strip().upper()
-    valor_servico = dados_gemini.get("valor_servico", "")
-    aliquota = dados_gemini.get("aliquota", "")
-    valor_deducoes = dados_gemini.get("valor_deducoes", "0,00")
-    descontos_incondicionados = dados_gemini.get("descontos_incondicionados", "0,00")
-    descontos_condicionados = dados_gemini.get("descontos_condicionados", "0,00")
-    outras_retencoes = dados_gemini.get("outras_retencoes", "0,00")
-    ir = dados_gemini.get("ir", "0,00")
-    pis_nao_retido = dados_gemini.get("pis_nao_retido", "0,00")
-    cofins_nao_retido = dados_gemini.get("cofins_nao_retido", "0,00")
-    csrf = dados_gemini.get("csrf", "0,00")
-    inss = dados_gemini.get("inss", "0,00")
+    dados_ia = {}
+    modelo_ia = ""
+    
+    if usar_gemini:
+        try:
+            dados_ia = extrair_campos_gemini(caminho_pdf, texto, gemini_key)
+            if dados_ia:
+                modelo_ia = "Gemini"
+        except ErroCotaGemini as exc:
+            if not usar_groq:
+                raise exc
+        except Exception:
+            pass
+
+    if not dados_ia and usar_groq:
+        dados_ia = extrair_campos_groq(texto, groq_key)
+        if dados_ia:
+            modelo_ia = "Groq"
+
+    if not dados_ia:
+        raise ValueError("O documento não pôde ser analisado por nenhuma IA (Gemini ou Groq).")
+    
+    prefeitura = dados_ia.get("prefeitura", "")
+    cnpj_prestador = dados_ia.get("cnpj_prestador", "")
+    numero_nf = dados_ia.get("numero_nf", "")
+    data_emissao = dados_ia.get("data_emissao", "")
+    id_cnae = dados_ia.get("id_cnae", "")
+    desc_cnae = dados_ia.get("desc_cnae", "")
+    descricao_servico = dados_ia.get("descricao_servico", "")
+    uf_local_prestacao = dados_ia.get("uf_local_prestacao", "")
+    cidade_local_prestacao = dados_ia.get("cidade_local_prestacao", "")
+    iss_retido = dados_ia.get("iss_retido", "").strip().upper()
+    valor_servico = dados_ia.get("valor_servico", "")
+    aliquota = dados_ia.get("aliquota", "")
+    valor_deducoes = dados_ia.get("valor_deducoes", "0,00")
+    descontos_incondicionados = dados_ia.get("descontos_incondicionados", "0,00")
+    descontos_condicionados = dados_ia.get("descontos_condicionados", "0,00")
+    outras_retencoes = dados_ia.get("outras_retencoes", "0,00")
+    ir = dados_ia.get("ir", "0,00")
+    pis_nao_retido = dados_ia.get("pis_nao_retido", "0,00")
+    cofins_nao_retido = dados_ia.get("cofins_nao_retido", "0,00")
+    csrf = dados_ia.get("csrf", "0,00")
+    inss = dados_ia.get("inss", "0,00")
 
     # Anti-alucinação: validar se os dígitos de CNPJ e Número da NF constam no texto bruto
     digitos_texto = "".join(c for c in texto if c.isdigit())
@@ -350,8 +424,102 @@ def extrair_nota_fiscal(caminho_pdf: Path, api_key: str = None) -> NotaFiscalExt
         cofins_nao_retido=cofins_nao_retido,
         csrf=csrf,
         inss=inss,
-        revisao_manual="",
-        analisado_pela_ia="SIM" if dados_gemini else "NÃO",
+        modelo_ia=modelo_ia,
+    )
+
+
+def extrair_nota_fiscal_somente_texto(
+    caminho_pdf: Path,
+    usar_gemini: bool = True,
+    usar_groq: bool = True,
+    gemini_key: str | None = None,
+    groq_key: str | None = None,
+) -> NotaFiscalExtraida:
+    """Lê o texto do PDF localmente e envia apenas o texto para a IA (Função 3)."""
+    texto = ler_texto_pdf(caminho_pdf)
+    
+    dados_ia = {}
+    modelo_ia = ""
+    
+    if usar_gemini:
+        try:
+            dados_ia = extrair_campos_gemini_somente_texto(caminho_pdf, texto, gemini_key)
+            if dados_ia:
+                modelo_ia = "Gemini"
+        except ErroCotaGemini as exc:
+            if not usar_groq:
+                raise exc
+        except Exception:
+            pass
+
+    if not dados_ia and usar_groq:
+        dados_ia = extrair_campos_groq(texto, groq_key)
+        if dados_ia:
+            modelo_ia = "Groq"
+
+    if not dados_ia:
+        raise ValueError("O documento não pôde ser analisado por nenhuma IA (Gemini ou Groq).")
+    
+    prefeitura = dados_ia.get("prefeitura", "")
+    cnpj_prestador = dados_ia.get("cnpj_prestador", "")
+    numero_nf = dados_ia.get("numero_nf", "")
+    data_emissao = dados_ia.get("data_emissao", "")
+    id_cnae = dados_ia.get("id_cnae", "")
+    desc_cnae = dados_ia.get("desc_cnae", "")
+    descricao_servico = dados_ia.get("descricao_servico", "")
+    uf_local_prestacao = dados_ia.get("uf_local_prestacao", "")
+    cidade_local_prestacao = dados_ia.get("cidade_local_prestacao", "")
+    iss_retido = dados_ia.get("iss_retido", "").strip().upper()
+    valor_servico = dados_ia.get("valor_servico", "")
+    aliquota = dados_ia.get("aliquota", "")
+    valor_deducoes = dados_ia.get("valor_deducoes", "0,00")
+    descontos_incondicionados = dados_ia.get("descontos_incondicionados", "0,00")
+    descontos_condicionados = dados_ia.get("descontos_condicionados", "0,00")
+    outras_retencoes = dados_ia.get("outras_retencoes", "0,00")
+    ir = dados_ia.get("ir", "0,00")
+    pis_nao_retido = dados_ia.get("pis_nao_retido", "0,00")
+    cofins_nao_retido = dados_ia.get("cofins_nao_retido", "0,00")
+    csrf = dados_ia.get("csrf", "0,00")
+    inss = dados_ia.get("inss", "0,00")
+
+    # Anti-alucinação: validar se os dígitos de CNPJ e Número da NF constam no texto bruto
+    digitos_texto = "".join(c for c in texto if c.isdigit())
+    
+    digitos_cnpj = "".join(c for c in cnpj_prestador if c.isdigit())
+    if digitos_cnpj and digitos_cnpj not in digitos_texto:
+        cnpj_prestador = ""
+        
+    digitos_nf = "".join(c for c in numero_nf if c.isdigit())
+    if digitos_nf and digitos_nf not in digitos_texto:
+        numero_nf = ""
+
+    natureza_operacao = determinar_natureza_operacao(cidade_local_prestacao)
+
+    return NotaFiscalExtraida(
+        arquivo_pdf=caminho_pdf.name,
+        prefeitura=prefeitura,
+        cnpj_prestador=limpar_cnpj(cnpj_prestador),
+        numero_nf=normalizar_numero_nf(numero_nf),
+        data_emissao=normalizar_data_br(data_emissao),
+        id_cnae=id_cnae,
+        desc_cnae=desc_cnae,
+        descricao_servico=descricao_servico,
+        uf_local_prestacao=uf_local_prestacao,
+        cidade_local_prestacao=cidade_local_prestacao,
+        natureza_operacao=natureza_operacao,
+        iss_retido=iss_retido,
+        valor_servico=valor_servico,
+        aliquota=aliquota,
+        valor_deducoes=valor_deducoes,
+        descontos_incondicionados=descontos_incondicionados,
+        descontos_condicionados=descontos_condicionados,
+        outras_retencoes=outras_retencoes,
+        ir=ir,
+        pis_nao_retido=pis_nao_retido,
+        cofins_nao_retido=cofins_nao_retido,
+        csrf=csrf,
+        inss=inss,
+        modelo_ia=modelo_ia,
     )
 
 
@@ -368,6 +536,30 @@ def ajustar_largura_colunas(planilha) -> None:
             if celula.value is not None:
                 maior = max(maior, len(str(celula.value)))
         planilha.column_dimensions[letra_coluna].width = min(maior + 2, 80)
+
+
+def _converter_valor_br_para_float(valor_str: str) -> float:
+    """Converte valores monetários formatados no padrão BR para float."""
+    if not valor_str:
+        return 0.0
+    try:
+        limpo = str(valor_str).replace("R$", "").strip()
+        if "," in limpo:
+            limpo = limpo.replace(".", "").replace(",", ".")
+        return float(limpo)
+    except ValueError:
+        return 0.0
+
+
+def _aliquota_diferente_de_5(aliquota_str: str) -> bool:
+    """Retorna True se a alíquota for diferente de 5% (com tolerância decimal)."""
+    if not aliquota_str:
+        return True  # Alíquota ausente/vazia é diferente de 5%
+    val = _converter_valor_br_para_float(aliquota_str)
+    # Se for menor que 1.0 (ex: 0.05 em vez de 5.0), multiplicamos por 100
+    if 0.0 < val < 1.0:
+        val = val * 100.0
+    return abs(val - 5.0) > 0.01
 
 
 def gerar_xlsx(registros: list[NotaFiscalExtraida], destino: Path) -> None:
@@ -404,17 +596,120 @@ def gerar_xlsx(registros: list[NotaFiscalExtraida], destino: Path) -> None:
         "ALIQUOTA",
         "ID_CNAE_FINAL",
         "DESC_CNAE_FINAL",
-        "ANALISADO_PELA_IA",
-        "REVISAO_MANUAL",
+        "MODELO_IA",
     ]
 
     ws.append(cabecalhos)
     for registro in registros:
         ws.append(registro.como_linha())
 
+    titulos_vermelhos = {
+        "CNPJ_PRESTADOR",
+        "NUMERO_NF",
+        "DATA_EMISSAO",
+        "DESCRICAO_SERVICO",
+        "UF_LOCAL_PRESTACAO",
+        "CIDADE_LOCAL_PRESTACAO",
+        "NATUREZA_OPERACAO",
+        "ISS_RETIDO",
+        "VALOR_SERVICO",
+        "VALOR_DEDUCOES",
+        "DESCONTOS_INCONDICIONADOS",
+        "DESCONTOS_CONDICIONADOS",
+        "OUTRAS_RETENCOES",
+        "IR",
+        "PIS_NAO_RETIDO",
+        "COFINS_NAO_RETIDO",
+        "CSRF (CSLL + PIS + Cofins Retidos)",
+        "INSS",
+        "ALIQUOTA",
+        "ID_CNAE_FINAL",
+        "DESC_CNAE_FINAL",
+    }
+
     for celula in ws[1]:
         celula.font = Font(bold=True, color="FFFFFF")
-        celula.fill = PatternFill("solid", fgColor="1F4E78")
+        if celula.value in titulos_vermelhos:
+            celula.fill = PatternFill("solid", fgColor="C00000") # Vermelho escuro profissional
+        else:
+            celula.fill = PatternFill("solid", fgColor="1F4E78") # Azul original
+
+    # Mapeamento dinâmico de colunas para formatação condicional
+    mapa_colunas = {nome: idx + 1 for idx, nome in enumerate(cabecalhos)}
+    
+    colunas_contabeis = {
+        "VALOR_SERVICO",
+        "VALOR_DEDUCOES",
+        "DESCONTOS_INCONDICIONADOS",
+        "DESCONTOS_CONDICIONADOS",
+        "OUTRAS_RETENCOES",
+        "IR",
+        "PIS_NAO_RETIDO",
+        "COFINS_NAO_RETIDO",
+        "CSRF (CSLL + PIS + Cofins Retidos)",
+        "INSS",
+    }
+    indices_contabeis = [mapa_colunas[c] for c in colunas_contabeis if c in mapa_colunas]
+    indice_aliquota = mapa_colunas.get("ALIQUOTA")
+    
+    formato_contabil = '_("R$"* #,##0.00_);_("R$"* (#,##0.00);_("R$"* "-"??_);_(@_)'
+    
+    # Primeiro passo: converter valores monetários e alíquota de texto para numérico com formatação adequada
+    for row_idx in range(2, ws.max_row + 1):
+        for col_idx in indices_contabeis:
+            celula = ws.cell(row=row_idx, column=col_idx)
+            val_float = _converter_valor_br_para_float(celula.value)
+            celula.value = val_float
+            celula.number_format = formato_contabil
+
+        if indice_aliquota:
+            celula = ws.cell(row=row_idx, column=indice_aliquota)
+            val_float = _converter_valor_br_para_float(celula.value)
+            if val_float > 1.0:
+                val_float = val_float / 100.0
+            celula.value = val_float
+            celula.number_format = '0.00%'
+
+    colunas_valores_retidos = [
+        "VALOR_DEDUCOES",
+        "DESCONTOS_INCONDICIONADOS",
+        "DESCONTOS_CONDICIONADOS",
+        "OUTRAS_RETENCOES",
+        "IR",
+        "PIS_NAO_RETIDO",
+        "COFINS_NAO_RETIDO",
+        "CSRF (CSLL + PIS + Cofins Retidos)",
+        "INSS"
+    ]
+    indices_valores_retidos = [mapa_colunas[c] for c in colunas_valores_retidos if c in mapa_colunas]
+    
+    preenchimento_vermelho_alerta = PatternFill("solid", fgColor="FFC7CE") # Vermelho claro/pastel
+    fonte_vermelha_alerta = Font(color="9C0006") # Vermelho escuro para contraste
+    
+    # Segundo passo: aplica coloração condicional de dados
+    for row_idx in range(2, ws.max_row + 1):
+        # Alerta se impostos ou deduções forem maiores que zero
+        for col_idx in indices_valores_retidos:
+            celula = ws.cell(row=row_idx, column=col_idx)
+            val = celula.value
+            if not isinstance(val, (int, float)):
+                val = _converter_valor_br_para_float(val)
+            if val > 0.01:
+                celula.fill = preenchimento_vermelho_alerta
+                celula.font = fonte_vermelha_alerta
+                
+        # Alerta se alíquota for diferente de 5%
+        if indice_aliquota:
+            celula = ws.cell(row=row_idx, column=indice_aliquota)
+            val = celula.value
+            if not isinstance(val, (int, float)):
+                val = _converter_valor_br_para_float(val)
+            # Converte para base percentual cheia se for decimal puro
+            if 0.0 < val < 1.0:
+                val = val * 100.0
+            if abs(val - 5.0) > 0.01:
+                celula.fill = preenchimento_vermelho_alerta
+                celula.font = fonte_vermelha_alerta
 
     ajustar_largura_colunas(ws)
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -424,8 +719,9 @@ def gerar_xlsx(registros: list[NotaFiscalExtraida], destino: Path) -> None:
 def registrar_log_incompletos(
     registros: list[NotaFiscalExtraida],
     destino_xlsx: Path,
+    origem_dir: Path | None = None,
 ) -> Path:
-    """Cria um log detalhado quando alguma NF não preencher todas as colunas.
+    """Cria um log detalhado na pasta 'log' quando alguma NF não preencher todas as colunas.
 
     O objetivo é permitir auditoria rápida dos arquivos que precisam de ajuste
     manual ou de novas regras de extração.
@@ -444,13 +740,67 @@ def registrar_log_incompletos(
         linhas_log.append(f"Resumo: {registro.resumo_campos()}")
         linhas_log.append("")
 
-    caminho_log = destino_xlsx.with_name(f"{destino_xlsx.stem}_log_extracao.txt")
+    caminho_log = destino_xlsx.parent / "log" / f"{destino_xlsx.stem}_log_extracao.txt"
+    caminho_log.parent.mkdir(parents=True, exist_ok=True)
+    
     if linhas_log:
         caminho_log.write_text("\n".join(linhas_log), encoding="utf-8")
     elif caminho_log.exists():
-        caminho_log.unlink()
+        try:
+            caminho_log.unlink()
+        except Exception:
+            pass
+
+    if origem_dir:
+        caminho_log_origem = origem_dir / "log" / f"{destino_xlsx.stem}_log_extracao.txt"
+        try:
+            caminho_log_origem.parent.mkdir(parents=True, exist_ok=True)
+            if linhas_log:
+                caminho_log_origem.write_text("\n".join(linhas_log), encoding="utf-8")
+            elif caminho_log_origem.exists():
+                caminho_log_origem.unlink()
+        except Exception:
+            pass
 
     return caminho_log
+
+
+def registrar_incompleto_realtime(
+    registro: NotaFiscalExtraida,
+    destino_xlsx: Path,
+    origem_dir: Path | None = None,
+) -> None:
+    """Registra uma NF incompleta no arquivo de log em tempo real (append)."""
+    campos_vazios = registro.campos_vazios()
+    if not campos_vazios:
+        return
+
+    linhas_log = [
+        f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {registro.arquivo_pdf}",
+        f"Campos ausentes: {', '.join(campos_vazios)}",
+        f"Resumo: {registro.resumo_campos()}",
+        ""
+    ]
+    texto = "\n".join(linhas_log) + "\n"
+
+    # Salva na pasta log do destino
+    caminho_log = destino_xlsx.parent / "log" / f"{destino_xlsx.stem}_log_extracao.txt"
+    try:
+        caminho_log.parent.mkdir(parents=True, exist_ok=True)
+        with open(caminho_log, "a", encoding="utf-8") as f:
+            f.write(texto)
+    except Exception:
+        pass
+
+    # Salva na pasta log da origem se fornecida
+    if origem_dir:
+        caminho_log_origem = origem_dir / "log" / f"{destino_xlsx.stem}_log_extracao.txt"
+        try:
+            caminho_log_origem.parent.mkdir(parents=True, exist_ok=True)
+            with open(caminho_log_origem, "a", encoding="utf-8") as f:
+                f.write(texto)
+        except Exception:
+            pass
 
 
 def abrir_site_iss_fortaleza() -> None:
@@ -460,15 +810,16 @@ def abrir_site_iss_fortaleza() -> None:
 
 
 def solicitar_opcao() -> str:
-    """Pede ao usuário que escolha entre gerar o XLSX (Apenas IA) ou executar a automação."""
+    """Pede ao usuário que escolha entre gerar o XLSX (Apenas IA), a automação ou a extração otimizada por texto."""
     while True:
         print("Escolha uma opção:")
         print("1 - Gerar o XLSX a partir dos PDFs (Apenas IA)")
         print("2 - Executar a automação visível da ISS de Fortaleza")
-        resposta = input("Digite 1 ou 2: ").strip()
-        if resposta in {"1", "2"}:
+        print("3 - Gerar o XLSX a partir dos PDFs usando apenas texto local (Função 3 - Otimizada)")
+        resposta = input("Digite 1, 2 ou 3: ").strip()
+        if resposta in {"1", "2", "3"}:
             return resposta
-        print("Opção inválida. Por favor, digite 1 ou 2.")
+        print("Opção inválida. Por favor, digite 1, 2 ou 3.")
         print()
 
 
@@ -545,9 +896,9 @@ def construir_argumentos() -> argparse.Namespace:
     parser.add_argument(
         "-m",
         "--modo",
-        choices=("1", "2"),
+        choices=("1", "2", "3"),
         default=None,
-        help="1 para gerar o XLSX (Apenas IA); 2 para executar a automação da ISS de Fortaleza.",
+        help="1 para gerar o XLSX (Apenas IA); 2 para executar a automação; 3 para extração por texto (Otimizada).",
     )
     parser.add_argument(
         "-c",
@@ -626,6 +977,8 @@ def main() -> int:
     if not pasta.exists() or not pasta.is_dir():
         raise SystemExit(f"A pasta informada não existe ou não é válida: {pasta}")
 
+    configurar_pasta_logs(pasta)
+
     if not destino.is_absolute():
         destino = (pasta / destino.name).resolve()
 
@@ -639,7 +992,7 @@ def main() -> int:
     )
 
     registros: list[NotaFiscalExtraida] = []
-    notas_com_erro_cota: list[tuple[str, str]] = []
+    notas_nao_analisadas: list[str] = []
     for indice, pdf in enumerate(pdfs, start=1):
         print(f"[{indice}/{len(pdfs)}] Processando PDF: {pdf.name}", flush=True)
         registrar_evento_execucao(
@@ -647,31 +1000,22 @@ def main() -> int:
             "extrair_nf_pdfs.py",
         )
         try:
-            registros.append(extrair_nota_fiscal(pdf))
-        except ErroCotaGemini as exc:
-            print(f"[{indice}/{len(pdfs)}] Limite de cota da IA atingido ao processar {pdf.name}", flush=True)
-            registrar_evento_execucao(
-                f"Limite de cota atingido para {pdf.name}: {exc}",
-                "extrair_nf_pdfs.py",
-            )
-            notas_com_erro_cota.append((pdf.name, str(exc)))
-            registros.append(
-                NotaFiscalExtraida(
-                    arquivo_pdf=pdf.name,
-                    descricao_servico="NÃO ANALISADO: Limite de cota da IA excedido.",
-                )
-            )
-        except Exception as exc:
+            if modo == "3":
+                registros.append(extrair_nota_fiscal_somente_texto(pdf))
+            else:
+                registros.append(extrair_nota_fiscal(pdf))
+        except ValueError as exc:
             print(f"[{indice}/{len(pdfs)}] Falha ao processar {pdf.name}: {exc}", flush=True)
             registrar_evento_execucao(
-                f"Falha ao processar {pdf.name}: {exc}",
+                f"Falha de IA dupla para {pdf.name}: {exc}",
                 "extrair_nf_pdfs.py",
             )
-            registros.append(
-                NotaFiscalExtraida(
-                    arquivo_pdf=pdf.name,
-                    descricao_servico=f"ERRO NA EXTRAÇÃO: {exc}",
-                )
+            notas_nao_analisadas.append(pdf.name)
+        except Exception as exc:
+            print(f"[{indice}/{len(pdfs)}] Erro inesperado ao processar {pdf.name}: {exc}", flush=True)
+            registrar_evento_execucao(
+                f"Erro inesperado em {pdf.name}: {exc}",
+                "extrair_nf_pdfs.py",
             )
         else:
             registrar_evento_execucao(
@@ -681,24 +1025,24 @@ def main() -> int:
 
     registros_completos = [registro for registro in registros if not registro.campos_vazios()]
     gerar_xlsx(registros_completos, destino)
-    caminho_log = registrar_log_incompletos(registros, destino)
+    caminho_log = registrar_log_incompletos(registros, destino, origem_dir=pasta)
     print(f"Arquivo XLSX gerado com sucesso: {destino.resolve()}")
     print(f"Total de PDFs processados: {len(pdfs)}")
     print(f"Linhas completas exportadas: {len(registros_completos)}")
     if caminho_log.exists():
         print(f"Log de extração gerado em: {caminho_log.resolve()}")
 
-    if notas_com_erro_cota:
-        caminho_log_cota = destino.parent / f"{destino.stem}_log_cota_excedida.txt"
+    if notas_nao_analisadas:
+        caminho_log_na = pasta / "log" / "log_nao_analisados.txt"
         try:
-            with open(caminho_log_cota, "w", encoding="utf-8") as f:
-                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] NOTAS NÃO ANALISADAS POR LIMITE DE COTA DA IA:\n")
-                for nome_pdf, erro in notas_com_erro_cota:
-                    f.write(f"- {nome_pdf} (Motivo: {erro})\n")
-            print(f"Aviso: Algumas notas não foram analisadas por limite de cota da API. Detalhes gravados em: {caminho_log_cota.resolve()}", flush=True)
+            with open(caminho_log_na, "w", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Ocorreram falhas ao tentar extrair dados com as IAs (Gemini e Groq) para as seguintes notas fiscais:\n")
+                for nome_pdf in notas_nao_analisadas:
+                    f.write(f"- {nome_pdf}\n")
+            print(f"Aviso: Algumas notas não puderam ser analisadas. Detalhes gravados em: {caminho_log_na.resolve()}", flush=True)
         except Exception as exc_log:
             registrar_evento_execucao(
-                f"Erro ao salvar log de cota excedida {caminho_log_cota.name}: {exc_log}",
+                f"Erro ao salvar log {caminho_log_na.name}: {exc_log}",
                 "extrair_nf_pdfs.py",
             )
 

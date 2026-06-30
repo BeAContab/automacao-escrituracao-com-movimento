@@ -13,3 +13,10 @@ log_erro.txt
 log_execucao.txt
 *.xlsx
 dados/
+
+# Notas fiscais locais (PII / sigilo)
+PREFEITURAS/
+*.pdf
+
+# Rascunhos do agente
+scratch/

@@ -30,7 +30,7 @@ A solução é dividida em duas grandes etapas integradas que cobrem desde a rec
 * **Consolidação em Planilha:** Geração de relatórios prontos em Excel contendo todos os dados auditados estruturados por linha.
 
 ### 2. Automação Assistida (Integração com Portal ISS)
-* **Navegação Inteligente:** Controle automatizado de navegador (Playwright) para acessar o Portal da ISS de Fortaleza.
+* **Navegação Inteligente:** Controle automatizado de navegador (Selenium WebDriver) para acessar o Portal da ISS de Fortaleza.
 * **Preenchimento Guiado:** Alimentação automatizada dos formulários da escrituração (CNPJ, número, data, código do serviço, descrição, valores, local de prestação e retenção de ISS).
 * **Segurança na Gravação:** A automação realiza todo o trabalho pesado de digitação e para o formulário na etapa final, permitindo que um operador humano valide visualmente a tela antes de confirmar a gravação definitiva.
 

@@ -1,5 +1,216 @@
 # CHANGELOG
 
+## [2.14.0] - 2026-06-30
+
+### Adicionado
+- Nova funcionalidade "Organizar PDFs por Prefeitura":
+  - Criação da função de classificação dinâmica `identificar_nome_prefeitura` que identifica as prefeituras sem IA, baseando-se em assinaturas textuais e expressões regulares para extrair o nome da prefeitura de forma arbitrária.
+  - Moverá cada PDF identificado para uma subpasta correspondente criada dinamicamente na própria pasta de origem.
+  - Notas cuja prefeitura não for possível identificar permanecem na raiz.
+  - Nova aba "Organizar PDFs" criada na GUI como aba padrão inicial.
+- Melhorias na funcionalidade "Unir Planilhas":
+  - Adicionado suporte a Drag and Drop (arrastar e soltar) de múltiplos arquivos XLSX de forma acumulativa (novos arquivos arrastados são anexados à lista em vez de sobrepor).
+  - Adicionada opção de selecionar uma pasta de origem: o robô escaneia recursivamente as subpastas (`**/*.xlsx`) para encontrar todas as planilhas modelo e consolidá-las.
+  - Adicionada exclusão automática de linhas duplicadas de dados na fusão (opção toggle na GUI).
+- Melhorias no "Exportar por Prefeitura":
+  - Adicionado botão "LIMPAR TUDO" na interface para esvaziar todos os caminhos de pastas inseridos no grid.
+  - Corrigido bug de retorno na função de exportar que exibia a mensagem de erro "Nenhuma nota extraída com sucesso" mesmo quando a planilha era gerada com sucesso.
+
+## [2.13.0] - 2026-06-30
+
+### Adicionado
+- Nova funcionalidade "Exportar por Prefeitura" (sem IA):
+  - Criado o módulo `extracao_prefeituras.py` com parsers baseados em regex para 12 prefeituras:
+    Governo do Distrito Federal, Petrolina, Nacional, São Roque, Barueri, Campo Grande,
+    Eusébio, Fortaleza, Maracanaú, Teixeira de Freitas, Goiânia e João Pessoa.
+  - São Paulo (CID garbled) e Maceió (PDF escaneado) são ignorados automaticamente.
+  - PDFs processados com sucesso são movidos para a subpasta `concluidas/` dentro da pasta de origem.
+  - PDFs com falha ou sem camada de texto permanecem na pasta original.
+  - A planilha `nf_compilado.xlsx` é gerada na própria pasta de origem de cada prefeitura.
+  - O campo IR da Prefeitura de Fortaleza é analisado dinamicamente por coordenadas e regex, garantindo a extração quando houver imposto retido e descartando incorreções com o ISS Retido (como na NF 132).
+- Nova funcionalidade "Unir Planilhas":
+  - Criado o módulo `unir_planilhas.py` que consolida múltiplos XLSX em `planilha_unificada.xlsx`.
+  - Cabeçalhos, formatação contábil e percentual são preservados na planilha consolidada.
+- GUI atualizada com dois novos menus no sidebar:
+  - Painel "Exportar por Prefeitura": grid de 12 seletores de pasta (um por prefeitura) com log
+    e barra de progresso em tempo real.
+  - Painel "Unir Planilhas": seletor de múltiplos arquivos XLSX, seletor de pasta de destino e log.
+- Novos métodos expostos na API pywebview:
+  - `exportar_por_prefeitura(mapa)`, `unir_planilhas_gui(lista, destino)`,
+    `selecionar_multiplos_xlsx()` e `obter_prefeituras_suportadas()`.
+
+## [2.12.0] - 2026-06-30
+
+### Adicionado
+- Formatação Contábil e Percentual no Excel:
+  - Valores monetários (valor do serviço, deduções, impostos e retenções) agora são gravados como números reais (float) e formatados no padrão de contabilidade nacional (`_("R$"* #,##0.00...`).
+  - Alíquotas são gravadas como porcentagens reais e formatadas como `0.00%` no openpyxl.
+  - A coloração condicional de valores retidos foi adaptada para trabalhar com valores reais já convertidos.
+- Estabilização do Layout da GUI:
+  - Consoles de logs da GUI (`log-automacao` e `log-extracao`) ganharam limites rígidos de altura (`max-height`) e overflow-y auto locais, prevenindo que o log empurre o layout e crie barras de rolagem globais na janela principal do programa.
+- Gravação de Logs em Tempo Real e Limpeza Automática:
+  - Logs de escrituras realizadas com sucesso (`log_escrituradas_sucesso.txt`) e prestadores não cadastrados (`log_nao_cadastrados.txt`) passam a ser atualizados incrementalmente no disco em tempo real à medida que o Selenium executa cada nota.
+  - Logs parciais antigos da sessão são removidos no início de cada execução.
+  - Log de notas com preenchimento incompleto (`log_extracao.txt`) atualizado incrementalmente na pasta origem e destino.
+- Log Exclusivo para Notas de Fortaleza:
+  - Criado o arquivo `log_prefeitura_fortaleza.txt` na pasta `log` da planilha de automação, registrando de forma exclusiva e em tempo real as notas fiscais ignoradas por terem sido emitidas pela Prefeitura de Fortaleza.
+
+## [2.11.0] - 2026-06-29
+
+### Adicionado
+- Gerenciamento Unificado de Logs:
+  - Implementado o suporte a múltiplos diretórios de gravação simultânea de logs.
+  - Para extrações, os logs são salvos simultaneamente na pasta `log/` do diretório de origem (dos PDFs) e do diretório de destino (da planilha XLSX).
+  - Para automações, os logs são salvos na pasta `log/` do diretório do arquivo XLSX.
+  - O logger global do sistema foi aprimorado para evitar subpastas aninhadas redundantes (como `log/log/`).
+- Atualizações de Logs em Tempo Real na GUI:
+  - Implementado o redirecionamento de `sys.stdout` e `sys.stderr` por meio do `GUIStdoutWrapper` em `app.py`. Todos os prints de console do robô e mensagens de progresso agora são capturados e renderizados em tempo real no console do aplicativo.
+
+## [2.10.0] - 2026-06-29
+
+### Adicionado
+- Recursos de GUI e Fluxo de Automação:
+  - Adicionado o botão de **"PARAR AUTOMAÇÃO"** / **"CONTINUAR AUTOMAÇÃO"** na interface gráfica para permitir pausar e retomar a escrituração no portal da ISS a qualquer momento após o login manual.
+  - Implementado o controle thread-safe no Python por meio do `self._pausa_automacao_event` que suspende temporariamente a execução do robô no início de cada processamento de nota fiscal e retoma de forma suave ao sinal do usuário.
+
+## [2.9.1] - 2026-06-29
+
+### Corrigido
+- Recursos de GUI e Fluxo de Automação:
+  - Implementado o parâmetro `executando_em_gui` no robô. Quando ativo, o script ignora qualquer prompt de `input()` em console (como o prompt final de confirmação de término), permitindo que o fluxo siga direto após a confirmação do login feito na GUI, sem travar a thread de execução do pywebview.
+
+## [2.9.0] - 2026-06-29
+
+### Adicionado
+- Recursos de GUI:
+  - Adicionado painel e botão de confirmação manual de login (**"Confirmar Login Realizado"**) na GUI de automação, permitindo destravar e retomar o robô de forma visual sem necessidade de interação no console (corrigido bug de concorrência assíncrona que ocultava o botão imediatamente).
+- Correções de Logs e Documentação:
+  - Removidas referências residuais do framework Playwright em logs de execução e nos arquivos de documentação (`README.md` e `DEVELOPER.md`), padronizando o projeto no uso do Selenium WebDriver.
+
+## [2.8.0] - 2026-06-27
+
+### Adicionado
+- Melhorias de GUI:
+  - Renomeada a aplicação de "BeAContab" para "Automação: ISS Fortaleza" na janela da GUI e na barra lateral.
+  - Renomeado o item de menu "Automação ISS Fortaleza" para "Automação: Escrituração".
+  - Renomeado o título principal do painel de automação para "Automação: Escrituração".
+  - Reordenados os botões de extração: o botão "Extração Otimizada" agora vem em primeiro e aparece destacado como "Recomendada" (com preenchimento gradiente principal), enquanto o botão "Extração Completa" vem em segundo (com borda/outline escuro).
+  - Adicionado botão de "PARAR EXTRAÇÃO" / "CONTINUAR EXTRAÇÃO" que permite ao usuário pausar e retomar o loop de extração de PDFs em tempo de execução de forma segura via threads.
+  - Nova barra de progresso no painel de Automação (ISS Fortaleza) que rastreia visualmente a porcentagem de escrituração das notas com base no callback de progresso das linhas processadas no robô.
+  - Ao atingir o limite de cotas de IA, a barra de progresso da extração é marcada automaticamente em 100% e pintada na cor vermelha (`#ff4a4a`).
+- Validação Antialucinação e Proteção de Dados:
+  - Implementado prompt estrito instruindo as IAs a nunca extraírem CPF, CNPJ ou números de telefone no campo de ID CNAE.
+  - Implementada função auxiliar de detecção de padrões de documentos e contagem de dígitos (`_eh_documento_ou_telefone`). O construtor `__post_init__` limpa automaticamente o campo de ID CNAE e ID CNAE Final caso as IAs alucinem CPF, CNPJ ou telefones nele.
+- Logs e Auditoria:
+  - Criação do log `log_limite_cota.txt` em subpasta `log/` na pasta de origem se a extração for interrompida por cota. O log detalha a ocorrência do rate limit e lista os arquivos de notas fiscais que ficaram pendentes de processamento.
+
+## [2.7.0] - 2026-06-26
+
+### Adicionado
+- Melhorias de GUI:
+  - Inputs de caminhos de pasta de origem e destino agora permitem digitação manual (remoção do atributo `readonly`).
+  - Lógica de auto-cópia: digitar ou selecionar a pasta de origem preenche automaticamente a pasta de destino com o mesmo caminho.
+  - Adicionado card explicativo com instruções de como obter a chave da API do Groq ao lado das instruções do Gemini.
+  - Seleção dinâmica do mês e ano competência padrão atuais (mês/ano corrente da máquina).
+  - Remoção de campo inútil de chave de API na aba de automação (não utilizado pela automação do portal).
+  - Desativação do console DevTools automático na inicialização da aplicação (ajustado `webview.start(debug=False)`).
+- Regras Fiscais e Planilha Excel:
+  - Limpeza e validação de CNAE: o ID CNAE (tanto na extração quanto no CNAE Final oficial) agora exige conter pelo menos um dígito numérico. Caso contrário, é limpo para evitar dados textuais inválidos no campo.
+  - Formatação condicional: células de valores fiscais retidos (Deduções, Descontos, Impostos Federais) que forem maiores que zero são destacadas em vermelho claro/pastel (`FFC7CE` e fonte `9C0006`).
+  - Validação de Alíquota: células de alíquotas diferentes de `5%` (ou `5,00`) são destacadas na mesma formatação vermelha de alerta.
+
+## [2.6.0] - 2026-06-26
+
+### Adicionado
+- Recursos de GUI:
+  - Barra de progresso visual em porcentagem animada no painel de monitoramento da extração.
+  - Exibição de contagem de PDFs e estimativa de tempo aproximado (Completa e Otimizada) ao selecionar uma pasta.
+  - Inputs para chaves de API do Gemini e Groq individuais, com suporte para salvar no arquivo `.env`.
+  - Checkboxes para uso individual/simultâneo do Gemini e Groq.
+  - Tratamento inteligente de quotas (`ErroCotaGemini` e `ErroCotaGroq`) com aviso destacado em vermelho no console e interrupção imediata, salvando o progresso parcial das notas no arquivo `.xlsx` sem perda de dados.
+- Regras Fiscais e Visualização:
+  - Novas regras estritas de extração para CNAEs com base na prefeitura emissora (Petrolina, Fortaleza, João Pessoa, Goiânia, Natal, Olinda, Vila Velha, Rio de Janeiro, São Paulo, Teixeira de Freitas, Maracanaú, São Roque).
+  - Regra de proximidade ao termo "PRESTADOR" para os campos `uf_local_prestacao` e `cidade_local_prestacao`.
+  - Refinamento de prompts no extrator (`gemini_extracao.py`) instruindo as IAs a copiar e colar a discriminação do serviço de forma literal e a extrair valores dedutíveis e impostos (INSS, IR, CSRF, etc.) por proximidade física com os termos correspondentes no texto.
+  - Estilização colorida no Excel (`gerar_xlsx`), pintando os cabeçalhos das 21 colunas fiscais solicitadas em Vermelho Escuro (`C00000`) e as 5 colunas auxiliares em Azul (`1F4E78`).
+- Otimizações:
+  - Implementação de colagem instantânea de textos longos via JavaScript no navegador (`_definir_valor_instantaneo`) para o campo de descrição do serviço em `iss_fortaleza_automacao.py`, eliminando a digitação caractere por caractere e acelerando expressivamente a automação.
+
+## [2.5.1] - 2026-06-26
+
+### Adicionado
+- Arquivos:
+  - `.env`
+  - `.env.example`
+  - `gemini_extracao.py`
+- Motivo: documentar e adicionar placeholders para as configurações da API do Groq (`GROQ_API_KEY` e `GROQ_MODEL`) e parametrizar o modelo no código para maior flexibilidade.
+- Impacto:
+  - Adicionados os placeholders `GROQ_API_KEY=` e `GROQ_MODEL=llama-3.3-70b-versatile` nas configurações de ambiente.
+  - Modificado o script `gemini_extracao.py` para utilizar a variável `GROQ_MODEL` dinamicamente com fallback seguro para `llama-3.3-70b-versatile`.
+
+## [2.5.0] - 2026-06-26
+
+### Adicionado
+- Arquivos:
+  - `gemini_extracao.py`
+  - `extrair_nf_pdfs.py`
+  - `iss_fortaleza_automacao.py`
+  - `app.py`
+- Motivo: implementar fallback para extração via Groq, processamento em lote da automação da Função 2 e geração de logs estruturados em subpastas.
+- Impacto:
+  - Implementada a função `extrair_campos_groq` em `gemini_extracao.py` como fallback único caso o Gemini falhe, com suporte a JSON mode. O loop de múltiplas tentativas (retry) do Gemini foi removido (agora tenta apenas 1x).
+  - A automação no portal ISS (`iss_fortaleza_automacao.py`) agora processa todos os documentos do XLSX de forma contínua em lote, coletando erros e acertos em listas separadas.
+  - Inclusão de logs centralizados na subpasta `log/` (`log_escrituradas_sucesso.txt` e `log_nao_cadastrados.txt`) detalhando CNPJ e nota, e do arquivo `log_nao_analisados.txt` gerado durante a etapa de extração caso ambas as IAs falhem.
+  - As colunas `ANALISADO_PELA_IA` e `REVISAO_MANUAL` foram removidas do arquivo final XLSX.
+  - Adicionada a nova coluna `MODELO_IA` no XLSX, indicando qual inteligência artificial (Gemini ou Groq) foi responsável por extrair os dados da linha correspondente.
+
+## [2.4.0] - 2026-06-26
+
+### Adicionado
+- Arquivos:
+  - `gemini_extracao.py`
+  - `extrair_nf_pdfs.py`
+  - `app.py`
+  - `gui/index.html`
+- Motivo: criação da Função 3 (Extração Otimizada por Texto) para permitir a extração fiscal consumindo muito menos tokens/quota do Gemini, mantendo a Função 1 multimodal original intacta.
+- Impacto:
+  - Criada a função `extrair_campos_gemini_somente_texto` em `gemini_extracao.py`, que envia apenas o texto do PDF no prompt, sem carregar ou anexar o arquivo binário do PDF.
+  - Implementada a função `extrair_nota_fiscal_somente_texto` e suporte ao modo 3 via CLI (argparse e menu interativo) em `extrair_nf_pdfs.py`.
+  - Integrados os métodos `iniciar_extracao_otimizada` e `_processar_extracao_otimizada` em `app.py` para processamento em thread dedicada.
+  - Adicionado botão físico dedicado de "Extração Otimizada (Somente Texto)" e lógica Javascript integrada em `gui/index.html`.
+
+## [2.3.0] - 2026-06-25
+
+### Alterado
+- Arquivos:
+  - `iss_fortaleza_automacao.py`
+- Motivo: automatizar o fluxo contínuo de digitação na automação da ISS, verificando a gravação de sucesso e avançando para o próximo formulário de forma autônoma.
+- Impacto:
+  - Implementada a verificação de sucesso monitorando o título `//*[@id="content"]/legend/h2` para aguardar o texto "Documento digitado com Sucesso".
+  - O robô agora clica automaticamente no botão "Digitar novo documento" usando o XPATH `//*[@id="j_id165:novo"]` para limpar o formulário e deixá-lo pronto para a próxima nota fiscal.
+
+## [2.2.0] - 2026-06-25
+
+### Adicionado
+- Arquivos:
+  - `iss_fortaleza_automacao.py`
+- Motivo: automatizar o processo de gravação (salvamento) do documento fiscal digitado no portal ISS Fortaleza.
+- Impacto:
+  - O robô agora clica no botão "Gravar Documento" usando o ID `digitarDocumentoForm:j_id477` (ou seletor XPATH robusto) de forma automatizada ao final do preenchimento dos dados do serviço e retenções na aba Serviço.
+  - Adicionada espera de processamento de feedback do portal e registro em log do encerramento da gravação automática.
+
+## [2.1.0] - 2026-06-25
+
+### Alterado
+- Arquivos:
+  - `iss_fortaleza_automacao.py`
+- Motivo: suporte ao preenchimento de campos de retenções federais (IR, INSS, CSRF, PIS Não Retido, COFINS Não Retido, Outras Retenções), deduções e descontos (Condicionados e Incondicionados) na aba Serviço da automação da ISS Fortaleza.
+- Impacto:
+  - Atualizado o dataclass `DocumentoPortalISS` para comportar as novas propriedades financeiras.
+  - Ajustado o método `carregar_documentos_xlsx` para mapear e extrair os valores das novas colunas, mantendo retrocompatibilidade com planilhas que não possuem estas colunas (usando "0,00" por padrão).
+  - Implementada a função utilitária `_digitar_campo_se_nao_zero` para garantir que apenas valores diferentes de zero sejam digitados (evitando digitar "0,00" nos campos em branco do portal).
+  - Atualizado `preencher_documento_servico` mapeando os IDs do DOM identificados para os 10 campos financeiros do portal de escrituração.
+
 ## [2.0.0] - 2026-06-25
 
 ### Adicionado

@@ -52,18 +52,6 @@ Modo de teste visível da função 2, com pausas extras para inspeção manual:
 python main.py --modo 2 --competencia "5/2026" --planilha nf_compilado.xlsx --debug-funcao2
 ```
 
-Modo de teste guiado da função 2, com pausa no Inspector do Playwright nos pontos críticos:
-
-```bash
-python main.py --modo 2 --competencia "5/2026" --planilha nf_compilado.xlsx --inspecionar-funcao2
-```
-
-Modo com navegador persistente da função 2, mantendo login e reaproveitando a mesma janela entre execuções:
-
-```bash
-python main.py --modo 2 --competencia "5/2026" --planilha nf_compilado.xlsx --reutilizar-navegador-funcao2
-```
-
 ## Validação
 
 Execute a suíte de referência antes de evoluir novas regras de extração:
@@ -79,7 +67,8 @@ Os testes validam os PDFs atuais da pasta `dados/` e protegem campos fiscais cr�
 - `PyPDF2`
 - `PyMuPDF`
 - `openpyxl`
-- `playwright`
+- `selenium`
+- `webdriver-manager`
 - `google-genai`
 
 ## Enriquecimento de CNAE final

@@ -8,14 +8,39 @@ import traceback
 
 
 RAIZ_PROJETO = Path(__file__).resolve().parent
-LOG_ERRO_PADRAO = RAIZ_PROJETO / "log_erro.txt"
-LOG_EXECUCAO_PADRAO = RAIZ_PROJETO / "log_execucao.txt"
+PASTAS_LOGS: list[Path] = [RAIZ_PROJETO]
 
 
-def registrar_erro(erro: BaseException, contexto: str, caminho_log: Path = LOG_ERRO_PADRAO) -> Path:
-    """Registra um erro com contexto, mensagem e stack trace no `log_erro.txt`."""
+def configurar_pasta_logs(pasta_pdf: Path) -> None:
+    """Configura o diretório de logs para a pasta 'log' dentro de pasta_pdf."""
+    global PASTAS_LOGS
+    pasta_log = pasta_pdf if pasta_pdf.name == "log" else pasta_pdf / "log"
+    pasta_log.mkdir(parents=True, exist_ok=True)
+    PASTAS_LOGS = [pasta_log]
 
-    caminho_log.parent.mkdir(parents=True, exist_ok=True)
+
+def configurar_pastas_logs(pastas: list[Path]) -> None:
+    """Configura múltiplos diretórios de logs (ex: origem dos PDFs e destino da planilha)."""
+    global PASTAS_LOGS
+    PASTAS_LOGS = []
+    for p in pastas:
+        if p:
+            pasta_log = p if p.name == "log" else p / "log"
+            pasta_log.mkdir(parents=True, exist_ok=True)
+            PASTAS_LOGS.append(pasta_log)
+
+
+def registrar_erro(erro: BaseException, contexto: str, caminhos_log: list[Path] | Path | None = None) -> list[Path] | Path:
+    """Registra um erro com contexto, mensagem e stack trace em log_erro.txt."""
+
+    if caminhos_log:
+        if isinstance(caminhos_log, Path):
+            caminhos = [caminhos_log]
+        else:
+            caminhos = caminhos_log
+    else:
+        caminhos = [p / "log_erro.txt" for p in PASTAS_LOGS]
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     traceback_texto = "".join(
         traceback.format_exception(type(erro), erro, erro.__traceback__)
@@ -30,20 +55,34 @@ def registrar_erro(erro: BaseException, contexto: str, caminho_log: Path = LOG_E
         traceback_texto or "(sem stack trace disponível)",
         "",
     ]
-    with caminho_log.open("a", encoding="utf-8") as arquivo:
-        arquivo.write("\n".join(bloco))
-        arquivo.write("\n")
-    return caminho_log
+    texto = "\n".join(bloco) + "\n"
+
+    for caminho in caminhos:
+        try:
+            caminho.parent.mkdir(parents=True, exist_ok=True)
+            with caminho.open("a", encoding="utf-8") as arquivo:
+                arquivo.write(texto)
+        except Exception:
+            pass
+            
+    return caminhos[0] if len(caminhos) == 1 else caminhos
 
 
 def registrar_evento_execucao(
     evento: str,
     contexto: str,
-    caminho_log: Path = LOG_EXECUCAO_PADRAO,
-) -> Path:
-    """Registra um marco da execução do programa em `log_execucao.txt`."""
+    caminhos_log: list[Path] | Path | None = None,
+) -> list[Path] | Path:
+    """Registra um marco da execução do programa em log_execucao.txt."""
 
-    caminho_log.parent.mkdir(parents=True, exist_ok=True)
+    if caminhos_log:
+        if isinstance(caminhos_log, Path):
+            caminhos = [caminhos_log]
+        else:
+            caminhos = caminhos_log
+    else:
+        caminhos = [p / "log_execucao.txt" for p in PASTAS_LOGS]
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     bloco = [
         "=" * 80,
@@ -51,7 +90,14 @@ def registrar_evento_execucao(
         f"EVENTO: {evento}",
         "",
     ]
-    with caminho_log.open("a", encoding="utf-8") as arquivo:
-        arquivo.write("\n".join(bloco))
-        arquivo.write("\n")
-    return caminho_log
+    texto = "\n".join(bloco) + "\n"
+
+    for caminho in caminhos:
+        try:
+            caminho.parent.mkdir(parents=True, exist_ok=True)
+            with caminho.open("a", encoding="utf-8") as arquivo:
+                arquivo.write(texto)
+        except Exception:
+            pass
+            
+    return caminhos[0] if len(caminhos) == 1 else caminhos
