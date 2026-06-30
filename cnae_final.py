@@ -112,8 +112,14 @@ CODIGO_CNAE_EVENTOS = "932989910"
 @lru_cache(maxsize=1)
 def carregar_cnaes_oficiais(caminho: str = "cnae_oficial.xlsx") -> tuple[CnaeOficial, ...]:
     """Lê o arquivo oficial de CNAE e devolve a tabela pronta para busca."""
-
+    import sys
     arquivo = Path(caminho)
+    if not arquivo.exists():
+        if hasattr(sys, '_MEIPASS'):
+            arquivo = Path(sys._MEIPASS) / caminho
+        else:
+            arquivo = Path(__file__).parent / caminho
+
     if not arquivo.exists():
         raise FileNotFoundError(f"Arquivo oficial de CNAE não encontrado: {arquivo}")
 

@@ -543,7 +543,8 @@ def _converter_valor_br_para_float(valor_str: str) -> float:
     if not valor_str:
         return 0.0
     try:
-        limpo = str(valor_str).replace("R$", "").strip()
+        # Remove R$ e símbolo de porcentagem para evitar ValueError
+        limpo = str(valor_str).replace("R$", "").replace("%", "").strip()
         if "," in limpo:
             limpo = limpo.replace(".", "").replace(",", ".")
         return float(limpo)

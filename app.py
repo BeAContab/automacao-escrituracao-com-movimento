@@ -110,23 +110,40 @@ class BeAContabAPI:
 
         total_xlsx = []
         total_notas = 0
-        total_ignoradas = 0
+
+        # Primeiro conta todos os PDFs para cálculo global do progresso
+        total_pdfs_global = 0
+        pastas_validas = []
 
         for nome_prefeitura, caminho_pasta in mapa_prefeituras_pastas.items():
             if not caminho_pasta:
                 continue
             pasta = Path(caminho_pasta)
-            if not pasta.exists() or not pasta.is_dir():
-                log_gui(f"[AVISO] Pasta inválida para {nome_prefeitura}: {caminho_pasta}")
-                continue
+            if pasta.exists() and pasta.is_dir():
+                pdfs_da_pasta = [p for p in pasta.glob("*.pdf") if p.parent == pasta]
+                if pdfs_da_pasta:
+                    total_pdfs_global += len(pdfs_da_pasta)
+                    pastas_validas.append((nome_prefeitura, pasta, len(pdfs_da_pasta)))
 
+        if total_pdfs_global == 0:
+            log_gui("Nenhum arquivo PDF encontrado para processar.")
+            try:
+                self.window.evaluate_js(f"window.update_progresso_prefeitura(100, 'Concluído!')")
+            except Exception:
+                pass
+            return
+
+        processados_global = 0
+
+        for nome_prefeitura, pasta, qtd_pdfs in pastas_validas:
             log_gui(f"=== Iniciando: {nome_prefeitura} ===")
 
             def callback_progresso(indice, total):
-                porcentagem = int((indice / total) * 100)
+                nao_local = processados_global + indice
+                porcentagem = int((nao_local / total_pdfs_global) * 100)
                 try:
                     self.window.evaluate_js(
-                        f"window.update_progresso_prefeitura({porcentagem}, 'Processando {indice} de {total}')"
+                        f"window.update_progresso_prefeitura({porcentagem}, 'Processando {nao_local} de {total_pdfs_global}')"
                     )
                 except Exception:
                     pass
@@ -143,6 +160,8 @@ class BeAContabAPI:
                     total_xlsx.append(str(xlsx))
             except Exception as e:
                 log_gui(f"[ERRO] {nome_prefeitura}: {e}")
+
+            processados_global += qtd_pdfs
 
         msg_final = f"Exportação concluída. {total_notas} nota(s) extraída(s) em {len(total_xlsx)} planilha(s)."
         log_gui(msg_final)
@@ -686,10 +705,16 @@ class BeAContabAPI:
             except Exception:
                 pass
 
+def obter_caminho_recurso(caminho_relativo: str) -> str:
+    """Retorna o caminho absoluto do recurso, funcionando no desenvolvimento ou no executável empacotado."""
+    if hasattr(sys, '_MEIPASS'):
+        return str(Path(sys._MEIPASS) / caminho_relativo)
+    return str((Path(__file__).parent / caminho_relativo).resolve())
+
 if __name__ == '__main__':
     # Cria a janela do pywebview
     # A interface gráfica fica em gui/index.html
-    html_path = str((Path(__file__).parent / "gui" / "index.html").resolve())
+    html_path = obter_caminho_recurso("gui/index.html")
     
     window = webview.create_window('Automação: ISS Fortaleza', html_path, width=1280, height=800)
     api = BeAContabAPI(window)

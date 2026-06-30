@@ -12,6 +12,20 @@ iss_extracao.xlsx
 log_erro.txt
 log_execucao.txt
 *.xlsx
+brain/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+nf_compilado.xlsx
+iss_extracao.xlsx
+.env
+log_erro.txt
+log_execucao.txt
+*.xlsx
 dados/
 
 # Notas fiscais locais (PII / sigilo)
@@ -20,3 +34,9 @@ PREFEITURAS/
 
 # Rascunhos do agente
 scratch/
+
+# Compilação e executáveis (PyInstaller / Inno Setup)
+build/
+dist/
+installer_output/
+*.spec

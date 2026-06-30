@@ -83,17 +83,33 @@ def _regex_valor(padrao: str, texto: str, grupo: int = 1) -> str:
     m = re.search(padrao, texto, re.IGNORECASE | re.DOTALL)
     if m:
         val = m.group(grupo).strip().replace("R$", "").replace(" ", "").strip("-")
-        # Garante formato correto (substitui ponto de milhar se houver vírgula decimal)
-        if re.match(r"^\d{1,3}(\.\d{3})*,\d{2}$", val):
-            return val
-        # Tenta normalizar: somente números + pontos + vírgula
-        val_limpo = re.sub(r"[^\d,.]", "", val)
-        if val_limpo:
-            # Converte ponto decimal americano para brasileiro
-            if "." in val_limpo and "," not in val_limpo:
-                val_limpo = val_limpo.replace(".", ",")
-                return val_limpo if val_limpo else "0,00"
-            return val_limpo
+        val = re.sub(r"[^\d,.]", "", val)
+        if not val:
+            return "0,00"
+        
+        # Trata múltiplos pontos sem vírgula (ex: "10.000.00")
+        if "." in val and "," not in val:
+            partes = val.split(".")
+            if len(partes) > 2:
+                # Junta milhares e põe vírgula no decimal
+                val = "".join(partes[:-1]) + "," + partes[-1]
+            elif len(partes) == 2:
+                # Ex: "10000.00" ou "5.00"
+                if len(partes[1]) == 2:
+                    val = partes[0] + "," + partes[1]
+                else:
+                    val = partes[0] + partes[1] + ",00"
+        # Trata milhares com pontos e decimal com vírgula (ex: "300.000,00")
+        elif "," in val and "." in val:
+            val = val.replace(".", "")
+        # Trata apenas vírgula (ex: "300000,00")
+        elif "," in val and "." not in val:
+            pass
+        # Trata apenas dígitos (ex: "10000")
+        else:
+            val = val + ",00"
+            
+        return val
     return "0,00"
 
 
@@ -102,6 +118,12 @@ def _regex_str(padrao: str, texto: str, grupo: int = 1, padrao_flags: int = 0) -
     flags = re.IGNORECASE | re.DOTALL | padrao_flags
     m = re.search(padrao, texto, flags)
     return m.group(grupo).strip() if m else ""
+
+
+def _valores_iguais(v1: str, v2: str) -> bool:
+    """Compara dois valores string formatados e diz se são numericamente iguais."""
+    from extrair_nf_pdfs import _converter_valor_br_para_float
+    return abs(_converter_valor_br_para_float(v1) - _converter_valor_br_para_float(v2)) < 0.01
 
 
 def _mover_para_concluidas(caminho_pdf: Path) -> None:
@@ -127,12 +149,26 @@ def _parse_abrasf(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Optiona
     """
     # Número da NF
     numero = _regex_str(
-        r"N[uú]mero\s+(?:da\s+)?(?:NFS-?e|Nota|DPS)\s*\n?\s*(\d+)",
+        r"N[uú]mero\s+(?:da\s+)?(?:Nota\s+Fiscal|NF|NFS-?e|Nota|DPS)\s*[:\-]?\s*\n?\s*(\d+)",
         texto
     )
     if not numero:
         # Fallback para layouts alternativos
-        numero = _regex_str(r"N[°º]\s*(\d+)\b", texto)
+        numero = _regex_str(r"N[°º]\s*(?:da\s+)?(?:Nota\s+Fiscal|NF|NFS-?e|Nota)?[:\s]*\n?\s*(\d+)", texto)
+        if not numero:
+            numero = _regex_str(r"N[°º]\s*(\d+)\b", texto)
+
+    # Se ainda não achar número, tenta pela chave de acesso (específico NFS-e Nacional/Vila Velha)
+    if not numero or numero == "0":
+        m_chave = re.search(r"\b(\d{50})\b", texto)
+        if m_chave:
+            restante = texto[m_chave.end():].strip().split("\n")
+            if restante and restante[0].strip().isdigit():
+                numero = restante[0].strip()
+            else:
+                # Posição 26 a 34 (9 dígitos) na chave
+                numero = str(int(m_chave.group(1)[25:34]))
+
     numero = normalizar_numero_nf(numero)
 
     # Data de emissão — pega a primeira data válida
@@ -148,26 +184,33 @@ def _parse_abrasf(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Optiona
         cnpj = _regex_str(r"(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto)
 
     # Código e descrição CNAE / tributação nacional
-    id_cnae = _regex_str(
-        r"C[oó]digo\s+(?:de\s+)?Tributa[cç][aã]o\s+Nacional[:\s]*([0-9][0-9.]*)",
-        texto
-    )
-    if not id_cnae:
-        id_cnae = _regex_str(r"C[oó]d\.?\s+Trib\.?\s+Nacional[:\s]*([0-9][0-9.]+)", texto)
+    id_cnae = ""
+    desc_cnae = ""
+    # Padrão geral de CNAE e descrição: exige pontos se for curto, ou 5+ dígitos para evitar partes do endereço
+    m_cnae = re.search(r"\b(\d{2}\.\d{2}(?:\.\d{2})?|\d{5,8})\s*[-–/]\s*([A-Za-zÀ-ú\s]{5,})", texto)
+    if m_cnae:
+        id_cnae = m_cnae.group(1).strip()
+        desc_cnae = m_cnae.group(2).strip().split("\n")[0].strip()
+    else:
+        id_cnae = _regex_str(
+            r"C[oó]digo\s+(?:de\s+)?Tributa[cç][aã]o\s+Nacional[:\s]*([0-9][0-9.]*)",
+            texto
+        )
+        if not id_cnae:
+            id_cnae = _regex_str(r"C[oó]d\.?\s+Trib\.?\s+Nacional[:\s]*([0-9][0-9.]+)", texto)
 
-    desc_cnae = _regex_str(
-        r"C[oó]digo\s+de\s+Tributa[cç][aã]o\s+(?:Nacional|Municipal)[^\n]*\n([^\n]{10,})",
-        texto
-    )
-    if not desc_cnae:
-        # Extrair da linha do código: "12.07.01 - Shows, ballet, ..."
-        m_desc = re.search(r"\d{1,2}\.\d{2}(?:\.\d{2})?\s*[-–]\s*(.+?)(?:\n|$)", texto)
-        if m_desc:
-            desc_cnae = m_desc.group(1).strip()
+        desc_cnae = _regex_str(
+            r"C[oó]digo\s+de\s+Tributa[cç][aã]o\s+(?:Nacional|Municipal)[^\n]*\n([^\n]{10,})",
+            texto
+        )
+        if not desc_cnae:
+            m_desc = re.search(r"\d{1,2}\.\d{2}(?:\.\d{2})?\s*[-–]\s*(.+?)(?:\n|$)", texto)
+            if m_desc:
+                desc_cnae = m_desc.group(1).strip()
 
     # Descrição do serviço
     desc_servico = _regex_str(
-        r"Descri[cç][aã]o\s+do\s+Servi[cç]o\s*\n([\s\S]{10,400}?)(?:\n(?:TRIBUTA|Local|Dados|Munic))",
+        r"(?:Descri[cç][aã]o|Discrimina[cç][aã]o)\s+(?:do\s+|dos\s+)?Servi[cç]os?[:\-]?\s*\n?([\s\S]{10,800}?)(?:\n(?:TRIBUTA|Local|Dados|Munic|Valor|Dedu|$))",
         texto
     )
     if not desc_servico:
@@ -179,31 +222,40 @@ def _parse_abrasf(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Optiona
 
     # Local da prestação
     local_raw = _regex_str(
-        r"Local\s+da\s+Presta[cç][aã]o\s*[:\-]?\s*([\w\s]+?)\s*[-–]\s*([A-Z]{2})\b",
+        r"Local\s+(?:da\s+|de\s+)?Presta[cç][aã]o\s*[:\-]?\s*([\w\s]+?)\s*[-–]\s*([A-Z]{2})\b",
         texto
     )
     if local_raw:
         m_local = re.search(
-            r"Local\s+da\s+Presta[cç][aã]o\s*[:\-]?\s*([\w\s]+?)\s*[-–]\s*([A-Z]{2})\b",
+            r"Local\s+(?:da\s+|de\s+)?Presta[cç][aã]o\s*[:\-]?\s*([\w\s]+?)\s*[-–]\s*([A-Z]{2})\b",
             texto, re.IGNORECASE
         )
         cidade = m_local.group(1).strip().title() if m_local else ""
         uf = m_local.group(2).upper() if m_local else ""
     else:
         # Fallback genérico
-        cidade = _regex_str(r"Local\s+da\s+Presta[cç][aã]o\s*[:\-]?\s*([A-Za-zÀ-ú\s]+)\b", texto)
+        cidade = _regex_str(r"Local\s+(?:da\s+|de\s+)?Presta[cç][aã]o\s*[:\-]?\s*([A-Za-zÀ-ú\s]+)\b", texto)
         uf = ""
 
     # Natureza da operação / tributação
     natureza = _regex_str(
-        r"(?:Natureza\s+da\s+Opera[cç][aã]o|Tributa[cç][aã]o\s+do\s+ISSQN)\s*[:\-]?\s*([^\n]{5,80})",
+        r"(?:Natureza\s+da\s+Opera[cç][aã]o|Tributa[cç][aã]o\s+do\s+ISSQN|Tipo\s+Tributa[cç][aã]o)\s*[:\-]?\s*([^\n]{3,80})",
         texto
     )
-    # Mapear para o padrão esperado
-    if re.search(r"Fora|Outro|exterior|N[aã]o\s+Incid|Suspen", natureza, re.IGNORECASE):
+    
+    # Normalização robusta de natureza
+    natureza_upper = natureza.upper()
+    if any(k in natureza_upper for k in ["FORA", "EXTERIOR", "EXPORTAÇÃO", "OUTRO MUNICÍPIO"]):
         natureza = "Tributação Fora do Município"
-    elif re.search(r"Tribut[aá]vel|Munic", natureza, re.IGNORECASE):
+    elif any(k in natureza_upper for k in ["DENTRO", "NO MUNICÍPIO", "TRIBUTÁVEL NO MUNICÍPIO"]):
         natureza = "Tributação no Município"
+    else:
+        # Comparação de cidades
+        cidade_prestador = _regex_str(r"IDENTIFICAÇÃO\s+DO\s+PRESTADOR.*?Cidade:\s*([A-Za-zÀ-ú\s]+?)(?:\s{2,}|Estado|\n)", texto)
+        if cidade_prestador and cidade and cidade_prestador.upper().strip() != cidade.upper().strip():
+            natureza = "Tributação Fora do Município"
+        else:
+            natureza = "Tributação no Município"
 
     # ISS Retido
     iss_retido_str = _regex_str(
@@ -214,7 +266,7 @@ def _parse_abrasf(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Optiona
 
     # Valores
     valor_servico = _regex_valor(
-        r"Valor\s+do\s+Servi[cç]o\s*[:\-]?\s*R\$\s*([\d.,]+)",
+        r"Valor\s+(?:do\s+)?Servi[cç]o\s*[:\-]?\s*(?:R\$\s*)?([\d.,]+)",
         texto
     )
     if valor_servico == "0,00":
@@ -271,6 +323,17 @@ def _parse_abrasf(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Optiona
             aliquota += ",00"
         aliquota = f"{aliquota}%"
 
+    # Reset de falsos positivos
+    if valor_servico != "0,00":
+        if _valores_iguais(ir, valor_servico): ir = "0,00"
+        if _valores_iguais(pis, valor_servico): pis = "0,00"
+        if _valores_iguais(cofins, valor_servico): cofins = "0,00"
+        if _valores_iguais(csrf, valor_servico): csrf = "0,00"
+        if _valores_iguais(inss, valor_servico): inss = "0,00"
+        if _valores_iguais(desconto_cond, valor_servico): desconto_cond = "0,00"
+        if _valores_iguais(desconto_incond, valor_servico): desconto_incond = "0,00"
+        if _valores_iguais(deducoes, valor_servico): deducoes = "0,00"
+
     return NotaFiscalExtraida(
         arquivo_pdf=arquivo_pdf,
         prefeitura=nome_prefeitura,
@@ -293,6 +356,150 @@ def _parse_abrasf(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Optiona
         pis_nao_retido=pis,
         cofins_nao_retido=cofins,
         csrf=csrf,
+        inss=inss,
+        aliquota=aliquota,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parser Petrolina (Layout El-Tech)
+# ---------------------------------------------------------------------------
+
+def _parse_petrolina(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtraida]:
+    """Parser para o layout específico da Prefeitura Municipal de Petrolina."""
+    # 1. Número da NF
+    numero = _regex_str(r"N[º°]\s+da\s+Nota\s+Fiscal\s*\n?\s*(\d+)", texto)
+    if not numero:
+        numero = _regex_str(r"N[º°]\s*(\d+)\b", texto)
+    numero = normalizar_numero_nf(numero)
+
+    # 2. Data Emissão (Data Fato Gerador ou Competência)
+    data = ""
+    m_data = re.search(r"(\d{2}/\d{2}/\d{4})\s+\d{2}:\d{2}:\d{2}\s*\n?\s*Emitido\s+em", texto, re.IGNORECASE)
+    if m_data:
+        data = normalizar_data_br(m_data.group(1))
+    else:
+        m_data = re.search(r"(\d{2}/\d{2}/\d{4})", texto)
+        if m_data:
+            data = normalizar_data_br(m_data.group(1))
+
+    # 3. CNPJ Prestador
+    cnpj = _regex_str(r"PRESTADOR.*?CPF/CNPJ:\s*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto)
+    if not cnpj:
+        cnpj = _regex_str(r"CPF/CNPJ:\s*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto)
+
+    # 4. CNAE / Código Serviço
+    id_cnae = ""
+    desc_cnae = ""
+    # Padrão: 120701 - Shows, ballet, danças...
+    m_cnae = re.search(r"\b(\d{4,8})\s*[-–]\s*([A-Za-zÀ-ú\s]{5,})", texto)
+    if m_cnae:
+        id_cnae = m_cnae.group(1).strip()
+        desc_cnae = m_cnae.group(2).strip().split("\n")[0].strip()
+
+    # 5. Descrição do serviço
+    desc_servico = _regex_str(
+        r"DISCRIMINA[CÇ][AÃ]O\s+DOS\s+SERVI[CÇ]OS\s*\n([\s\S]{10,800}?)(?:\n(?:VALOR|DEDU|OUTRAS|\Z))",
+        texto
+    )
+    desc_servico = _normalizar(desc_servico)
+
+    # 6. Local da prestação (ex: "2504009 - Campina Grande - PB")
+    cidade = ""
+    uf = ""
+    m_local = re.search(r"Local\s+de\s+Presta[cç][aã]o.*?(?:\d{5,}\s*[-–]\s*)?([A-Za-zÀ-ú\s]+?)\s*[-–]\s*([A-Z]{2})\b", texto, re.IGNORECASE | re.DOTALL)
+    if m_local:
+        cidade = m_local.group(1).strip().title()
+        uf = m_local.group(2).upper()
+
+    # 7. Natureza da operação
+    natureza = "Tributação Fora do Município"
+    if cidade and "PETROLINA" in cidade.upper():
+        natureza = "Tributação no Município"
+
+    # 8. ISS Retido
+    iss_retido = "SIM" if "Retido na Fonte" in texto or "Retido" in texto else "NÃO"
+
+    # 9. Valores da Tabela
+    # VALOR SERVIÇO \n BASE CÁLCULO \n ISS \n <VALOR_SERVICO>
+    valor_servico = "0,00"
+    m_vals = re.search(r"VALOR\s+SERVI[CÇ]O\s*\n\s*BASE\s+C[AÁ]LCULO\s*\n\s*ISS\s*\n\s*([\d.,]+)", texto, re.IGNORECASE)
+    if m_vals:
+        valor_servico = m_vals.group(1).strip()
+
+    # Deduções
+    deducoes = "0,00"
+    m_deduc = re.search(r"DEDU[CÇ][Otilde;es|OÕES]\s*\n\s*DESCONTO\s*\n\s*CONDICIONAL\s*\n\s*AL[IÍ]QUOTA\s*\n\s*[\d.,]+\s*\n\s*VALOR\s+L[IÍ]QUIDO\s*(?:\(R\$\))?\s*\n(?:\s*\(R\$\)\s*\n){4,6}\s*([\d.,]+)", texto, re.IGNORECASE)
+    if m_deduc:
+        deducoes = m_deduc.group(1).strip()
+
+    # Alíquota
+    aliquota = "0,00%"
+    m_aliq = re.search(r"AL[IÍ]QUOTA\s*\n\s*[\d.,]+\s*\n\s*VALOR\s+L[IÍ]QUIDO\s*(?:\(R\$\))?\s*\n(?:\s*\(R\$\)\s*\n){4,6}\s*[\d.,]+\s*\n\s*[\d.,]+\s*\n\s*([\d.,]+)", texto, re.IGNORECASE)
+    if m_aliq:
+        aliquota = m_aliq.group(1).strip()
+    else:
+        m_aliq_alt = re.search(r"AL[IÍ]QUOTA\s*\n\s*([\d.,]+)", texto, re.IGNORECASE)
+        if m_aliq_alt:
+            aliquota = m_aliq_alt.group(1).strip()
+    
+    if aliquota:
+        aliquota = aliquota.replace(".", ",")
+        if "," not in aliquota:
+            aliquota += ",00"
+        aliquota = f"{aliquota}%"
+
+    # Retenções federais e descontos da tabela empilhada
+    desconto_incond = "0,00"
+    cofins = "0,00"
+    pis = "0,00"
+    csll = "0,00"
+    ir = "0,00"
+    inss = "0,00"
+    outras = "0,00"
+
+    m_ret = re.search(r"DESCONTO\s+INCONDICIONAL\s*\n\s*([\d.,]+)\s*\n\s*\(R\$\)\s*\n\s*([\d.,]+)\s*\n\s*([\d.,]+)\s*\n\s*([\d.,]+)\s*\n\s*([\d.,]+)\s*\n\s*([\d.,]+)\s*\n\s*([\d.,]+)", texto, re.IGNORECASE)
+    if m_ret:
+        desconto_incond = m_ret.group(1).strip()
+        cofins = m_ret.group(2).strip()
+        pis = m_ret.group(3).strip()
+        csll = m_ret.group(4).strip()
+        ir = m_ret.group(5).strip()
+        inss = m_ret.group(6).strip()
+        outras = m_ret.group(7).strip()
+
+    # Reset de falsos positivos
+    if valor_servico != "0,00":
+        if ir == valor_servico: ir = "0,00"
+        if pis == valor_servico: pis = "0,00"
+        if cofins == valor_servico: cofins = "0,00"
+        if csll == valor_servico: csll = "0,00"
+        if inss == valor_servico: inss = "0,00"
+        if desconto_incond == valor_servico: desconto_incond = "0,00"
+        if deducoes == valor_servico: deducoes = "0,00"
+
+    return NotaFiscalExtraida(
+        arquivo_pdf=arquivo_pdf,
+        prefeitura="MUNICIPIO DE PETROLINA",
+        cnpj_prestador=cnpj,
+        numero_nf=numero,
+        data_emissao=data,
+        id_cnae=id_cnae,
+        desc_cnae=desc_cnae,
+        descricao_servico=desc_servico,
+        uf_local_prestacao=uf,
+        cidade_local_prestacao=cidade,
+        natureza_operacao=natureza,
+        iss_retido=iss_retido,
+        valor_servico=valor_servico,
+        valor_deducoes=deducoes,
+        descontos_incondicionados=desconto_incond,
+        descontos_condicionados="0,00",
+        outras_retencoes=outras,
+        ir=ir,
+        pis_nao_retido=pis,
+        cofins_nao_retido=cofins,
+        csrf=csll,  # Mapeia CSLL retido para CSRF no modelo
         inss=inss,
         aliquota=aliquota,
     )
@@ -328,9 +535,14 @@ def _parse_sigiss_ce(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Opti
     cnpj = _regex_str(r"(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto)
 
     # Código da atividade: "1207 / 0 / 9001902 - Produção musical"
-    m_cod = re.search(r"CODIGO\s+DA\s+ATIVIDADE.{0,30}\n([0-9/ ]+)\s*[-–]\s*(.+)", texto, re.IGNORECASE)
-    id_cnae = m_cod.group(1).strip().split("/")[0].strip() if m_cod else ""
-    desc_cnae = m_cod.group(2).strip() if m_cod else ""
+    m_cod = re.search(r"\b(\d{4}\s*/\s*\d+\s*/\s*\d+)\s*[-–]\s*(.+)", texto)
+    if m_cod:
+        id_cnae = m_cod.group(1).strip().split("/")[0].strip()
+        desc_cnae = m_cod.group(2).strip().split("\n")[0].strip()
+    else:
+        m_cod = re.search(r"CODIGO\s+DA\s+ATIVIDADE.{0,30}\n([0-9/ ]+)\s*[-–]\s*(.+)", texto, re.IGNORECASE)
+        id_cnae = m_cod.group(1).strip().split("/")[0].strip() if m_cod else ""
+        desc_cnae = m_cod.group(2).strip() if m_cod else ""
 
     # Descrição do serviço (bloco de texto central)
     desc_servico = _regex_str(
@@ -345,11 +557,12 @@ def _parse_sigiss_ce(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Opti
     desc_servico = _normalizar(desc_servico)
 
     # Natureza
-    natureza_raw = _regex_str(r"Natureza\s+da\s+Opera[cç][aã]o\s*\n([^\n]+)", texto)
-    if re.search(r"Fora|Outro Munic", natureza_raw, re.IGNORECASE):
+    if "TRIBUTADA FORA" in texto.upper() or "FORA DO MUNICIPIO" in texto.upper() or "FORA DO MUNICÍPIO" in texto.upper():
         natureza = "Tributação Fora do Município"
+    elif "TRIBUTADA NO" in texto.upper() or "NO MUNICIPIO" in texto.upper() or "NO MUNICÍPIO" in texto.upper():
+        natureza = "Tributação no Município"
     else:
-        natureza = natureza_raw if natureza_raw else "Tributação Fora do Município"
+        natureza = "Tributação Fora do Município"
 
     # ISS Retido
     iss_retido = "SIM" if re.search(r"\(X\)\s*Sim|\(X\)Sim|ISS\s+a\s+Reter", texto, re.IGNORECASE) else "NÃO"
@@ -383,9 +596,22 @@ def _parse_sigiss_ce(texto: str, nome_prefeitura: str, arquivo_pdf: str) -> Opti
         aliquota = f"{aliquota}%"
 
     # Local
-    local_m = re.search(r"Local\s+da\s+Presta[cç][aã]o\s*\n([A-Z\s]+)-([A-Z]{2})", texto, re.IGNORECASE)
+    local_m = re.search(r"Local\s+da\s+Presta[cç][aã]o\s*(?:\n\s*[\d-]*\s*)*\n\s*([A-Za-zÀ-ú\s]+?)\s*-\s*([A-Z]{2})\b", texto, re.IGNORECASE)
+    if not local_m:
+        local_m = re.search(r"Local\s+da\s+Presta[cç][aã]o\s*\n([A-Z\s]+)-([A-Z]{2})", texto, re.IGNORECASE)
     cidade = local_m.group(1).strip().title() if local_m else ""
     uf = local_m.group(2).upper() if local_m else ""
+
+    # Reset de falsos positivos
+    if valor_servico != "0,00":
+        if _valores_iguais(ir, valor_servico): ir = "0,00"
+        if _valores_iguais(pis, valor_servico): pis = "0,00"
+        if _valores_iguais(cofins, valor_servico): cofins = "0,00"
+        if _valores_iguais(csrf, valor_servico): csrf = "0,00"
+        if _valores_iguais(inss, valor_servico): inss = "0,00"
+        if _valores_iguais(desconto_cond, valor_servico): desconto_cond = "0,00"
+        if _valores_iguais(desconto_incond, valor_servico): desconto_incond = "0,00"
+        if _valores_iguais(deducoes, valor_servico): deducoes = "0,00"
 
     return NotaFiscalExtraida(
         arquivo_pdf=arquivo_pdf,
@@ -444,7 +670,7 @@ def _parse_fortaleza(texto: str, caminho_pdf: Path) -> Optional[NotaFiscalExtrai
 
     # CNAE: "12.07 / 932989910 - SHOWS..."
     m_cnae = re.search(r"(\d{1,2}\.\d{2})\s*/\s*(\d+)\s*[-–]\s*([^\n]{5,})", texto_limpo, re.IGNORECASE)
-    id_cnae = m_cnae.group(2).strip() if m_cnae else ""
+    id_cnae = m_cnae.group(1).strip() if m_cnae else ""
     desc_cnae = m_cnae.group(3).strip() if m_cnae else ""
 
     # Descrição do serviço
@@ -454,10 +680,13 @@ def _parse_fortaleza(texto: str, caminho_pdf: Path) -> Optional[NotaFiscalExtrai
     )
     desc_servico = _normalizar(desc_servico)
 
-    # Natureza da operação
-    nat_m = re.search(r"Natureza\s+Opera[cç][aã]o\s*\n([^\n]+)", texto_limpo, re.IGNORECASE)
-    natureza_raw = nat_m.group(1).strip() if nat_m else ""
-    natureza = "Tributação Fora do Município" if re.search(r"Fora|2", natureza_raw) else natureza_raw
+    # Natureza da operação (isolar de telefones)
+    if "2-TRIBUTACAO FORA" in texto_limpo.upper() or "TRIBUTAÇÃO FORA DO MUNICÍPIO" in texto_limpo.upper() or "FORA DO MUNICÍPIO" in texto_limpo.upper() or "2-TRIBUTACAO" in texto_limpo.upper():
+        natureza = "Tributação Fora do Município"
+    elif "1-TRIBUTACAO NO" in texto_limpo.upper() or "TRIBUTAÇÃO NO MUNICÍPIO" in texto_limpo.upper() or "NO MUNICÍPIO" in texto_limpo.upper() or "1-TRIBUTACAO" in texto_limpo.upper():
+        natureza = "Tributação no Município"
+    else:
+        natureza = "Tributação Fora do Município"
 
     # ISS Retido: "( X ) Sim" ou "(X) Sim"
     iss_retido = "SIM" if re.search(r"\(\s*X\s*\)\s*Sim", texto_limpo, re.IGNORECASE) else "NÃO"
@@ -501,6 +730,16 @@ def _parse_fortaleza(texto: str, caminho_pdf: Path) -> Optional[NotaFiscalExtrai
     local_m = re.search(r"Local\s+da\s+Presta[cç][aã]o\s*\n?\s*([A-Za-zÀ-ú\s]+?)(?:\s*-\s*|\n)(CE|PB|[A-Z]{2})\b", texto_limpo, re.IGNORECASE)
     cidade = local_m.group(1).strip().title() if local_m else "Campina Grande"
     uf = local_m.group(2).upper() if local_m else "PB"
+
+    # Reset de falsos positivos
+    if valor_servico != "0,00":
+        if _valores_iguais(ir, valor_servico): ir = "0,00"
+        if _valores_iguais(pis, valor_servico): pis = "0,00"
+        if _valores_iguais(cofins, valor_servico): cofins = "0,00"
+        if _valores_iguais(csrf, valor_servico): csrf = "0,00"
+        if _valores_iguais(inss, valor_servico): inss = "0,00"
+        if _valores_iguais(desconto_cond, valor_servico): desconto_cond = "0,00"
+        if _valores_iguais(desconto_incond, valor_servico): desconto_incond = "0,00"
 
     return NotaFiscalExtraida(
         arquivo_pdf=caminho_pdf.name,
@@ -551,7 +790,7 @@ def _parse_barueri(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtraida]
     # Código do serviço (aparece na tabela de serviços)
     id_cnae = _regex_str(r"C[oó]digo\s+Servi[cç]o\s*\n?\s*(\d+)", texto)
     desc_cnae = _regex_str(
-        r"Shows,\s+ballet,\s+dan[cç]as[^\n]{0,80}", texto
+        r"(Shows,\s+ballet,\s+dan[cç]as[^\n]{0,80})", texto
     )
     if not desc_cnae:
         desc_cnae = "Shows, ballet, danças, desfiles, bailes, óperas, concertos, recitais, festivais e congêneres."
@@ -667,11 +906,16 @@ def _parse_campo_grande(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtr
             aliquota += ",00"
         aliquota = f"{aliquota}%"
 
-    # Local: "Mun‌cipio de incid‌ncia do ISSQN: CAMPINA GRANDE - PB"
+    # Local: "Local de prestação" ou fallback "Município de incidência do ISSQN: CAMPINA GRANDE - PB"
     local_m = re.search(
-        r"Mun[ií]c[íi]pio\s+de\s+incid[eê]ncia\s+do\s+ISSQN\s*\n?\s*([A-Za-zÀ-ú\s]+?)\s*[-–]\s*([A-Z]{2})\b",
+        r"Local\s+de\s+presta\S*o\s*\n?\s*([A-Za-zÀ-ú\s\ufffd]+?)\s*[-–]\s*([A-Z]{2})\b",
         texto, re.IGNORECASE
     )
+    if not local_m:
+        local_m = re.search(
+            r"Mun.cipio\s+de\s+incid.ncia\s+do\s+ISSQN\s*\n?\s*([A-Za-zÀ-ú\s\ufffd]+?)\s*[-–]\s*([A-Z]{2})\b",
+            texto, re.IGNORECASE
+        )
     cidade = local_m.group(1).strip().title() if local_m else ""
     uf = local_m.group(2).upper() if local_m else ""
 
@@ -711,8 +955,19 @@ def _parse_sao_roque(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtraid
     # O layout é semelhante ao ABRASF, reutilizamos com ajustes
     nota = _parse_abrasf(texto, "PREFEITURA DA ESTANCIA TURISTICA DE SAO ROQUE SP", arquivo_pdf)
 
-    # Corrigir campos específicos do layout São Roque
     if nota:
+        # Tabela específica do layout São Roque (Cidade360)
+        # DESCRIÇÃO DOS SERVIÇOS \n VALOR TOTAL \n ALIQ. ISSQN \n VALOR ISSQN \n RETIDO
+        m_tabela = re.search(
+            r"DESCRI[CÇ][AÃ]O\s+DOS\s+SERVI[CÇ]OS\s*\n\s*VALOR\s+TOTAL\s*\n\s*ALIQ\.\s*ISSQN\s*\n\s*VALOR\s+ISSQN\s*\n\s*RETIDO\s*\n([\s\S]+?)\n([\d.,]+)\s*\n\s*([\d.,]+)\s*\n\s*([\d.,]+)\s*\n\s*(Sim|N[aã]o)",
+            texto, re.IGNORECASE
+        )
+        if m_tabela:
+            nota.descricao_servico = _normalizar(m_tabela.group(1).strip())
+            nota.valor_servico = m_tabela.group(2).strip()
+            nota.aliquota = f"{m_tabela.group(3).strip().replace('.', ',')}%"
+            nota.iss_retido = "SIM" if m_tabela.group(5).strip().upper() in ("SIM", "S") else "NÃO"
+
         # Município de prestação identificado em "Município de Prestação Serviço"
         local_m = re.search(r"Munic[ií]pio\s+de\s+Presta[cç][aã]o\s+Servi[cç]o\s*\n?\s*(.+)", texto, re.IGNORECASE)
         if local_m:
@@ -724,15 +979,23 @@ def _parse_sao_roque(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtraid
             else:
                 nota.cidade_local_prestacao = local_raw2.title()
 
+        # CNAE e descrição CNAE específicos sob Código de Tributação Nacional
+        m_cnae_sr = re.search(r"C[oó]digo\s+de\s+Tributa[cç][aã]o\s+Nacional\s*\n\s*C[oó]digo\s+de\s+Tributa[cç][aã]o\s+Municipal\s*\n\s*([\d.]+)\s*[-–]\s*(.+)", texto, re.IGNORECASE)
+        if m_cnae_sr:
+            nota.id_cnae = m_cnae_sr.group(1).strip()
+            nota.desc_cnae = m_cnae_sr.group(2).strip().split("\n")[0].strip()
+
         # Garantir CNPJ correto (primeiro CNPJ do prestador)
         cnpj_m = re.search(r"CNPJ\s*/\s*CPF[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto, re.IGNORECASE)
         if cnpj_m:
             nota.cnpj_prestador = cnpj_m.group(1)
 
-        # Alíquota no formato "5,00"
-        aliq_m = re.search(r"ALIC?\.\s*ISSQN\s*\n?([\d,]+)", texto, re.IGNORECASE)
-        if aliq_m:
-            nota.aliquota = f"{aliq_m.group(1).replace('.', ',')}%"
+        # Reset de falsos positivos
+        if nota.valor_servico != "0,00":
+            if nota.ir == nota.valor_servico: nota.ir = "0,00"
+            if nota.inss == nota.valor_servico: nota.inss = "0,00"
+            if nota.descontos_condicionados == nota.valor_servico: nota.descontos_condicionados = "0,00"
+            if nota.descontos_incondicionados == nota.valor_servico: nota.descontos_incondicionados = "0,00"
 
     return nota
 
@@ -743,7 +1006,7 @@ def _parse_sao_roque(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtraid
 
 def _parse_joao_pessoa(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtraida]:
     """Parser para a Prefeitura Municipal de João Pessoa."""
-    numero = _regex_str(r"N[uú]mero\s*\n?\s*(\d+)", texto)
+    numero = _regex_str(r"N[uú]mero\s*\n\s*(?:\d{2}/\d{4}\s*\n)?\s*(\d+)", texto)
     numero = normalizar_numero_nf(numero)
 
     data = ""
@@ -755,12 +1018,16 @@ def _parse_joao_pessoa(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtra
     if not cnpj:
         cnpj = _regex_str(r"(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", texto)
 
-    # CNAE: "9001-9/99-04 - ARTES CENICAS..."
-    m_cnae = re.search(r"([\d]{4}-\d/\d{2}-\d{2}|[\d]+)\s*[-–]\s*(.+)", texto)
-    id_cnae = m_cnae.group(1).strip() if m_cnae else ""
-    desc_cnae = m_cnae.group(2).strip() if m_cnae else ""
-    # Limitar desc a 1 linha
-    desc_cnae = desc_cnae.split("\n")[0][:200]
+    # CNAE e descrição de serviço (isolar de CNPJ buscando sob 'Serviço')
+    m_serv = re.search(r"Servi[cç]o\s*\n\s*(\d{2}\.\d{2})[-–]?\s*([A-ZÀ-Úa-zà-ú\s,]+)", texto, re.IGNORECASE)
+    if m_serv:
+        id_cnae = m_serv.group(1).strip()
+        desc_cnae = m_serv.group(2).strip().split("\n")[0].strip()
+    else:
+        m_cnae = re.search(r"([\d]{4}-\d/\d{2}-\d{2}|[\d]+)\s*[-–]\s*(.+)", texto)
+        id_cnae = m_cnae.group(1).strip() if m_cnae else ""
+        desc_cnae = m_cnae.group(2).strip() if m_cnae else ""
+        desc_cnae = desc_cnae.split("\n")[0][:200]
 
     desc_servico = _regex_str(
         r"DESCRI[CÇ][AÃ]O\s+DO\s+SERVI[CÇ]O\s+PRESTADO\s*\n([\s\S]{10,600}?)(?:\nDados\s+para|\nTRIBUTA|\nINFORMAÇÕES)",
@@ -771,7 +1038,9 @@ def _parse_joao_pessoa(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtra
     natureza = "Tributação Fora do Município"
     iss_retido = "SIM" if re.search(r"RETIDO|Retido\s+pelo\s+Tomador", texto, re.IGNORECASE) else "NÃO"
 
-    valor_servico = _regex_valor(r"VALOR\s+TOTAL\s*\n?\s*([\d.,]+)", texto)
+    valor_servico = _regex_valor(r"VALOR\s+TOTAL\s*\n?\s*([\d.]+[\.,]\d{2})", texto)
+    if valor_servico == "0,00":
+        valor_servico = _regex_valor(r"VALOR\s+TOTAL\s*\n?\s*([\d.]+)", texto)
     if valor_servico == "0,00":
         valor_servico = _regex_valor(r"Base\s+de\s+c[aá]lculo\s+do\s+ISSQN\s*\(R\$\)\s*\n?([\d.,]+)", texto)
 
@@ -785,7 +1054,6 @@ def _parse_joao_pessoa(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtra
     if not aliquota:
         aliquota = _regex_str(r"([\d,]+)\s*%\s*\n?Al[ií]quota", texto)
         if not aliquota:
-            # João Pessoa: Alíquota calculada (408,09 / 10000 = 4,0809%)
             aliquota = _regex_str(r"([\d.,]+)\s*\n?Al[ií]q", texto)
     if aliquota:
         aliquota = aliquota.replace(".", ",")
@@ -796,6 +1064,14 @@ def _parse_joao_pessoa(texto: str, arquivo_pdf: str) -> Optional[NotaFiscalExtra
     local_m = re.search(r"Local\s+da\s+presta[cç][aã]o\s+do\s+servi[cç]o\s*\n([A-Za-zÀ-ú\s]+?)\s*/\s*([A-Z]{2})", texto, re.IGNORECASE)
     cidade = local_m.group(1).strip().title() if local_m else ""
     uf = local_m.group(2).upper() if local_m else ""
+
+    # Reset de falsos positivos
+    if valor_servico != "0,00":
+        if _valores_iguais(ir, valor_servico): ir = "0,00"
+        if _valores_iguais(pis, valor_servico): pis = "0,00"
+        if _valores_iguais(cofins, valor_servico): cofins = "0,00"
+        if _valores_iguais(csrf, valor_servico): csrf = "0,00"
+        if _valores_iguais(inss, valor_servico): inss = "0,00"
 
     return NotaFiscalExtraida(
         arquivo_pdf=arquivo_pdf,
@@ -848,7 +1124,7 @@ def extrair_prefeitura(caminho_pdf: Path, nome_prefeitura: str) -> Optional[Nota
         return _parse_abrasf(texto, nome, caminho_pdf.name)
 
     if nome == "MUNICIPIO DE PETROLINA":
-        return _parse_abrasf(texto, nome, caminho_pdf.name)
+        return _parse_petrolina(texto, caminho_pdf.name)
 
     if nome == "NACIONAL":
         return _parse_abrasf(texto, nome, caminho_pdf.name)
@@ -940,6 +1216,7 @@ def processar_pasta_prefeitura(
 
     if registros:
         caminho_xlsx = pasta / "nf_compilado.xlsx"
+        log(f"[{nome_prefeitura}] Gerando planilha Excel consolidada... Aguarde.")
         gerar_xlsx(registros, caminho_xlsx)
         log(f"[{nome_prefeitura}] Planilha gerada: {caminho_xlsx}")
         return registros, caminho_xlsx
@@ -992,29 +1269,32 @@ def identificar_nome_prefeitura(caminho_pdf: Path) -> Optional[str]:
             nome_cidade = " ".join(nome_cidade.split())
             if len(nome_cidade) > 3 and not any(k in nome_cidade.upper() for k in ["CNPJ", "TELEFONE", "TOMADOR", "PRESTADOR", "ENDERECO", "CLIENTE"]):
                 nome_cidade_upper = nome_cidade.upper()
-                if "PETROLINA" in nome_cidade_upper:
+                # Remove acentos para comparação robusta
+                import unicodedata
+                nome_busca = "".join(c for c in unicodedata.normalize("NFD", nome_cidade_upper) if unicodedata.category(c) != "Mn")
+                if "PETROLINA" in nome_busca:
                     return "MUNICIPIO DE PETROLINA"
-                if "FORTALEZA" in nome_cidade_upper:
+                if "FORTALEZA" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE FORTALEZA"
-                if "BARUERI" in nome_cidade_upper:
+                if "BARUERI" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE BARUERI"
-                if "CAMPO GRANDE" in nome_cidade_upper:
+                if "CAMPO GRANDE" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE CAMPO GRANDE"
-                if "EUSEBIO" in nome_cidade_upper:
+                if "EUSEBIO" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE EUSÉBIO"
-                if "MARACANAU" in nome_cidade_upper:
+                if "MARACANAU" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE MARACANAÚ"
-                if "TEIXEIRA DE FREITAS" in nome_cidade_upper:
+                if "TEIXEIRA DE FREITAS" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE TEIXEIRA DE FREITAS"
-                if "GOIANIA" in nome_cidade_upper:
+                if "GOIANIA" in nome_busca:
                     return "Prefeitura Municipal de Goiânia - GO"
-                if "JOAO PESSOA" in nome_cidade_upper:
+                if "JOAO PESSOA" in nome_busca:
                     return "Prefeitura Municipal de João Pessoa"
-                if "SAO ROQUE" in nome_cidade_upper:
+                if "SAO ROQUE" in nome_busca:
                     return "PREFEITURA DA ESTANCIA TURISTICA DE SAO ROQUE SP"
-                if "SAO PAULO" in nome_cidade_upper:
+                if "SAO PAULO" in nome_busca:
                     return "PREFEITURA DO MUNICÍPIO DE SÃO PAULO"
-                if "MACEIO" in nome_cidade_upper:
+                if "MACEIO" in nome_busca:
                     return "PREFEITURA MUNICIPAL DE MACEIÓ"
                 
                 # Para outras prefeituras dinâmicas

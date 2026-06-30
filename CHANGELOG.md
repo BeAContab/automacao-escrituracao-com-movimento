@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## [2.14.2] - 2026-06-30
+
+### Corrigido
+- Ajustes na "Exportação por Prefeitura":
+  - **Petrolina**: Resolvido o NameError de `nome_prefeitura is not defined` no retorno do parser dedicado.
+  - **Barueri**: Corrigido o `IndexError: no such group` adicionando parênteses de captura na expressão regular de CNAE.
+  - **Campo Grande / Campina Grande**: Ajustada a extração de cidade/UF de prestação com suporte a caracteres nulos (`\x00`) e wildcards para contornar falhas de fontes nos PDFs do layout Ágili.
+  - **Barra de Progresso**: Unificado o progresso para calcular a porcentagem com base no total acumulado de PDFs de todas as prefeituras selecionadas de forma contínua.
+  - **Avisos de Log**: Adicionado aviso explícito de início de gravação de XLSX no console de saída `prefeitura_output.log`.
+  - **Identificação de Prefeitura**: Adicionada remoção inteligente de acentuação antes de classificar a prefeitura, eliminando falso-negativos em nomes acentuados (como `João Pessoa` e `Goiânia`).
+
+## [2.14.1] - 2026-06-30
+
+### Corrigido
+- Ajuste geral de parsers no módulo `extracao_prefeituras.py` (Sem IA):
+  - **Alíquotas Zeradas**: Resolvido o bug onde as alíquotas eram gravadas como 0% devido ao símbolo `%` no float parsing em `extrair_nf_pdfs.py`.
+  - **João Pessoa**: Corrigida a extração de número da nota (ignorando a competência temporal), CNAE e descrição de serviço (para não confundir com o CNPJ do prestador), e o valor de serviço formatado com pontos (ex: `10.000.00`).
+  - **Fortaleza**: Corrigido o ID do CNAE para extrair o código de serviço ABRASF (`12.07`) e adicionada a correção universal que zera impostos/descontos falsos-positivos idênticos ao valor do serviço devido ao desvio de linhas.
+  - **Distrito Federal & Goiânia**: Corrigido o número da nota fiscal que aparecia em linhas subsequentes e a identificação inteligente de natureza de operação.
+  - **Petrolina**: Implementado o parser dedicado `_parse_petrolina` para ler a estrutura El-Tech (tabelas e cabeçalhos).
+  - **Nacional**: Corrigida a extração de número de notas fiscais usando a chave de acesso de 50 dígitos como fallback de alta confiabilidade.
+  - **Eusébio**: Corrigidos CNAE, localidade de prestação (tolerando linhas vazias) e detecção direta de natureza da operação.
+
 ## [2.14.0] - 2026-06-30
 
 ### Adicionado
