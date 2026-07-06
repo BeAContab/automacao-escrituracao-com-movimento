@@ -1,11 +1,11 @@
 ; Script de Configuração do Inno Setup para o BeAContab
 ; Compila o executável gerado pelo PyInstaller e seus recursos em um instalador profissional do Windows.
 
-#define MyAppName "BeAContab"
-#define MyAppFullName "BeAContab - Escrituração & Automação"
-#define MyAppVersion "2.14.2"
+#define MyAppName "Automação ISS Fortaleza"
+#define MyAppFullName "Automação ISS Fortaleza"
+#define MyAppVersion "2.14.8"
 #define MyAppPublisher "Barreira & Associados"
-#define MyAppExeName "BeAContab.exe"
+#define MyAppExeName "automacao-iss-fortaleza.exe"
 
 [Setup]
 ; AppId único para identificar esta aplicação no Windows (gerado para controle de atualização/desinstalação)
@@ -17,7 +17,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 ; Local e nome do instalador gerado
 OutputDir=installer_output
-OutputBaseFilename=Setup_BeAContab_v{#MyAppVersion}
+OutputBaseFilename=Setup_Automacao_ISS_Fortaleza_v{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -32,9 +32,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; Copia o executável principal
-Source: "dist\BeAContab\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\automacao-iss-fortaleza\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; Copia todos os outros arquivos e subpastas de dependências gerados pelo PyInstaller
-Source: "dist\BeAContab\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\automacao-iss-fortaleza\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; Atalho no Menu Iniciar

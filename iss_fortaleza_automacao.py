@@ -16,6 +16,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -163,6 +164,20 @@ class PrestadorNaoEncontradoError(RuntimeError):
 
 class CompetenciaSemEscriturarDisponivelError(RuntimeError):
     """Sinaliza que a competência consultada não liberou o botão de escriturar."""
+# ---------------------------------------------------------------------------
+# Verificação de pausa global do robô
+# ---------------------------------------------------------------------------
+
+_CALLBACK_PAUSA = None
+
+def _verificar_pausa() -> None:
+    """Bloqueia a execução do robô se o operador tiver solicitado a pausa na GUI."""
+    global _CALLBACK_PAUSA
+    if _CALLBACK_PAUSA:
+        try:
+            _CALLBACK_PAUSA()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -452,11 +467,30 @@ def _criar_opcoes_chrome(
 
 
 def abrir_navegador_visivel(depuracao: bool = False) -> WebDriver:
-    """Abre um Chrome visível e maximizado, gerenciado pelo webdriver-manager."""
+    """Abre um Chrome visível e maximizado, com inicialização híbrida resiliente."""
 
     opcoes = _criar_opcoes_chrome(depuracao=depuracao)
-    servico = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=servico, options=opcoes)
+    
+    try:
+        # Tenta inicializar nativamente usando o Selenium Manager (embutido no Selenium 4.6+)
+        # Isso evita problemas com downloads de drivers bloqueados por proxy/firewall ou falhas de SSL.
+        driver = webdriver.Chrome(options=opcoes)
+    except Exception as e_native:
+        print(f"Aviso: Não foi possível iniciar o Chrome de forma nativa ({e_native}). Tentando com webdriver-manager...")
+        try:
+            # Fallback para o webdriver-manager convencional
+            servico = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=servico, options=opcoes)
+        except Exception as e_fallback:
+            msg_erro = (
+                f"Erro crítico: Não foi possível inicializar o navegador Google Chrome.\n"
+                f"Detalhes do erro nativo: {e_native}\n"
+                f"Detalhes do erro de fallback: {e_fallback}\n"
+                f"Por favor, verifique se o Google Chrome está instalado corretamente nesta máquina."
+            )
+            registrar_evento_execucao(msg_erro, "ISS Fortaleza")
+            raise RuntimeError(msg_erro) from e_fallback
+
     # Remove o atributo webdriver para evitar a detecção pelo portal
     driver.execute_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
@@ -469,11 +503,29 @@ def abrir_navegador_com_perfil_persistente(
     perfil_persistente: Path,
     depuracao: bool = False,
 ) -> WebDriver:
-    """Abre o Chrome com perfil de usuário persistente para manter login entre execuções."""
+    """Abre o Chrome com perfil de usuário persistente com inicialização híbrida resiliente."""
 
     opcoes = _criar_opcoes_chrome(depuracao=depuracao, perfil_persistente=perfil_persistente)
-    servico = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=servico, options=opcoes)
+    
+    try:
+        # Tenta inicializar nativamente usando o Selenium Manager (embutido no Selenium 4.6+)
+        driver = webdriver.Chrome(options=opcoes)
+    except Exception as e_native:
+        print(f"Aviso: Não foi possível iniciar o Chrome persistente de forma nativa ({e_native}). Tentando com webdriver-manager...")
+        try:
+            # Fallback para o webdriver-manager convencional
+            servico = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=servico, options=opcoes)
+        except Exception as e_fallback:
+            msg_erro = (
+                f"Erro crítico: Não foi possível inicializar o navegador Google Chrome com perfil persistente.\n"
+                f"Detalhes do erro nativo: {e_native}\n"
+                f"Detalhes do erro de fallback: {e_fallback}\n"
+                f"Por favor, verifique se o Google Chrome está instalado corretamente nesta máquina."
+            )
+            registrar_evento_execucao(msg_erro, "ISS Fortaleza")
+            raise RuntimeError(msg_erro) from e_fallback
+
     driver.execute_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     )
@@ -525,6 +577,7 @@ def _clicar_com_espera(
 ) -> WebElement:
     """Aguarda o elemento e efetua o clique, com fallback via JavaScript e retry para elementos obsoletos."""
 
+    _verificar_pausa()
     for tentativa in range(3):
         try:
             elemento = _aguardar_elemento_clicavel(driver, by, seletor, timeout=timeout)
@@ -540,6 +593,8 @@ def _clicar_com_espera(
             if tentativa == 2:
                 raise
             time.sleep(0.5)
+    # Sentinela: garante que falhas de timeout ou inesperadas sejam exibidas ao chamador
+    raise RuntimeError(f"Não foi possível clicar no elemento '{descricao}' após 3 tentativas.")
 
 
 def _clicar_por_id(driver: WebDriver, elemento_id: str, timeout: int = 10) -> None:
@@ -579,6 +634,7 @@ def _digitar_campo(
     Possui lógica de retry para se recuperar caso o elemento mude sob AJAX durante a digitação.
     """
 
+    _verificar_pausa()
     for tentativa in range(3):
         try:
             campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
@@ -625,6 +681,7 @@ def _definir_valor_instantaneo(
     Dispara os eventos 'input' e 'change' para garantir que os ouvintes de eventos da página
     e o estado do JSF reconheçam a alteração do valor.
     """
+    _verificar_pausa()
     for tentativa in range(3):
         try:
             campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
@@ -651,6 +708,7 @@ def _selecionar_opcao_por_texto(
 ) -> None:
     """Seleciona a primeira opção disponível em um <select> a partir de uma lista de rótulos."""
 
+    _verificar_pausa()
     for tentativa in range(4):
         try:
             elemento = _aguardar_elemento_clicavel(driver, by, seletor, timeout=timeout)
@@ -741,12 +799,31 @@ def _valor_campo_competencia(driver: WebDriver, base_id: str) -> str:
 
 
 def _abrir_editor_calendario(driver: WebDriver, base_id: str, rotulo: str) -> None:
-    """Clica no botão de edição do calendário RichFaces para abrir o editor de mês/ano."""
+    """Clica no botão de edição do calendário RichFaces para abrir o editor de mês/ano.
 
-    # O botão de edição fica no cabeçalho do calendário
+    Garante que o calendário popup seja aberto antes de tentar acessar seu cabeçalho.
+    """
+
+    # Clica no botão popup do calendário (ícone do calendário) para exibir o calendário na tela.
+    # Sem isso, o cabeçalho '#{base_id}Header' não é renderizado ou fica invisível no DOM.
+    popup_btn_id = f"{base_id}PopupButton"
+    try:
+        popup_btn = WebDriverWait(driver, 8).until(
+            EC.element_to_be_clickable((By.ID, popup_btn_id))
+        )
+        popup_btn.click()
+        # Pequena pausa para garantir a renderização visual do calendário popup
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"Aviso ao abrir popup do calendário para {rotulo}: {e}")
+
+    # O botão de edição fica no cabeçalho do calendário.
+    # Atenção: o base_id contém ':' (ex: 'manterEscrituracaoForm:dataInicial'),
+    # portanto não pode ser usado diretamente como seletor CSS '#id'. Usamos o seletor
+    # de atributo [id='...'] para contornar isso sem necessidade de escape manual.
     botao = WebDriverWait(driver, 10).until(
         EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, f"#{base_id}Header .rich-calendar-tool-btn")
+            (By.CSS_SELECTOR, f"[id='{base_id}Header'] .rich-calendar-tool-btn")
         )
     )
     botao.click()
@@ -801,7 +878,8 @@ def _selecionar_ano_no_editor(driver: WebDriver, base_id: str, competencia: Comp
             sinal = ">"
 
         try:
-            botoes = driver.find_elements(By.CSS_SELECTOR, f"#{base_id} .rich-calendar-editor-btn")
+            # Seletor por atributo para evitar o erro de CSS com ':' no ID
+            botoes = driver.find_elements(By.CSS_SELECTOR, f"[id='{base_id}'] .rich-calendar-editor-btn")
             clicou = False
             for btn in botoes:
                 if btn.text.strip() == sinal and btn.is_displayed():
@@ -1385,11 +1463,21 @@ def executar_fluxo_iss(
     perfil_navegador: Path = PERFIL_CHROME_FUNCAO2_PADRAO,
     callback_progresso: Any = None,
     executando_em_gui: bool = False,
+    callback_pausa: Any = None,
 ) -> None:
     """Executa o fluxo visual completo do portal da ISS até o preenchimento do formulário."""
 
+    global _CALLBACK_PAUSA
+    _CALLBACK_PAUSA = callback_pausa
+
     if not documentos:
         raise RuntimeError("A planilha não contém linhas válidas para a automação.")
+
+    # Resolve o perfil do Chrome para o AppData do usuário se estiver usando o padrão relativo,
+    # garantindo que o perfil persistente seja acessível após a instalação do executável.
+    if reutilizar_navegador and perfil_navegador == PERFIL_CHROME_FUNCAO2_PADRAO:
+        appdata = os.environ.get("APPDATA", str(Path.home()))
+        perfil_navegador = Path(appdata) / "BeAContab" / "brain" / "navegador_funcao2_profile"
 
     # Abre o Chrome com ou sem perfil persistente, conforme solicitado
     if reutilizar_navegador:
@@ -1405,7 +1493,12 @@ def executar_fluxo_iss(
 
         # Aguarda login manual do operador
         if aguardar_login_por_arquivo:
-            caminho = caminho_confirmacao_login or Path("brain/funcao2_login_ok.flag")
+            # Resolve o caminho de confirmacao usando AppData para evitar falhas no instalador
+            if caminho_confirmacao_login:
+                caminho = caminho_confirmacao_login
+            else:
+                appdata = os.environ.get("APPDATA", str(Path.home()))
+                caminho = Path(appdata) / "BeAContab" / "brain" / "funcao2_login_ok.flag"
             aguardar_login_manual_por_arquivo(driver, caminho)
         else:
             aguardar_login_manual(driver)
@@ -1431,10 +1524,20 @@ def executar_fluxo_iss(
 
         # Navega para Escrituração > Manter Escrituração
         print("Acessando Escrituração > Manter Escrituração...")
-        menus = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-toggle")
-        if len(menus) > 4:
-            menus[4].click()
-            time.sleep(0.5)
+        try:
+            # Busca o menu Escrituração pelo texto para ser resiliente a mudanças na ordem dos menus
+            el_menu = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable(
+                    (By.XPATH, "//a[contains(@class, 'dropdown-toggle') and (contains(., 'Escritura') or contains(., 'Escrituracao'))]")
+                )
+            )
+            el_menu.click()
+        except Exception:
+            # Fallback por índice para compatibilidade com variações do portal
+            menus = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-toggle")
+            if len(menus) > 4:
+                menus[4].click()
+        time.sleep(0.5)
         _clicar_por_id(driver, "formMenuTopo:menuEscrituracao:j_id80")
         registrar_evento_execucao("Menu Escrituração acionado", "ISS Fortaleza")
 
@@ -1604,7 +1707,10 @@ def executar_fluxo_iss(
 
                 # Aguarda feedback do portal
                 WebDriverWait(driver, 15).until(
-                    EC.text_to_be_present_in_element((By.XPATH, '//*[@id="content"]/legend/h2'), "Documento digitado com Sucesso")
+                    # Verificação resiliente a variações de capitalização do portal usando contains() no XPath
+                    EC.presence_of_element_located(
+                        (By.XPATH, '//*[@id="content"]/legend/h2[contains(., "digitado com") and (contains(., "Sucesso") or contains(., "sucesso"))]')
+                    )
                 )
                 registrar_evento_execucao(f"Sucesso na gravação da NF {candidato.numero_nf}", "ISS Fortaleza")
                 nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
@@ -1643,15 +1749,16 @@ def executar_fluxo_iss(
             print("Execução da GUI concluída. O navegador permanecerá aberto.")
 
     finally:
-        # Mantém o navegador aberto em modo de sessão persistente; fecha nos demais casos
-        if not reutilizar_navegador:
+        # Mantém o navegador aberto em modo de sessão persistente ou quando executado via GUI,
+        # facilitando o teste assistido e a análise em caso de problemas.
+        if not reutilizar_navegador and not executando_em_gui:
             try:
                 driver.quit()
             except Exception:
                 pass
         else:
             registrar_evento_execucao(
-                "Sessão persistente da função 2 preservada para reutilização em nova execução",
+                "Sessão persistente da função 2 ou execução pela GUI preservada para análise/reutilização",
                 "ISS Fortaleza",
             )
 
@@ -1673,14 +1780,9 @@ def executar_automacao_iss(
     porta_debug_navegador: int = PORTA_DEBUG_CHROME_PADRAO,
     callback_progresso: Any = None,
     executando_em_gui: bool = False,
+    callback_pausa: Any = None,
 ) -> None:
-    """Ponto de entrada síncrono para a opção 2 da CLI.
-
-    O parâmetro `usar_inspector` não é mais aplicável com Selenium e é mantido
-    apenas para compatibilidade de assinatura com o código da CLI.
-    O parâmetro `porta_debug_navegador` foi removido do fluxo ativo pois o
-    Selenium gerencia o driver de forma nativa; é mantido para compatibilidade.
-    """
+    """Ponto de entrada síncrono para a opção 2 da CLI."""
 
     registrar_evento_execucao(
         f"Automação da ISS solicitada com planilha {caminho_xlsx.resolve()} e competência {competencia.rotulo}",
@@ -1699,6 +1801,7 @@ def executar_automacao_iss(
         perfil_navegador=perfil_navegador,
         callback_progresso=callback_progresso,
         executando_em_gui=executando_em_gui,
+        callback_pausa=callback_pausa,
     )
 
 

@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import threading
 from pathlib import Path
 import traceback
@@ -45,6 +46,20 @@ class BeAContabAPI:
         self._pausa_event.set()
         self._pausa_automacao_event = threading.Event()
         self._pausa_automacao_event.set()
+        
+        # Flags para evitar a execução concorrente de múltiplos robôs de automação ou extração
+        self._automacao_em_execucao = False
+        self._extracao_em_execucao = False
+        
+        # Carrega chaves salvas para as variáveis de ambiente na inicialização
+        try:
+            chaves = self.obter_chaves_salvas()
+            if chaves.get("gemini"):
+                os.environ["GEMINI_API_KEY"] = chaves["gemini"]
+            if chaves.get("groq"):
+                os.environ["GROQ_API_KEY"] = chaves["groq"]
+        except Exception as e:
+            print(f"Erro ao carregar chaves na inicialização: {e}")
 
     def pausar_extracao(self):
         self._pausa_event.clear()
@@ -102,9 +117,10 @@ class BeAContabAPI:
     def _processar_exportar_prefeituras(self, mapa_prefeituras_pastas: dict):
         """Thread de processamento da exportação estruturada por prefeitura."""
         def log_gui(msg: str) -> None:
-            msg_safe = msg.replace("'", "\\'").replace('"', '\\"')
+            # Usa json.dumps para escapar caracteres especiais nas mensagens de log da GUI
             try:
-                self.window.evaluate_js(f"window.log_prefeitura('{msg_safe}')")
+                mensagem_js = json.dumps(msg)
+                self.window.evaluate_js(f"window.log_prefeitura({mensagem_js})")
             except Exception:
                 pass
 
@@ -187,9 +203,10 @@ class BeAContabAPI:
     def _processar_uniao_planilhas(self, lista_xlsx: list[str], pasta_destino: str, remover_duplicatas: bool):
         """Thread de execução da união de planilhas."""
         def log_gui(msg: str) -> None:
-            msg_safe = msg.replace("'", "\\'").replace('"', '\\"')
+            # Usa json.dumps para escapar caracteres especiais nas mensagens de log da GUI
             try:
-                self.window.evaluate_js(f"window.log_uniao('{msg_safe}')")
+                mensagem_js = json.dumps(msg)
+                self.window.evaluate_js(f"window.log_uniao({mensagem_js})")
             except Exception:
                 pass
 
@@ -237,9 +254,10 @@ class BeAContabAPI:
     def _processar_organizar_pdfs(self, pasta_origem: str):
         """Thread de execução da organização de PDFs."""
         def log_gui(msg: str) -> None:
-            msg_safe = msg.replace("'", "\\'").replace('"', '\\"')
+            # Usa json.dumps para escapar caracteres especiais nas mensagens de log da GUI
             try:
-                self.window.evaluate_js(f"window.log_organizador('{msg_safe}')")
+                mensagem_js = json.dumps(msg)
+                self.window.evaluate_js(f"window.log_organizador({mensagem_js})")
             except Exception:
                 pass
 
@@ -282,10 +300,38 @@ class BeAContabAPI:
     def fechar_app(self):
         self.window.destroy()
 
+    def obter_caminho_config(self):
+        """Retorna o caminho do arquivo .env na pasta AppData do usuário para garantir gravação estável.
+        
+        Isso previne erros de permissão de escrita após a instalação na pasta Program Files do Windows.
+        """
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            pasta_config = Path(appdata) / "BeAContab"
+        else:
+            pasta_config = Path.home() / ".beacontab"
+        
+        try:
+            pasta_config.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Fallback em caso de erro na criação do diretório AppData
+            return Path(__file__).parent / ".env"
+            
+        return pasta_config / ".env"
+
     def obter_chaves_salvas(self):
-        """Retorna as chaves salvas no arquivo .env."""
+        """Retorna as chaves salvas no arquivo .env do usuário ou do diretório do script."""
         chaves = {"gemini": "", "groq": ""}
-        env_path = Path(__file__).parent / ".env"
+        
+        # 1. Tenta obter da pasta AppData do usuário
+        env_path = self.obter_caminho_config()
+        
+        # 2. Fallback para o diretório do script (útil em modo de desenvolvimento)
+        if not env_path.exists():
+            env_desenv = Path(__file__).parent / ".env"
+            if env_desenv.exists():
+                env_path = env_desenv
+
         if env_path.exists():
             try:
                 conteudo = env_path.read_text(encoding="utf-8")
@@ -300,8 +346,8 @@ class BeAContabAPI:
         return chaves
 
     def salvar_chaves(self, gemini_key, groq_key):
-        """Salva as chaves no arquivo .env e atualiza no ambiente local."""
-        env_path = Path(__file__).parent / ".env"
+        """Salva as chaves no arquivo .env do AppData do usuário e atualiza no ambiente local."""
+        env_path = self.obter_caminho_config()
         template_path = Path(__file__).parent / ".env.example"
         
         conteudo = ""
@@ -311,11 +357,19 @@ class BeAContabAPI:
             except Exception:
                 pass
         
-        if not conteudo and template_path.exists():
-            try:
-                conteudo = template_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
+        # Se o .env do usuário não existe, tenta carregar como base o .env local ou o .env.example
+        if not conteudo:
+            env_desenv = Path(__file__).parent / ".env"
+            if env_desenv.exists():
+                try:
+                    conteudo = env_desenv.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+            elif template_path.exists():
+                try:
+                    conteudo = template_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
                 
         if not conteudo:
             conteudo = "GEMINI_API_KEY=\nGROQ_API_KEY=\n"
@@ -336,7 +390,7 @@ class BeAContabAPI:
             os.environ["GROQ_API_KEY"] = groq_key
             return True
         except Exception as e:
-            print(f"Erro ao salvar .env: {e}")
+            print(f"Erro ao salvar .env em {env_path}: {e}")
             return False
 
     def contar_pdfs_origem(self, pasta_caminho):
@@ -354,7 +408,9 @@ class BeAContabAPI:
     def confirmar_login_feito(self):
         """Cria o arquivo flag sinalizando que o login manual foi concluído no navegador."""
         try:
-            flag_path = Path("brain/funcao2_login_ok.flag")
+            # Usa AppData para garantir permissão de escrita no executável instalado
+            appdata = os.environ.get("APPDATA", str(Path.home()))
+            flag_path = Path(appdata) / "BeAContab" / "brain" / "funcao2_login_ok.flag"
             flag_path.parent.mkdir(parents=True, exist_ok=True)
             flag_path.write_text("ok", encoding="utf-8")
             return True
@@ -363,12 +419,17 @@ class BeAContabAPI:
             return False
 
     def iniciar_extracao(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
+        if getattr(self, "_extracao_em_execucao", False):
+            self.window.evaluate_js("window.log_extracao('Erro: O processo de extração já está em andamento no momento!', true)")
+            return
+            
         # Configurar chaves no processo
         if gemini_key:
             os.environ["GEMINI_API_KEY"] = gemini_key
         if groq_key:
             os.environ["GROQ_API_KEY"] = groq_key
         
+        self._extracao_em_execucao = True
         # Garante que a extração comece não pausada
         self._pausa_event.set()
         
@@ -382,8 +443,9 @@ class BeAContabAPI:
     def _processar_extracao(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
         # Define o callback para logs de extração na GUI
         def gui_log_callback(mensagem):
-            msg_safe = mensagem.replace("'", "\\'").replace('"', '\\"')
-            self.window.evaluate_js(f"window.log_extracao('{msg_safe}')")
+            # Usa json.dumps para escapar corretamente strings com aspas, barras e quebras de linha
+            mensagem_js = json.dumps(mensagem)
+            self.window.evaluate_js(f"window.log_extracao({mensagem_js})")
         self._gui_log_callback = gui_log_callback
 
         try:
@@ -490,8 +552,15 @@ class BeAContabAPI:
 
         except Exception as e:
             tb = traceback.format_exc()
-            self.window.evaluate_js(f"window.log_extracao('Erro crítico: {str(e)}', true)")
+            # Registra o traceback completo no log da GUI para facilitar o diagnóstico
+            print(f"[ERRO INTERNO] {tb}")
+            mensagem_js = json.dumps(f"Erro crítico: {str(e)}")
+            try:
+                self.window.evaluate_js(f"window.log_extracao({mensagem_js}, true)")
+            except Exception:
+                pass
         finally:
+            self._extracao_em_execucao = False
             self._gui_log_callback = None
             try:
                 self.window.evaluate_js("document.getElementById('btn-pausar-retomar').classList.add('hidden')")
@@ -499,12 +568,17 @@ class BeAContabAPI:
                 pass
 
     def iniciar_extracao_otimizada(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
+        if getattr(self, "_extracao_em_execucao", False):
+            self.window.evaluate_js("window.log_extracao('Erro: O processo de extração já está em andamento no momento!', true)")
+            return
+            
         # Configurar chaves no processo
         if gemini_key:
             os.environ["GEMINI_API_KEY"] = gemini_key
         if groq_key:
             os.environ["GROQ_API_KEY"] = groq_key
         
+        self._extracao_em_execucao = True
         # Garante que a extração comece não pausada
         self._pausa_event.set()
         
@@ -518,8 +592,9 @@ class BeAContabAPI:
     def _processar_extracao_otimizada(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
         # Define o callback para logs de extração na GUI
         def gui_log_callback(mensagem):
-            msg_safe = message_to_js = mensagem.replace("'", "\\'").replace('"', '\\"')
-            self.window.evaluate_js(f"window.log_extracao('{msg_safe}')")
+            # Usa json.dumps para escapar corretamente strings com aspas, barras e quebras de linha
+            mensagem_js = json.dumps(mensagem)
+            self.window.evaluate_js(f"window.log_extracao({mensagem_js})")
         self._gui_log_callback = gui_log_callback
 
         try:
@@ -626,8 +701,15 @@ class BeAContabAPI:
 
         except Exception as e:
             tb = traceback.format_exc()
-            self.window.evaluate_js(f"window.log_extracao('Erro crítico: {str(e)}', true)")
+            # Registra o traceback completo no log da GUI para facilitar o diagnóstico
+            print(f"[ERRO INTERNO] {tb}")
+            mensagem_js = json.dumps(f"Erro crítico: {str(e)}")
+            try:
+                self.window.evaluate_js(f"window.log_extracao({mensagem_js}, true)")
+            except Exception:
+                pass
         finally:
+            self._extracao_em_execucao = False
             self._gui_log_callback = None
             try:
                 self.window.evaluate_js("document.getElementById('btn-pausar-retomar').classList.add('hidden')")
@@ -635,14 +717,20 @@ class BeAContabAPI:
                 pass
 
     def iniciar_automacao(self, excel_path, competencia_str):
+        if getattr(self, "_automacao_em_execucao", False):
+            self.window.evaluate_js("window.log_automacao('Erro: A automação de escrituração já está em andamento no momento!', true)")
+            return
+            
+        self._automacao_em_execucao = True
         self._pausa_automacao_event.set()
         threading.Thread(target=self._processar_automacao, args=(excel_path, competencia_str), daemon=True).start()
 
     def _processar_automacao(self, excel_path, competencia_str):
         # Define o callback para logs de automação na GUI
         def gui_log_callback(mensagem):
-            msg_safe = mensagem.replace("'", "\\'").replace('"', '\\"')
-            self.window.evaluate_js(f"window.log_automacao('{msg_safe}')")
+            # Usa json.dumps para escapar corretamente strings com aspas, barras e quebras de linha
+            mensagem_js = json.dumps(mensagem)
+            self.window.evaluate_js(f"window.log_automacao({mensagem_js})")
         self._gui_log_callback = gui_log_callback
 
         try:
@@ -659,14 +747,20 @@ class BeAContabAPI:
             try:
                 competencia = interpretar_competencia(competencia_str)
             except Exception as e:
-                self.window.evaluate_js(f"window.log_automacao('Erro na competência: {str(e)}', true)")
+                mensagem_js = json.dumps(f"Erro na competência: {str(e)}")
+                try:
+                    self.window.evaluate_js(f"window.log_automacao({mensagem_js}, true)")
+                except Exception:
+                    pass
                 return
                 
             self.window.evaluate_js(f"window.log_automacao('Competência confirmada: {competencia.mes}/{competencia.ano}')")
             self.window.evaluate_js(f"window.log_automacao('Iniciando navegador Chrome (Selenium). Não feche a janela do robô!')")
             
             # Remove flag de login anterior se existir
-            flag_path = Path("brain/funcao2_login_ok.flag")
+            # Usa AppData para garantir permissão de escrita no executável instalado
+            appdata = os.environ.get("APPDATA", str(Path.home()))
+            flag_path = Path(appdata) / "BeAContab" / "brain" / "funcao2_login_ok.flag"
             if flag_path.exists():
                 try:
                     flag_path.unlink()
@@ -681,6 +775,10 @@ class BeAContabAPI:
                 porcentagem = int((indice / total) * 100)
                 self.window.evaluate_js(f"window.update_progresso_automacao({porcentagem}, 'Escriturando {indice} de {total} notas')")
 
+            # Define o callback para verificar a pausa em pontos de baixa latência do Selenium
+            def callback_pausa():
+                self._pausa_automacao_event.wait()
+
             # Chama a execução principal do robô
             executar_automacao_iss(
                 planilha, 
@@ -689,15 +787,25 @@ class BeAContabAPI:
                 callback_progresso=callback_progresso,
                 aguardar_login_por_arquivo=True,
                 caminho_confirmacao_login=flag_path,
-                executando_em_gui=True
+                executando_em_gui=True,
+                callback_pausa=callback_pausa
             )
             self.window.evaluate_js("window.update_progresso_automacao(100, 'Escrituração concluída!')")
             self.window.evaluate_js(f"window.log_automacao('Execução do robô concluída.')")
 
         except Exception as e:
             tb = traceback.format_exc()
-            self.window.evaluate_js(f"window.log_automacao('Erro crítico: {str(e)}', true)")
+            # Usa json.dumps para escapar corretamente caracteres especiais (aspas,
+            # quebras de linha, etc.) presentes nas mensagens de exceção do Selenium
+            # Registra o traceback completo no log da GUI para facilitar o diagnóstico
+            print(f"[ERRO INTERNO] {tb}")
+            mensagem_js = json.dumps(f"Erro crítico: {str(e)}")
+            try:
+                self.window.evaluate_js(f"window.log_automacao({mensagem_js}, true)")
+            except Exception:
+                pass
         finally:
+            self._automacao_em_execucao = False
             self._gui_log_callback = None
             try:
                 self.window.evaluate_js("document.getElementById('card-confirmar-login').classList.add('hidden')")

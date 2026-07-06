@@ -39,9 +39,24 @@ def main():
         "--noconfirm",
         "--onedir",
         "--windowed",
-        "--name=BeAContab",
+        "--name=automacao-iss-fortaleza",
         "--add-data=gui;gui",
         "--add-data=cnae_oficial.xlsx;.",
+        "--hidden-import=selenium",
+        "--hidden-import=selenium.webdriver",
+        "--hidden-import=selenium.webdriver.chrome.webdriver",
+        "--hidden-import=selenium.webdriver.chrome.options",
+        "--hidden-import=selenium.webdriver.chrome.service",
+        "--hidden-import=selenium.webdriver.common.action_chains",
+        "--hidden-import=selenium.webdriver.common.by",
+        "--hidden-import=selenium.webdriver.common.keys",
+        "--hidden-import=selenium.webdriver.remote.webdriver",
+        "--hidden-import=selenium.webdriver.remote.webelement",
+        "--hidden-import=selenium.webdriver.support.expected_conditions",
+        "--hidden-import=selenium.webdriver.support.select",
+        "--hidden-import=selenium.webdriver.support.wait",
+        "--hidden-import=webdriver_manager",
+        "--hidden-import=webdriver_manager.chrome",
         "app.py"
     ]
     
@@ -52,7 +67,7 @@ def main():
         print("COMPILAÇÃO DO PYINSTALLER CONCLUÍDA COM SUCESSO!")
         print("="*80)
         print("O aplicativo empacotado está localizado em:")
-        print(f" -> {os.path.abspath('dist/BeAContab')}")
+        print(f" -> {os.path.abspath('dist/automacao-iss-fortaleza')}")
         print("\nPara gerar o instalador final:")
         print(" 1. Abra o Inno Setup.")
         print(" 2. Carregue o arquivo 'setup.iss'.")

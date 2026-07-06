@@ -92,19 +92,7 @@
     </div>
     
     <nav class="flex-1 space-y-2">
-        <a id="btn-aba-organizador" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-secondary font-bold border-r-2 border-secondary bg-white/5 transition-colors">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">folder_shared</span>
-            <span>Organizar PDFs</span>
-        </a>
-        <a id="btn-aba-prefeitura" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
-            <span class="material-symbols-outlined">account_balance</span>
-            <span>Exportar por Prefeitura</span>
-        </a>
-        <a id="btn-aba-uniao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
-            <span class="material-symbols-outlined">merge</span>
-            <span>Unir Planilhas</span>
-        </a>
-        <a id="btn-aba-extracao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
+        <a id="btn-aba-extracao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-secondary font-bold border-r-2 border-secondary bg-white/5 transition-colors">
             <span class="material-symbols-outlined">psychology</span>
             <span>Extração com IA</span>
         </a>
@@ -112,6 +100,29 @@
             <span class="material-symbols-outlined">robot_2</span>
             <span>Automação: Escrituração</span>
         </a>
+
+        <!-- Submenu para Outras Ferramentas -->
+        <div class="pt-4 border-t border-white/10 mt-4">
+            <button onclick="toggleSubmenu()" class="w-full flex items-center justify-between p-2 text-xs font-bold text-on-surface-variant hover:text-on-surface uppercase tracking-widest select-none">
+                <span>Outras Ferramentas</span>
+                <span id="submenu-chevron" class="material-symbols-outlined transition-transform duration-200">expand_more</span>
+            </button>
+            
+            <div id="submenu-ferramentas" class="mt-2 space-y-1 pl-2 hidden">
+                <a id="btn-aba-organizador" href="#" class="aba-btn flex items-center gap-3 p-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors text-sm">
+                    <span class="material-symbols-outlined text-[20px]">folder_shared</span>
+                    <span>Organizar PDFs</span>
+                </a>
+                <a id="btn-aba-prefeitura" href="#" class="aba-btn flex items-center gap-3 p-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors text-sm">
+                    <span class="material-symbols-outlined text-[20px]">account_balance</span>
+                    <span>Exportar por Prefeitura</span>
+                </a>
+                <a id="btn-aba-uniao" href="#" class="aba-btn flex items-center gap-3 p-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors text-sm">
+                    <span class="material-symbols-outlined text-[20px]">merge</span>
+                    <span>Unir Planilhas</span>
+                </a>
+            </div>
+        </div>
     </nav>
 </aside>
 
@@ -242,7 +253,6 @@
                     </div>
                     <div id="info-pasta-origem" class="text-xs text-on-surface-variant hidden flex flex-col gap-1 mt-1 p-2 bg-white/5 rounded-lg border border-white/5">
                         <span id="txt-total-pdfs" class="font-bold text-primary">0 PDFs encontrados</span>
-                        <span id="txt-estimativa-tempo" class="text-[11px] opacity-80">Tempo estimado: 0s (Completa) / 0s (Otimizada)</span>
                     </div>
                 </div>
                 <div class="space-y-2">
@@ -641,6 +651,18 @@
         }
     }
 
+    function toggleSubmenu() {
+        const sub = document.getElementById('submenu-ferramentas');
+        const chev = document.getElementById('submenu-chevron');
+        if (sub.classList.contains('hidden')) {
+            sub.classList.remove('hidden');
+            chev.style.transform = 'rotate(180deg)';
+        } else {
+            sub.classList.add('hidden');
+            chev.style.transform = '';
+        }
+    }
+
     btnOrganizador.addEventListener('click', () => setActiveTab('organizador'));
     btnExtracao.addEventListener('click', () => setActiveTab('extracao'));
     btnAutomacao.addEventListener('click', () => setActiveTab('automacao'));
@@ -960,18 +982,6 @@
         if(window.pywebview && window.pywebview.api) {
             const count = await window.pywebview.api.contar_pdfs_origem(folder);
             document.getElementById('txt-total-pdfs').innerText = `${count} PDFs encontrados`;
-            
-            const totalCompleto = count * 10;
-            const totalOtimizado = count * 5;
-            
-            function formatarTempo(s) {
-                if (s < 60) return `${s}s`;
-                const m = Math.floor(s / 60);
-                const rest = s % 60;
-                return rest > 0 ? `${m}m ${rest}s` : `${m}m`;
-            }
-            
-            document.getElementById('txt-estimativa-tempo').innerText = `Tempo estimado: ~${formatarTempo(totalCompleto)} (Completa) / ~${formatarTempo(totalOtimizado)} (Otimizada)`;
             document.getElementById('info-pasta-origem').classList.remove('hidden');
         }
     }
@@ -1154,7 +1164,7 @@
         } else {
             window.addEventListener('pywebviewready', carregarChavesAPI);
         }
-        setActiveTab('organizador');
+        setActiveTab('extracao');
     });
 
     async function iniciarExtracao() {

@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## [2.14.8] - 2026-07-06
+
+### Melhorado
+- **Pausa Instantânea da Automação** (`iss_fortaleza_automacao.py`, `app.py`): Implementada verificação de pausa de baixa latência em operações de clique, digitação e seleção de caixas de listagem do Selenium. Agora, o robô interrompe sua execução no exato instante em que o operador clica no botão "Pausar Automação" da GUI, em vez de esperar a finalização completa do preenchimento da nota fiscal atual, eliminando a sensação de travamento.
+
+## [2.14.7] - 2026-07-06
+
+### Corrigido
+- **BUG-01 / BUG-03 — Flag de login com caminho relativo** (`app.py`): As funções `confirmar_login_feito` e `_processar_automacao` criavam o arquivo de flag de controle de login em `Path("brain/funcao2_login_ok.flag")`, um caminho relativo que resolvia incorretamente no instalador (onde o `cwd` pode ser `C:\Windows\System32`). Ambos passaram a usar `%APPDATA%/BeAContab/brain/funcao2_login_ok.flag`, garantindo permissão de escrita em qualquer máquina.
+- **BUG-02 — Fallback de `caminho_confirmacao_login` com caminho relativo** (`iss_fortaleza_automacao.py`): O fallback interno `caminho_confirmacao_login or Path("brain/...")` sofria do mesmo problema. Substituído por lógica explícita que resolve para o AppData quando o argumento não é informado.
+- **BUG-04 — Perfil persistente do Chrome com caminho relativo** (`iss_fortaleza_automacao.py`): A constante `PERFIL_CHROME_FUNCAO2_PADRAO` apontava para `brain/navegador_funcao2_profile`. Em `executar_fluxo_iss`, adicionada lógica que, quando o valor padrão é detectado, resolve o caminho para `%APPDATA%/BeAContab/brain/navegador_funcao2_profile`, preservando o histórico de login entre sessões no instalador.
+- **BUG-05 — Variável `message_to_js` não utilizada** (`app.py`, `_processar_extracao_otimizada`): Resíduo de refatoração anterior. Removida a atribuição dupla `msg_safe = message_to_js = ...`.
+- **BUG-06 — Callbacks de log com escape manual inseguro** (`app.py`): Todos os callbacks `gui_log_callback` e `log_gui` das funções `_processar_extracao`, `_processar_extracao_otimizada`, `_processar_automacao`, `_processar_exportar_prefeituras`, `_processar_uniao_planilhas` e `_processar_organizar_pdfs` usavam substituição manual de aspas (`replace("'", ...)`) que falhava silenciosamente ao encontrar barras invertidas (`\n`, `\t`, `\\`). Todos migrados para `json.dumps()`, consistente com os blocos `except`.
+- **BUG-08 — `_clicar_com_espera` retornava `None` implicitamente** (`iss_fortaleza_automacao.py`): Após o loop de 3 tentativas, a função encerrava sem `return` ou `raise` caso o `TimeoutException` fosse lançado na última iteração. Adicionado `raise RuntimeError(...)` sentinela após o loop para garantir que falhas sejam sempre expostas ao chamador.
+- **BUG-09 — `Any` usado sem `from typing import Any`** (`iss_fortaleza_automacao.py`): O tipo `Any` era utilizado como anotação em `_formatar_celula_para_string_de_valor` e parâmetros `callback_progresso` sem o import correspondente. Adicionado `from typing import Any` à seção de imports.
+- **Empacotamento do Selenium no PyInstaller** (`build.py`): Adicionados argumentos `--hidden-import` explícitos para empacotar todos os módulos do Selenium e `webdriver-manager`. Isso contorna a falha de rastreamento estático do PyInstaller (que gerava o erro `No module named 'selenium.webdriver.chrome.webdriver'`) devido a mudanças na importação dinâmica introduzidas na versão experimental do Python 3.14.
+- **Nomenclatura do Instalador e Executável** (`build.py`, `setup.iss`): Alinhado o nome de saída do PyInstaller para `automacao-iss-fortaleza`, sincronizando as diretivas de busca de arquivos `dist\` no script do Inno Setup para evitar falhas de "Arquivo não encontrado".
+- **Trava de Execução Concorrente** (`app.py`): Adicionadas as flags de estado `self._automacao_em_execucao` e `self._extracao_em_execucao` no backend da GUI para impedir a inicialização acidental de múltiplos robôs ou threads de extração concorrentes em background (corrigindo a race condition que misturava logs e selecionava o mês incorreto).
+
+### Melhorado
+- **MELHORIA-01 — Traceback completo exposto no log da GUI** (`app.py`): Os blocos `except` dos três fluxos principais (`_processar_extracao`, `_processar_extracao_otimizada`, `_processar_automacao`) capturavam o traceback em `tb` mas nunca o utilizavam. Adicionado `print(f"[ERRO INTERNO] {tb}")` para enviar o stack trace completo ao log da GUI via `GUIStdoutWrapper`, facilitando o diagnóstico de erros críticos.
+- **MELHORIA-02 — Seleção do menu "Escrituração" por texto (XPath)** (`iss_fortaleza_automacao.py`): A seleção do menu dependia do índice posicional `menus[4]`, quebrando caso o portal alterasse a ordem dos menus. Substituído por `WebDriverWait` com XPath que localiza o link pelo texto e classe, mantendo `menus[4]` como fallback de compatibilidade.
+- **MELHORIA-03 — Verificação de sucesso de gravação resiliente a capitalização** (`iss_fortaleza_automacao.py`): O `EC.text_to_be_present_in_element` aguardava a string exata `"Documento digitado com Sucesso"` por 15 segundos antes de lançar exceção caso o portal usasse capitalização diferente. Substituído por `EC.presence_of_element_located` com XPath `contains()` combinado (verifica "digitado com" E "Sucesso" ou "sucesso"), sendo resiliente a variações futuras da mensagem do portal.
+
+## [2.14.6] - 2026-07-06
+
+### Corrigido
+- **Persistência de Chaves de API no Instalador** (`app.py`): O arquivo de configuração `.env` contendo as chaves de API do Gemini e Groq passou a ser lido e gravado na pasta **AppData** do usuário (`%APPDATA%/BeAContab/.env`). Isso resolve a falha em computadores cliente em que a gravação do `.env` falhava silenciosamente por falta de permissão de escrita no diretório de instalação (`Program Files`), garantindo que as chaves fiquem salvas de forma permanente e sem privilégios de administrador.
+- **Carregamento Automático de Chaves**: Adicionado auto-carregamento das chaves de API direto nas variáveis de ambiente do processo (`os.environ`) no construtor da aplicação, evitando que a GUI ou o backend fiquem sem acesso às credenciais nas execuções.
+
+## [2.14.5] - 2026-07-06
+
+### Corrigido
+- **Inicialização Resiliente do Chrome** (`iss_fortaleza_automacao.py`): Implementada estratégia híbrida nas funções `abrir_navegador_visivel` e `abrir_navegador_com_perfil_persistente`. O robô tenta primeiro inicializar usando o Selenium Manager nativo (disponível no Selenium 4.6+), que evita problemas com downloads de drivers bloqueados por firewalls e erros de certificados SSL (`SSLError`) comuns em Python no PyInstaller. Caso falhe, realiza o fallback transparente para o `webdriver-manager` convencional.
+- **Log de Diagnóstico do Chrome**: Adicionado tratamento de erro robusto que reporta detalhadamente na interface do usuário (GUI) os erros do Selenium Manager e do Webdriver Manager caso o Google Chrome não possa ser inicializado, facilitando a identificação de máquinas cliente sem o Chrome instalado.
+
+## [2.14.4] - 2026-07-06
+
+### Corrigido
+- **Seletor CSS Inválido no Calendário RichFaces** (`iss_fortaleza_automacao.py`): Os seletores CSS que utilizavam `#{base_id}Header` e `#{base_id}` falhavam com `InvalidSelectorException` pois o `base_id` contém caracteres `:` do JSF, que o motor CSS interpreta como pseudo-classe. Substituídos pelos seletores de atributo `[id='{base_id}Header']` e `[id='{base_id}']`, que são agnósticos a caracteres especiais no ID.
+- **SyntaxError no Log de Erros da GUI** (`app.py`): As mensagens de exceção do Selenium inseridas diretamente em chamadas `evaluate_js` continham aspas simples e quebras de linha, quebrando a string Javascript. Todos os blocos `except` que fazem log de erros na GUI passaram a usar `json.dumps()` para serializar e escapar corretamente as mensagens antes da injeção no webview.
+- Adicionado `import json` à seção de imports de `app.py`.
+
+## [2.14.3] - 2026-07-06
+
+### Corrigido
+- **Seleção de Mês/Competência na ISS Fortaleza**: Ajustada a função `_abrir_editor_calendario` para clicar no botão popup do calendário (`{base_id}PopupButton`) antes de tentar acessar seu cabeçalho, solucionando a falha de elemento não visível/encontrado que encerrava o navegador.
+- **Teste Assistido e Preservação de Navegador**: Modificado o comportamento de encerramento na cláusula `finally` do fluxo de automação para manter a sessão do Chrome aberta quando o robô for executado a partir da interface gráfica (GUI), permitindo a auditoria visual em caso de erros.
+
 ## [2.14.2] - 2026-06-30
 
 ### Corrigido
