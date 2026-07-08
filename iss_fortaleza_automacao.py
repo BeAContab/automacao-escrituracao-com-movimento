@@ -123,7 +123,6 @@ class DocumentoPortalISS:
     """Linha da planilha que será transportada para o formulário do portal."""
 
     arquivo_pdf: str
-    prefeitura: str
     cnpj_prestador: str
     numero_nf: str
     id_cnae_final: str
@@ -134,6 +133,16 @@ class DocumentoPortalISS:
     natureza_operacao: str
     iss_retido: str
     valor_servico: str
+    # Campos de identificação e endereço do prestador (opcionais — usados no preenchimento manual)
+    prefeitura: str = ""
+    nome_prestador: str = ""
+    uf_prestador: str = ""
+    cidade_prestador: str = ""
+    cep_prestador: str = ""
+    logradouro_prestador: str = ""
+    numero_prestador: str = ""
+    bairro_prestador: str = ""
+    email_prestador: str = ""
     valor_deducoes: str = ""
     descontos_incondicionados: str = ""
     descontos_condicionados: str = ""
@@ -198,6 +207,47 @@ def limpar_cnpj_para_digitacao(cnpj: str) -> str:
     """Retorna apenas os dígitos do CNPJ para uma digitação mais estável."""
 
     return re.sub(r"\D+", "", cnpj or "")
+
+
+def validar_campos_obrigatorios(documento: DocumentoPortalISS) -> list[str]:
+    """Valida se todos os campos obrigatórios necessários para a escrituração e cadastro do prestador
+    estão presentes na planilha."""
+    ausentes = []
+    
+    campos_validar = {
+        "cnpj_prestador": "CNPJ do Prestador",
+        "numero_nf": "Número da Nota Fiscal",
+        "data_emissao": "Data de Emissão",
+        "id_cnae_final": "Código CNAE (Atividade)",
+        "descricao_servico": "Descrição do Serviço",
+        "uf_local_prestacao": "UF do Local de Prestação",
+        "cidade_local_prestacao": "Cidade do Local de Prestação",
+        "natureza_operacao": "Natureza da Operação",
+        "iss_retido": "ISS Retido (Sim/Não)",
+        "nome_prestador": "Razão Social / Nome do Prestador",
+        "uf_prestador": "UF do Prestador",
+        "cidade_prestador": "Cidade do Prestador",
+        "cep_prestador": "CEP do Prestador",
+        "logradouro_prestador": "Logradouro (Endereço) do Prestador",
+        "bairro_prestador": "Bairro do Prestador"
+    }
+    
+    for attr, label in campos_validar.items():
+        valor = getattr(documento, attr, None)
+        if valor is None:
+            ausentes.append(label)
+        elif isinstance(valor, str) and not valor.strip():
+            ausentes.append(label)
+            
+    # Validação do valor do serviço
+    val_serv = (documento.valor_servico or "").strip().replace(" ", "").replace(".", "").replace(",", ".")
+    try:
+        if not val_serv or float(val_serv) <= 0.0:
+            ausentes.append("Valor do Serviço (deve ser maior que zero)")
+    except ValueError:
+        ausentes.append("Valor do Serviço (formato numérico inválido)")
+        
+    return ausentes
 
 
 def _formatar_celula_para_string_de_valor(valor: Any) -> str:
@@ -369,7 +419,7 @@ def solicitar_planilha_automacao() -> Path:
 
 
 def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
-    """Lê a planilha `nf_compilado.xlsx` e devolve as linhas prontas para o portal."""
+    """Lê a planilha de notas e devolve as linhas prontas para o portal."""
 
     workbook = load_workbook(caminho_xlsx, data_only=True)
     planilha = workbook.active
@@ -377,9 +427,12 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
     cabecalhos = [celula.value for celula in next(planilha.iter_rows(min_row=1, max_row=1))]
     colunas = {nome: indice for indice, nome in enumerate(cabecalhos)}
 
+    # Suporte flexível para arquivo_xml ou arquivo_pdf
+    col_arquivo = "ARQUIVO_XML" if "ARQUIVO_XML" in colunas else ("ARQUIVO_PDF" if "ARQUIVO_PDF" in colunas else None)
+    if not col_arquivo:
+        raise ValueError("A planilha informada deve conter a coluna 'ARQUIVO_XML' ou 'ARQUIVO_PDF'.")
+
     campos_obrigatorios = [
-        "ARQUIVO_PDF",
-        "PREFEITURA",
         "CNPJ_PRESTADOR",
         "NUMERO_NF",
         "ID_CNAE_FINAL",
@@ -413,10 +466,13 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
         csrf = _formatar_celula_para_string_de_valor(linha[colunas["CSRF (CSLL + PIS + Cofins Retidos)"]]) if "CSRF (CSLL + PIS + Cofins Retidos)" in colunas else "0,00"
         inss = _formatar_celula_para_string_de_valor(linha[colunas["INSS"]]) if "INSS" in colunas else "0,00"
 
+        # Leitura flexível da prefeitura
+        prefeitura_val = str(linha[colunas["PREFEITURA"]] or "") if "PREFEITURA" in colunas else ""
+
         documentos.append(
             DocumentoPortalISS(
-                arquivo_pdf=str(linha[colunas["ARQUIVO_PDF"]] or ""),
-                prefeitura=str(linha[colunas["PREFEITURA"]] or ""),
+                arquivo_pdf=str(linha[colunas[col_arquivo]] or ""),
+                prefeitura=prefeitura_val,
                 cnpj_prestador=str(linha[colunas["CNPJ_PRESTADOR"]] or ""),
                 numero_nf=str(linha[colunas["NUMERO_NF"]] or ""),
                 id_cnae_final=str(linha[colunas["ID_CNAE_FINAL"]] or ""),
@@ -427,6 +483,15 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 natureza_operacao=str(linha[colunas["NATUREZA_OPERACAO"]] or ""),
                 iss_retido=str(linha[colunas["ISS_RETIDO"]] or ""),
                 valor_servico=valor_servico,
+                # Campos de endereço do prestador (lidos quando presentes na planilha)
+                nome_prestador=str(linha[colunas["NOME_PRESTADOR"]] or "") if "NOME_PRESTADOR" in colunas else "",
+                uf_prestador=str(linha[colunas["UF_PRESTADOR"]] or "") if "UF_PRESTADOR" in colunas else "",
+                cidade_prestador=str(linha[colunas["CIDADE_PRESTADOR"]] or "") if "CIDADE_PRESTADOR" in colunas else "",
+                cep_prestador=str(linha[colunas["CEP_PRESTADOR"]] or "") if "CEP_PRESTADOR" in colunas else "",
+                logradouro_prestador=str(linha[colunas["LOGRADOURO_PRESTADOR"]] or "") if "LOGRADOURO_PRESTADOR" in colunas else "",
+                numero_prestador=str(linha[colunas["NUMERO_PRESTADOR"]] or "") if "NUMERO_PRESTADOR" in colunas else "",
+                bairro_prestador=str(linha[colunas["BAIRRO_PRESTADOR"]] or "") if "BAIRRO_PRESTADOR" in colunas else "",
+                email_prestador=str(linha[colunas["EMAIL_PRESTADOR"]] or "") if "EMAIL_PRESTADOR" in colunas else "",
                 valor_deducoes=valor_deducoes,
                 descontos_incondicionados=descontos_incondicionados,
                 descontos_condicionados=descontos_condicionados,
@@ -709,10 +774,16 @@ def _selecionar_opcao_por_texto(
     """Seleciona a primeira opção disponível em um <select> a partir de uma lista de rótulos."""
 
     _verificar_pausa()
-    for tentativa in range(4):
+    # Aumentado para 8 tentativas para maior tolerância ao AJAX do portal
+    for tentativa in range(8):
         try:
             elemento = _aguardar_elemento_clicavel(driver, by, seletor, timeout=timeout)
             select = Select(elemento)
+
+            # Se a lista de opções estiver vazia ou contiver apenas o placeholder inicial, forçamos o retry
+            # pois o portal (RichFaces) provavelmente ainda está popularizando o <select> via AJAX assíncrono.
+            if len(select.options) <= 1:
+                raise NoSuchElementException("Select ainda não populado com opções (AJAX pendente).")
 
             # 1. Tenta correspondência exata normalizada (ignora caixa e acentos)
             for texto in textos:
@@ -739,11 +810,11 @@ def _selecionar_opcao_por_texto(
             raise NoSuchElementException(f"Nenhuma das opções {textos} foi localizada no select.")
             
         except (StaleElementReferenceException, NoSuchElementException) as exc:
-            if tentativa == 3:
+            if tentativa == 7:
                 raise RuntimeError(
                     f"Não foi possível selecionar nenhuma opção entre {textos} após várias tentativas."
                 ) from exc
-            time.sleep(0.5)
+            time.sleep(0.8)
 
 
 # ---------------------------------------------------------------------------
@@ -1070,110 +1141,164 @@ def aguardar_tela_digitar_documento(driver: WebDriver, timeout: int = 120) -> No
 
 
 # ---------------------------------------------------------------------------
-# Seleção do prestador (CNPJ + autocomplete)
+# Preenchimento manual dos dados do prestador
 # ---------------------------------------------------------------------------
 
 
-def selecionar_prestador(
+def preencher_dados_prestador(
     driver: WebDriver,
-    cnpj: str,
+    documento: "DocumentoPortalISS",
     depuracao: bool = False,
 ) -> None:
-    """Seleciona o prestador de forma visível, acionando o autocomplete do portal."""
+    """Preenche manualmente o formulário de identificação do prestador com os dados da planilha.
+
+    Este fluxo substitui a busca via autocomplete pelo CNPJ, permitindo escriturar
+    prestadores que ainda não estão cadastrados no portal da ISS Fortaleza.
+    Os dados utilizados são os extraídos pela IA durante o processamento das notas fiscais.
+    """
 
     registrar_evento_execucao(
-        f"Iniciando seleção do prestador para o CNPJ {cnpj}",
+        f"Preenchendo dados do prestador manualmente para CNPJ {documento.cnpj_prestador}",
         "ISS Fortaleza",
     )
     aguardar_tela_digitar_documento(driver)
 
-    # Ativa o modo de pesquisa por CNPJ
-    _clicar_por_id(driver, "digitarDocumentoForm:tipoPesquisaTomadorRb:1")
-    registrar_evento_execucao("Tipo de pesquisa alterado para CNPJ", "ISS Fortaleza")
+    # --- Tipo de Cliente/Fornecedor: sempre "Pessoa Jurídica" ---
+    _selecionar_opcao_por_texto(
+        driver,
+        By.ID,
+        "digitarDocumentoForm:comboEscolherTipoNaturezaJuridica",
+        ["Pessoa Jurídica", "Pessoa Juridica", "PJ"],
+        timeout=10,
+    )
+    registrar_evento_execucao("Tipo Natureza Jurídica definido como Pessoa Jurídica", "ISS Fortaleza")
+    time.sleep(0.5)
 
-    # Pausa para o portal recriar o campo de CNPJ após a alternância
-    time.sleep(0.8)
+    # --- CPF/CNPJ do Prestador ---
+    cnpj_limpo = limpar_cnpj_para_digitacao(documento.cnpj_prestador)
+    if cnpj_limpo:
+        _digitar_campo(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:idCPFCNPJ",
+            cnpj_limpo,
+            delay_ms=60,
+        )
+        registrar_evento_execucao(f"CPF/CNPJ preenchido: {cnpj_limpo}", "ISS Fortaleza")
 
-    # Digita o CNPJ para disparar o autocomplete do RichFaces
+    # --- Nome/Denominação ---
+    nome = documento.nome_prestador.strip()
+    if nome:
+        _digitar_campo(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:idNome",
+            nome,
+            delay_ms=20,
+        )
+        registrar_evento_execucao(f"Nome/Denominação preenchido: {nome}", "ISS Fortaleza")
+
+    # --- UF do Prestador (dispara AJAX de carregamento de cidades) ---
+    uf = documento.uf_prestador.strip().upper()
+    if uf:
+        _selecionar_opcao_por_texto(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:comboEscolherEstado",
+            [uf],
+            timeout=10,
+        )
+        registrar_evento_execucao(f"UF do prestador selecionada: {uf}", "ISS Fortaleza")
+        # Aguarda o AJAX recarregar o combo de cidades após a seleção de estado
+        time.sleep(1.5)
+
+    # --- Cidade do Prestador ---
+    cidade = documento.cidade_prestador.strip()
+    if cidade:
+        _selecionar_opcao_por_texto(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:comboEscolherCidade",
+            [cidade],
+            timeout=15,
+        )
+        registrar_evento_execucao(f"Cidade do prestador selecionada: {cidade}", "ISS Fortaleza")
+
+    # --- CEP ---
+    cep = re.sub(r"\D+", "", documento.cep_prestador or "")
+    if cep:
+        _digitar_campo(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:idCEP",
+            cep,
+            delay_ms=40,
+        )
+        registrar_evento_execucao(f"CEP preenchido: {cep}", "ISS Fortaleza")
+
+    # --- Logradouro ---
+    logradouro = documento.logradouro_prestador.strip()
+    if logradouro:
+        _digitar_campo(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:idEndereco",
+            logradouro,
+            delay_ms=20,
+        )
+        registrar_evento_execucao(f"Logradouro preenchido: {logradouro}", "ISS Fortaleza")
+
+    # --- Número (usa 'S/N' se o campo estiver vazio na planilha) ---
+    numero = documento.numero_prestador.strip() or "S/N"
     _digitar_campo(
         driver,
         By.ID,
-        "digitarDocumentoForm:cpfPesquisaTomador",
-        limpar_cnpj_para_digitacao(cnpj),
-        delay_ms=80,
+        "digitarDocumentoForm:idNumero",
+        numero,
+        delay_ms=40,
     )
-    registrar_evento_execucao(
-        f"CNPJ digitado na pesquisa do prestador: {cnpj}",
-        "ISS Fortaleza",
-    )
+    registrar_evento_execucao(f"Número preenchido: {numero}", "ISS Fortaleza")
+
+    # --- Bairro ---
+    bairro = documento.bairro_prestador.strip()
+    if bairro:
+        _digitar_campo(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:idBairro",
+            bairro,
+            delay_ms=20,
+        )
+        registrar_evento_execucao(f"Bairro preenchido: {bairro}", "ISS Fortaleza")
+
+    # --- Email (campo não obrigatório — preenche somente se disponível) ---
+    email = documento.email_prestador.strip()
+    if email:
+        try:
+            _digitar_campo(
+                driver,
+                By.ID,
+                "digitarDocumentoForm:inputEmail3",
+                email,
+                delay_ms=20,
+            )
+            registrar_evento_execucao(f"E-mail preenchido: {email}", "ISS Fortaleza")
+        except Exception as exc_email:
+            # E-mail é opcional: registra o aviso mas não interrompe o fluxo
+            registrar_evento_execucao(
+                f"Aviso: não foi possível preencher o e-mail '{email}': {exc_email}",
+                "ISS Fortaleza",
+            )
+
     _pausar_para_depuracao(
         driver,
         depuracao,
-        f"O CNPJ {cnpj} foi digitado. Confira o autocomplete antes da seleção.",
+        f"Dados do prestador {documento.cnpj_prestador} preenchidos. Confira antes de continuar.",
     )
-
-    # Aguarda o container do autocomplete aparecer (timeout tolerante)
-    container_id = "digitarDocumentoForm:j_id189"
-    texto_container = ""
-    container = None
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.visibility_of_element_located((By.ID, container_id))
-        )
-        container = driver.find_element(By.ID, container_id)
-        texto_container = container.text or ""
-    except TimeoutException:
-        pass
-
-    # Verifica se há sugestões disponíveis na lista do autocomplete
-    try:
-        if container:
-            sugestoes = container.find_elements(By.CSS_SELECTOR, "tr.richfaces_suggestionEntry")
-        else:
-            sugestoes = []
-
-        if sugestoes and sugestoes[0].is_displayed():
-            sugestoes[0].click()
-            registrar_evento_execucao(
-                f"Prestador selecionado na lista de sugestões para o CNPJ {cnpj}",
-                "ISS Fortaleza",
-            )
-        else:
-            if _texto_indica_prestador_nao_encontrado(texto_container):
-                raise PrestadorNaoEncontradoError(cnpj, texto_container)
-            # Fallback via teclado quando não há sugestão visível clicável
-            campo = driver.find_element(By.ID, "digitarDocumentoForm:cpfPesquisaTomador")
-            campo.send_keys(Keys.ARROW_DOWN)
-            campo.send_keys(Keys.RETURN)
-    except PrestadorNaoEncontradoError:
-        raise
-    except Exception:
-        if _texto_indica_prestador_nao_encontrado(texto_container):
-            raise PrestadorNaoEncontradoError(cnpj, texto_container)
-
-    # Confirma que o campo do nome do prestador foi preenchido
-    for _ in range(20):
-        try:
-            campo_nome = driver.find_element(By.ID, "digitarDocumentoForm:idNome")
-            if campo_nome.get_attribute("value", ).strip():
-                registrar_evento_execucao(
-                    f"Nome do prestador preenchido com sucesso para o CNPJ {cnpj}",
-                    "ISS Fortaleza",
-                )
-                return
-        except (NoSuchElementException, StaleElementReferenceException):
-            pass
-        time.sleep(0.25)
-
-    if _texto_indica_prestador_nao_encontrado(texto_container):
-        raise PrestadorNaoEncontradoError(cnpj, texto_container)
-
-    detalhe = texto_container or "O campo de nome continuou vazio após a busca do CNPJ."
     registrar_evento_execucao(
-        f"Portal não retornou um prestador selecionável para o CNPJ {cnpj}",
+        f"Dados do prestador preenchidos com sucesso para CNPJ {documento.cnpj_prestador}",
         "ISS Fortaleza",
     )
-    raise PrestadorNaoEncontradoError(cnpj, detalhe)
 
 
 # ---------------------------------------------------------------------------
@@ -1452,6 +1577,53 @@ def preencher_documento_servico(
 # ---------------------------------------------------------------------------
 
 
+def resetar_tela_para_digitar_documento(driver: WebDriver, competencia: CompetenciaTrabalho) -> None:
+    """Tenta navegar de volta para a tela inicial de Digitar Documento caso a gravação de uma nota tenha falhado
+    e o formulário tenha ficado travado em estado intermediário (efeito cascata)."""
+    registrar_evento_execucao(
+        "Iniciando recuperação de estado do portal para limpar formulário travado...",
+        "ISS Fortaleza",
+    )
+    # 1. Clica no menu topo Escrituração
+    try:
+        el_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//a[contains(@class, 'dropdown-toggle') and (contains(., 'Escritura') or contains(., 'Escrituracao'))]")
+            )
+        )
+        el_menu.click()
+        time.sleep(0.3)
+        _clicar_por_id(driver, "formMenuTopo:menuEscrituracao:j_id80")
+    except Exception:
+        # Fallback de menu por índice
+        menus = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-toggle")
+        if len(menus) > 4:
+            menus[4].click()
+            time.sleep(0.3)
+            _clicar_por_id(driver, "formMenuTopo:menuEscrituracao:j_id80")
+            
+    # 2. Aguarda a tela de Manter Escrituração e consulta a competência novamente
+    WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((By.ID, "manterEscrituracaoForm:btnConsultar"))
+    )
+    selecionar_competencia_na_tela_richfaces(driver, competencia)
+    _clicar_por_id(driver, "manterEscrituracaoForm:btnConsultar")
+    
+    # 3. Aguarda o botão Escriturar e clica
+    aguardar_botao_escriturar(driver)
+    _clicar_por_id(driver, "manterEscrituracaoForm:dataTable:0:linkEscriturar")
+    
+    # 4. Vai para a aba Serviços Tomados e clica em Digitar Documento
+    clicar_aba_servicos_tomados(driver)
+    WebDriverWait(driver, 30).until(
+        EC.visibility_of_element_located((By.ID, "servico_tomado_form:seamj_id849"))
+    )
+    _clicar_por_id(driver, "servico_tomado_form:seamj_id849")
+    aguardar_tela_digitar_documento(driver)
+    time.sleep(0.5)
+
+
+
 def executar_fluxo_iss(
     documentos: list[DocumentoPortalISS],
     competencia: CompetenciaTrabalho,
@@ -1623,7 +1795,7 @@ def executar_fluxo_iss(
         pasta_log.mkdir(parents=True, exist_ok=True)
         
         # Limpa arquivos de logs anteriores para esta execução
-        for nome in ["log_escrituradas_sucesso.txt", "log_nao_cadastrados.txt", "log_prefeitura_fortaleza.txt"]:
+        for nome in ["log_escrituradas_sucesso.txt", "log_prefeitura_fortaleza.txt", "log_notas_incompletas.txt"]:
             caminho_antigo = pasta_log / nome
             if caminho_antigo.exists():
                 try:
@@ -1633,7 +1805,6 @@ def executar_fluxo_iss(
 
         configurar_pasta_logs(pasta_log)
         notas_sucesso: list[str] = []
-        notas_nao_cadastradas: list[str] = []
 
         for indice, candidato in enumerate(documentos, start=1):
             if callback_progresso:
@@ -1664,33 +1835,49 @@ def executar_fluxo_iss(
                     print(f"Erro ao registrar log de Fortaleza: {exc_fort}")
                 continue
 
+            # Valida se há alguma informação obrigatória vazia/ausente na planilha antes de prosseguir
+            campos_ausentes = validar_campos_obrigatorios(candidato)
+            if campos_ausentes:
+                motivo = f"Campos obrigatórios ausentes na planilha: {', '.join(campos_ausentes)}"
+                mensagem_log = (
+                    f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
+                    f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
+                    f"IGNORADO: {motivo}"
+                )
+                registrar_log_funcao2(caminho_log, mensagem_log)
+                print(f"Linha {indice}/{len(documentos)} ignorada. Motivo: {motivo}")
+                
+                # Grava no log exclusivo de notas incompletas
+                caminho_incompletas = pasta_log / "log_notas_incompletas.txt"
+                try:
+                    if not caminho_incompletas.exists():
+                        with open(caminho_incompletas, "w", encoding="utf-8") as f:
+                            f.write("As seguintes notas fiscais foram ignoradas por estarem com campos obrigatórios ausentes na planilha:\n\n")
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with open(caminho_incompletas, "a", encoding="utf-8") as f:
+                        f.write(f"[{timestamp}] PDF: {candidato.arquivo_pdf} | CNPJ: {candidato.cnpj_prestador} | NF: {candidato.numero_nf}\n")
+                        f.write(f"  -> Ausente(s): {', '.join(campos_ausentes)}\n\n")
+                except Exception as exc_inc:
+                    print(f"Erro ao registrar log de notas incompletas: {exc_inc}")
+                continue
+
+
             print(
                 f"Processando linha {indice}/{len(documentos)}: "
                 f"{candidato.cnpj_prestador} - NF {candidato.numero_nf}"
             )
             try:
-                selecionar_prestador(driver, candidato.cnpj_prestador, depuracao=depuracao)
-            except PrestadorNaoEncontradoError as exc:
+                # Preenche os dados do prestador manualmente com as informações da planilha,
+                # independentemente de ele estar ou não cadastrado no portal da ISS Fortaleza.
+                preencher_dados_prestador(driver, candidato, depuracao=depuracao)
+            except Exception as exc_prestador:
                 mensagem_log = (
                     f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
                     f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
-                    f"{exc}"
+                    f"ERRO ao preencher dados do prestador: {exc_prestador}"
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
-                nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
-                notas_nao_cadastradas.append(nf_info)
-                print(f"Prestador não encontrado para {candidato.cnpj_prestador}; avançando.")
-                
-                # Grava no log de prestadores não cadastrados em tempo real
-                caminho_nao_cadastrados = pasta_log / "log_nao_cadastrados.txt"
-                try:
-                    if not caminho_nao_cadastrados.exists():
-                        with open(caminho_nao_cadastrados, "w", encoding="utf-8") as f:
-                            f.write("As seguintes notas fiscais não puderam ser escrituradas pois os prestadores correspondentes não estavam cadastrados no portal da ISS Fortaleza:\n\n")
-                    with open(caminho_nao_cadastrados, "a", encoding="utf-8") as f:
-                        f.write(f"- {nf_info}\n")
-                except Exception as exc_nc:
-                    print(f"Erro ao salvar log de não cadastrados em tempo real: {exc_nc}")
+                print(f"Erro ao preencher dados do prestador {candidato.cnpj_prestador}: {exc_prestador}; avançando.")
                 continue
 
             try:
@@ -1738,7 +1925,11 @@ def executar_fluxo_iss(
                     _clicar_com_espera(driver, By.XPATH, '//*[@id="j_id165:novo"]', "botão Novo Documento", timeout=15)
                     time.sleep(2)
                 except Exception as exc:
-                    print(f"Não foi possível clicar em 'Novo documento': {exc}. O fluxo pode falhar na próxima iteração.")
+                    print(f"Não foi possível clicar em 'Novo documento': {exc}. Realizando reset preventivo de tela.")
+                    try:
+                        resetar_tela_para_digitar_documento(driver, competencia)
+                    except Exception as exc_reset:
+                        print(f"Falha crítica no reset de tela: {exc_reset}. O fluxo pode falhar na próxima iteração.")
 
         print()
         print("Gravação de documentos em lote concluída.")

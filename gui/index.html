@@ -83,47 +83,48 @@
 <body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden selection:bg-secondary/30">
 
 <!-- Sidebar -->
-<aside class="w-[280px] h-screen fixed left-0 top-0 bg-surface-container-low/50 backdrop-blur-xl border-r border-white/10 shadow-xl flex flex-col p-6 z-50">
-    <div class="flex items-center gap-3 mb-10">
-        <div>
-            <h1 class="font-headline-lg text-[20px] font-bold text-primary leading-tight">Automação: ISS Fortaleza</h1>
-            <p class="text-xs text-on-surface-variant font-medium tracking-widest uppercase">Fiscal Automation</p>
-        </div>
-    </div>
-    
-    <nav class="flex-1 space-y-2">
-        <a id="btn-aba-extracao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-secondary font-bold border-r-2 border-secondary bg-white/5 transition-colors">
-            <span class="material-symbols-outlined">psychology</span>
-            <span>Extração com IA</span>
-        </a>
-        <a id="btn-aba-automacao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
-            <span class="material-symbols-outlined">robot_2</span>
-            <span>Automação: Escrituração</span>
-        </a>
-
-        <!-- Submenu para Outras Ferramentas -->
-        <div class="pt-4 border-t border-white/10 mt-4">
-            <button onclick="toggleSubmenu()" class="w-full flex items-center justify-between p-2 text-xs font-bold text-on-surface-variant hover:text-on-surface uppercase tracking-widest select-none">
-                <span>Outras Ferramentas</span>
-                <span id="submenu-chevron" class="material-symbols-outlined transition-transform duration-200">expand_more</span>
-            </button>
-            
-            <div id="submenu-ferramentas" class="mt-2 space-y-1 pl-2 hidden">
-                <a id="btn-aba-organizador" href="#" class="aba-btn flex items-center gap-3 p-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors text-sm">
-                    <span class="material-symbols-outlined text-[20px]">folder_shared</span>
-                    <span>Organizar PDFs</span>
-                </a>
-                <a id="btn-aba-prefeitura" href="#" class="aba-btn flex items-center gap-3 p-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors text-sm">
-                    <span class="material-symbols-outlined text-[20px]">account_balance</span>
-                    <span>Exportar por Prefeitura</span>
-                </a>
-                <a id="btn-aba-uniao" href="#" class="aba-btn flex items-center gap-3 p-2.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors text-sm">
-                    <span class="material-symbols-outlined text-[20px]">merge</span>
-                    <span>Unir Planilhas</span>
-                </a>
+<aside class="w-[280px] h-screen fixed left-0 top-0 bg-surface-container-low/50 backdrop-blur-xl border-r border-white/10 shadow-xl flex flex-col p-6 z-50 justify-between">
+    <div>
+        <div class="flex items-center gap-3 mb-10">
+            <div>
+                <h1 class="font-headline-lg text-[20px] font-bold text-primary leading-tight">Automação: ISS Fortaleza</h1>
+                <p class="text-xs text-on-surface-variant font-medium tracking-widest uppercase">Fiscal Automation</p>
             </div>
         </div>
-    </nav>
+        
+        <nav class="space-y-2">
+            <a id="btn-aba-xml" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-secondary font-bold border-r-2 border-secondary bg-white/5 transition-colors">
+                <span class="material-symbols-outlined">description</span>
+                <span>Processar XMLs</span>
+            </a>
+            <a id="btn-aba-automacao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
+                <span class="material-symbols-outlined">robot_2</span>
+                <span>Automação: Escrituração</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- Configuração do Tess AI no rodapé da Sidebar -->
+    <div class="pt-6 border-t border-white/10 space-y-4">
+        <h4 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+            <span class="material-symbols-outlined text-[16px] text-secondary">settings</span>
+            Configuração Tess AI
+        </h4>
+        <div class="space-y-2">
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Chave de API</label>
+                <input id="api-key-tess" class="w-full bg-black/40 border border-white/10 focus:border-secondary rounded-lg py-2 px-3 text-xs font-mono-console outline-none text-white" type="password" placeholder="Chave Tess AI..."/>
+            </div>
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">ID do Agente</label>
+                <input id="agent-id-tess" class="w-full bg-black/40 border border-white/10 focus:border-secondary rounded-lg py-2 px-3 text-xs font-mono-console outline-none text-white" type="text" placeholder="Ex: 1234"/>
+            </div>
+        </div>
+        <button id="btn-salvar-chaves" onclick="salvarChavesAPI()" class="w-full py-2 bg-secondary/15 hover:bg-secondary/25 border border-secondary/35 text-secondary rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+            <span class="material-symbols-outlined text-[14px]">save</span>
+            <span>Salvar Configuração</span>
+        </button>
+    </div>
 </aside>
 
 <!-- Top Navbar -->
@@ -138,28 +139,28 @@
     </div>
 </header>
 
-<!-- Main Content: Organizar PDFs por Prefeitura -->
-<main id="aba-organizador" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
+<!-- Main Content: Processar XMLs -->
+<main id="aba-xml" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
     <div class="space-y-1">
         <div class="flex items-center gap-3">
-            <h3 class="font-headline-xl text-[32px] font-bold">Organizar PDFs por Prefeitura</h3>
-            <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/15 text-secondary rounded-full text-xs font-bold">
+            <h3 class="font-headline-xl text-[32px] font-bold">Processamento de XMLs</h3>
+            <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/15 text-secondary rounded-full text-xs font-bold neon-pulse">
                 <span class="w-2 h-2 rounded-full bg-secondary"></span>
-                Sem IA
+                Tess AI Ativo
             </span>
         </div>
-        <p class="text-on-surface-variant">Classifica e move automaticamente cada NFS-e para a pasta da prefeitura correspondente.</p>
+        <p class="text-on-surface-variant">Lê arquivos XML de NFS-e, classifica o CNAE usando a IA do Tess baseada no cnae_oficial.xlsx e gera a planilha de saída.</p>
     </div>
 
     <!-- Seleção da pasta de origem -->
     <div class="glass-card p-5 rounded-2xl space-y-4">
         <h4 class="font-bold text-on-surface flex items-center gap-2">
             <span class="material-symbols-outlined text-secondary">folder_open</span>
-            Pasta de Origem dos PDFs
+            Pasta de Origem dos XMLs
         </h4>
         <div class="flex gap-3">
-            <input id="input-pasta-organizar" type="text" placeholder="Selecione a pasta onde estão os PDFs misturados..." class="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-sm text-on-surface font-mono-console focus:outline-none focus:border-secondary/50" />
-            <button onclick="selecionarPastaOrganizar()" class="px-4 py-2 bg-secondary/10 hover:bg-secondary/20 border border-secondary/30 text-secondary rounded-lg text-sm font-bold transition-all">
+            <input id="input-pasta-xml" type="text" placeholder="Selecione a pasta onde estão os arquivos XML..." class="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-sm text-on-surface font-mono-console focus:outline-none focus:border-secondary/50" />
+            <button onclick="selecionarPastaXML()" class="px-4 py-2 bg-secondary/10 hover:bg-secondary/20 border border-secondary/30 text-secondary rounded-lg text-sm font-bold transition-all">
                 <span class="material-symbols-outlined align-middle">folder_open</span>
                 Pasta
             </button>
@@ -167,178 +168,31 @@
     </div>
 
     <!-- Progresso -->
-    <div id="progresso-container-organizador" class="hidden glass-card p-5 rounded-2xl">
+    <div id="progresso-container-xml" class="hidden glass-card p-5 rounded-2xl">
         <div class="flex justify-between items-center mb-2">
-            <span id="progresso-status-organizador" class="text-sm text-secondary">Organizando...</span>
-            <span id="progresso-porcentagem-organizador" class="text-sm font-bold text-secondary">0%</span>
+            <span id="progresso-status-xml" class="text-sm text-secondary">Aguardando...</span>
+            <span id="progresso-porcentagem-xml" class="text-sm font-bold text-secondary">0%</span>
         </div>
         <div class="w-full bg-white/10 rounded-full h-2">
-            <div id="progresso-barra-organizador" class="bg-secondary h-2 rounded-full transition-all duration-300 progress-pulse" style="width: 0%"></div>
+            <div id="progresso-barra-xml" class="bg-secondary h-2 rounded-full transition-all duration-300 progress-pulse" style="width: 0%"></div>
         </div>
     </div>
 
-    <!-- Botão Organizar -->
-    <button id="btn-organizar-pdfs" onclick="iniciarOrganizacaoPDFs()" class="w-full py-3 bg-secondary/10 hover:bg-secondary/20 border border-secondary/30 text-secondary rounded-xl font-bold tracking-wider transition-all">
-        <span class="material-symbols-outlined align-middle mr-2">folder_shared</span>
-        ORGANIZAR PDFs POR PREFEITURA
+    <!-- Botão Processar -->
+    <button id="btn-processar-xml" onclick="iniciarProcessamentoXML()" class="w-full py-3 bg-secondary/10 hover:bg-secondary/20 border border-secondary/30 text-secondary rounded-xl font-bold tracking-wider transition-all">
+        <span class="material-symbols-outlined align-middle mr-2">play_arrow</span>
+        INICIAR PROCESSAMENTO DE XMLs
     </button>
 
     <!-- Log Terminal -->
     <section class="glass-card rounded-2xl overflow-hidden">
         <div class="bg-black/60 border-b border-white/10 px-6 py-3">
-            <span class="text-xs font-mono-console text-on-surface-variant">organizador_output.log</span>
+            <span class="text-xs font-mono-console text-on-surface-variant">xml_processamento_output.log</span>
         </div>
-        <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 350px; max-height: 350px; overflow-y: auto;" id="log-organizador">
-            <p class="text-on-surface-variant opacity-60">Aguardando seleção da pasta de origem...</p>
+        <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 350px; max-height: 350px; overflow-y: auto;" id="log-xml">
+            <p class="text-on-surface-variant opacity-60">Aguardando início do processamento...</p>
         </div>
     </section>
-</main>
-
-<!-- Main Content: Extração -->
-<main id="aba-extracao" class="hidden ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
-    <div class="flex items-end justify-between">
-        <div class="space-y-1">
-            <div class="flex items-center gap-3">
-                <h3 class="font-headline-xl text-[32px] font-bold">Extração & Auditoria IA</h3>
-                <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/15 text-secondary rounded-full text-xs font-bold neon-pulse">
-                    <span class="w-2 h-2 rounded-full bg-secondary"></span>
-                    IA Ativa
-                </span>
-            </div>
-            <p class="text-on-surface-variant">Processamento inteligente de documentos fiscais via Gemini AI</p>
-        </div>
-    </div>
-
-    <!-- Instructions Menu -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="glass-card p-4 rounded-xl border border-secondary/30 bg-secondary/5">
-            <h4 class="font-bold text-secondary mb-2 flex items-center gap-2">
-                <span class="material-symbols-outlined">info</span>
-                Como obter sua chave de API (Google Gemini)
-            </h4>
-            <p class="text-xs text-on-surface-variant mb-2">Para utilizar a IA do Gemini, você precisa de uma API Key gratuita da Google.</p>
-            <ol class="list-decimal list-inside text-xs text-on-surface-variant space-y-1">
-                <li>Acesse <a href="#" onclick="window.pywebview.api.abrir_link('https://aistudio.google.com/app/apikey')" class="text-primary underline font-semibold">Google AI Studio</a> e faça login.</li>
-                <li>Clique em <strong>"Get API key"</strong> e depois em <strong>"Create API key"</strong>.</li>
-                <li>Copie a chave gerada e cole no campo do Gemini abaixo.</li>
-            </ol>
-        </div>
-        <div class="glass-card p-4 rounded-xl border border-secondary/30 bg-secondary/5">
-            <h4 class="font-bold text-secondary mb-2 flex items-center gap-2">
-                <span class="material-symbols-outlined">info</span>
-                Como obter sua chave de API (Groq)
-            </h4>
-            <p class="text-xs text-on-surface-variant mb-2">Para utilizar a IA da Groq como fallback ou extrator, você precisa de uma API Key.</p>
-            <ol class="list-decimal list-inside text-xs text-on-surface-variant space-y-1">
-                <li>Acesse <a href="#" onclick="window.pywebview.api.abrir_link('https://console.groq.com/keys')" class="text-primary underline font-semibold">Groq Console</a> e faça login.</li>
-                <li>Clique em <strong>"Create API Key"</strong>, forneça um nome e crie a chave.</li>
-                <li>Copie a chave gerada e cole no campo do Groq abaixo.</li>
-            </ol>
-        </div>
-    </div>
-
-    <!-- Automation Controls -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-1 glass-card p-6 rounded-2xl space-y-6">
-            <h4 class="font-bold flex items-center gap-2">
-                <span class="material-symbols-outlined text-secondary">settings_input_component</span>
-                Configurações
-            </h4>
-            <div class="space-y-4">
-                <div class="space-y-2">
-                    <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Pasta Origem (PDFs)</label>
-                    <div class="flex gap-2">
-                        <input id="input-pasta-origem" class="flex-1 bg-black/20 border border-white/10 rounded-lg py-2 px-3 text-sm font-mono-console outline-none text-white focus:border-secondary" type="text" placeholder="Caminho da pasta origem ou selecione..."/>
-                        <button onclick="selecionarPastaOrigem()" class="bg-surface-container-highest px-4 rounded-lg text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
-                    </div>
-                    <div id="info-pasta-origem" class="text-xs text-on-surface-variant hidden flex flex-col gap-1 mt-1 p-2 bg-white/5 rounded-lg border border-white/5">
-                        <span id="txt-total-pdfs" class="font-bold text-primary">0 PDFs encontrados</span>
-                    </div>
-                </div>
-                <div class="space-y-2">
-                    <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Pasta Destino (Excel)</label>
-                    <div class="flex gap-2">
-                        <input id="input-pasta-destino" class="flex-1 bg-black/20 border border-white/10 rounded-lg py-2 px-3 text-sm font-mono-console outline-none text-white focus:border-secondary" type="text" placeholder="Caminho da pasta destino ou selecione..."/>
-                        <button onclick="selecionarPastaDestino()" class="bg-surface-container-highest px-4 rounded-lg text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
-                    </div>
-                </div>
-                
-                <div class="pt-4 border-t border-white/10 space-y-3">
-                    <div class="space-y-1">
-                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Chave de API do Gemini</label>
-                        <input id="api-key-gemini" class="w-full bg-black/20 border border-white/10 focus:border-secondary rounded-lg py-2 px-3 text-sm font-mono-console outline-none text-white" type="password" placeholder="AIzaSy..."/>
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Chave de API do Groq</label>
-                        <input id="api-key-groq" class="w-full bg-black/20 border border-white/10 focus:border-secondary rounded-lg py-2 px-3 text-sm font-mono-console outline-none text-white" type="password" placeholder="gsk_..."/>
-                    </div>
-                    
-                    <div class="flex items-center gap-4 pt-1">
-                        <label class="flex items-center gap-2 text-xs font-bold text-on-surface-variant cursor-pointer">
-                            <input type="checkbox" id="chk-usar-gemini" class="rounded bg-black/20 border-white/10 text-secondary focus:ring-secondary"/>
-                            <span>Usar Gemini</span>
-                        </label>
-                        <label class="flex items-center gap-2 text-xs font-bold text-on-surface-variant cursor-pointer">
-                            <input type="checkbox" id="chk-usar-groq" class="rounded bg-black/20 border-white/10 text-secondary focus:ring-secondary"/>
-                            <span>Usar Groq</span>
-                        </label>
-                    </div>
-                    
-                    <button id="btn-salvar-chaves" onclick="salvarChavesAPI()" class="w-full py-2 bg-surface-container-highest rounded-lg text-xs font-bold hover:bg-white/10 transition-colors border border-white/5">
-                        Salvar Chaves de API
-                    </button>
-                </div>
-            </div>
-            
-            <div class="pt-4 border-t border-white/10 space-y-3">
-                <button id="btn-iniciar-extracao-otimizada" onclick="iniciarExtracaoOtimizada()" class="w-full h-14 bg-gradient-to-r from-primary to-secondary text-on-primary rounded-xl font-black flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all group">
-                    <span class="material-symbols-outlined group-hover:translate-y-[-2px] transition-transform">bolt</span>
-                    Extração Otimizada (Recomendada)
-                </button>
-                <button id="btn-iniciar-extracao" onclick="iniciarExtracao()" class="w-full h-14 bg-gradient-to-r from-[#00424e] to-secondary-container text-white rounded-xl font-black flex items-center justify-center gap-3 shadow-xl shadow-secondary/10 hover:scale-[1.02] active:scale-95 transition-all group border border-secondary/30">
-                    <span class="material-symbols-outlined group-hover:translate-y-[-2px] transition-transform">rocket_launch</span>
-                    Extração Completa (Multimodal)
-                </button>
-            </div>
-        </div>
-
-        <div class="lg:col-span-2 glass-card p-6 rounded-2xl flex flex-col">
-            <div class="flex items-center justify-between mb-6">
-                <h4 class="font-bold flex items-center gap-2">
-                    <span class="material-symbols-outlined text-secondary">analytics</span>
-                    Monitoramento de Execução
-                </h4>
-                <button id="btn-pausar-retomar" onclick="alternarPausaExtracao()" class="hidden px-3 py-1.5 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[10px] font-bold tracking-wider transition-all flex items-center gap-1.5 select-none">
-                    <span class="material-symbols-outlined text-[14px]">pause</span>
-                    <span id="lbl-pausar-retomar">PARAR EXTRAÇÃO</span>
-                </button>
-            </div>
-            
-            <!-- Alerta de Limite de Cota -->
-            <div id="alerta-cota" class="hidden p-4 mb-4 rounded-xl border border-error/30 bg-error/5 text-error text-xs flex gap-3 items-start">
-                <span class="material-symbols-outlined">warning</span>
-                <div>
-                    <strong class="block mb-0.5">Limite de Cotas Atingido!</strong>
-                    <span>Suas cotas de IA atingiram o limite. Você pode continuar amanhã ou trocar suas chaves de API. O arquivo XLSX foi gerado com os dados processados com sucesso até o momento.</span>
-                </div>
-            </div>
-
-            <!-- Barra de Progresso -->
-            <div id="progresso-container" class="mb-4 hidden">
-                <div class="flex justify-between items-center text-xs font-bold mb-1.5">
-                    <span id="progresso-status" class="text-secondary">Processando...</span>
-                    <span id="progresso-porcentagem" class="text-secondary">0%</span>
-                </div>
-                <div class="w-full bg-white/5 border border-white/10 rounded-full h-3.5 overflow-hidden relative progress-pulse">
-                    <div id="progresso-barra" class="bg-gradient-to-r from-primary to-secondary h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-                </div>
-            </div>
-
-            <div class="flex-1 bg-black/40 rounded-xl border border-white/5 p-4 font-mono-console text-xs space-y-1.5 custom-scrollbar" style="max-height: 300px; height: 300px; overflow-y: auto;" id="log-extracao">
-                <p class="text-on-surface-variant opacity-60">Aguardando início...</p>
-            </div>
-        </div>
-    </div>
 </main>
 
 <!-- Main Content: Automação -->
@@ -349,7 +203,7 @@
             <div class="flex items-center gap-3 mt-2">
                 <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-full">
                     <span class="w-2 h-2 rounded-full bg-secondary blink"></span>
-                    <span class="text-secondary font-bold text-xs">Robô Pronto</span>
+                    <span class="text-secondary font-bold text-xs">Robô Escriturador</span>
                 </span>
             </div>
         </div>
@@ -361,13 +215,13 @@
                 <div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
                 <h3 class="font-headline-lg-mobile text-[20px] font-bold text-on-surface mb-6 flex items-center gap-2">
                     <span class="material-symbols-outlined text-secondary">tune</span>
-                    Parâmetros da Tarefa
+                    Parâmetros da Escrituração
                 </h3>
                 <div class="space-y-6">
                     <div class="space-y-2">
-                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Arquivo Excel Origem</label>
+                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Planilha Excel Origem (Gerada no XML)</label>
                         <div class="flex gap-2">
-                            <input id="input-excel-automacao" class="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a planilha"/>
+                            <input id="input-excel-automacao" class="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a planilha..."/>
                             <button onclick="selecionarExcelAutomacao()" class="bg-surface-container-highest px-4 rounded-xl text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
                         </div>
                     </div>
@@ -453,814 +307,49 @@
     </div>
 </main>
 
-<!-- Main Content: Exportar por Prefeitura -->
-<main id="aba-prefeitura" class="hidden ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
-    <div class="space-y-1">
-        <div class="flex items-center gap-3">
-            <h3 class="font-headline-xl text-[32px] font-bold">Exportar por Prefeitura</h3>
-            <span class="flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary rounded-full text-xs font-bold">
-                <span class="w-2 h-2 rounded-full bg-primary"></span>
-                Sem IA
-            </span>
-        </div>
-        <p class="text-on-surface-variant">Extração estruturada por regras — selecione a pasta de cada prefeitura e gere o XLSX automaticamente.</p>
-    </div>
-
-    <!-- Grid de prefeituras -->
-    <div id="grid-prefeituras" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- Gerado dinamicamente pelo JS -->
-    </div>
-
-    <!-- Progresso -->
-    <div id="progresso-container-prefeitura" class="hidden glass-card p-5 rounded-2xl">
-        <div class="flex justify-between items-center mb-2">
-            <span id="progresso-status-prefeitura" class="text-sm text-primary">Iniciando...</span>
-            <span id="progresso-porcentagem-prefeitura" class="text-sm font-bold text-primary">0%</span>
-        </div>
-        <div class="w-full bg-white/10 rounded-full h-2">
-            <div id="progresso-barra-prefeitura" class="bg-primary h-2 rounded-full transition-all duration-300 progress-pulse" style="width: 0%"></div>
-        </div>
-    </div>
-
-    <!-- Ações do Exportador -->
-    <div class="flex gap-4">
-        <button id="btn-limpar-prefeituras" onclick="limparTodasAsPastasPrefeitura()" class="w-[200px] py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-on-surface rounded-xl font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 select-none">
-            <span class="material-symbols-outlined text-[20px]">mop</span>
-            LIMPAR TUDO
-        </button>
-        <button id="btn-exportar-prefeituras" onclick="iniciarExportacaoPrefeituras()" class="flex-1 py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary rounded-xl font-bold tracking-wider transition-all">
-            <span class="material-symbols-outlined align-middle mr-2">play_arrow</span>
-            INICIAR EXPORTAÇÃO
-        </button>
-    </div>
-
-    <!-- Log Terminal -->
-    <section class="glass-card rounded-2xl overflow-hidden">
-        <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center gap-2">
-            <span class="text-xs font-mono-console text-on-surface-variant">prefeitura_output.log</span>
-        </div>
-        <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 350px; max-height: 350px; overflow-y: auto;" id="log-prefeitura">
-            <p class="text-on-surface-variant opacity-60">Aguardando início da exportação...</p>
-        </div>
-    </section>
-</main>
-
-<!-- Main Content: Unir Planilhas -->
-<main id="aba-uniao" class="hidden ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
-    <div class="space-y-1">
-        <div class="flex items-center gap-3">
-            <h3 class="font-headline-xl text-[32px] font-bold">Unir Planilhas</h3>
-            <span class="flex items-center gap-1.5 px-3 py-1 bg-tertiary/15 text-tertiary rounded-full text-xs font-bold">
-                <span class="w-2 h-2 rounded-full bg-tertiary"></span>
-                Consolidação
-            </span>
-        </div>
-        <p class="text-on-surface-variant">Selecione múltiplas planilhas XLSX e unifique-as em um único arquivo de saída.</p>
-    </div>
-
-    <!-- Seleção de arquivos XLSX -->
-    <div class="glass-card p-5 rounded-2xl space-y-4">
-        <h4 class="font-bold text-on-surface flex items-center gap-2">
-            <span class="material-symbols-outlined text-tertiary">folder_open</span>
-            Planilhas de Origem (Arquivos ou Pasta)
-        </h4>
-        
-        <!-- Drag and Drop Zone -->
-        <div id="dropzone-xlsx" class="border-2 border-dashed border-white/20 hover:border-tertiary/50 rounded-xl p-8 text-center transition-all bg-black/10 cursor-pointer flex flex-col items-center justify-center gap-2">
-            <span class="material-symbols-outlined text-[40px] text-tertiary opacity-70">upload_file</span>
-            <p class="text-sm font-semibold text-on-surface">Arraste e solte seus arquivos XLSX aqui</p>
-            <p class="text-xs text-on-surface-variant">ou clique nos botões abaixo para selecionar</p>
-        </div>
-
-        <div class="flex gap-3">
-            <div class="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-sm text-on-surface-variant font-mono-console truncate" id="txt-xlsx-selecionados">
-                Nenhum arquivo ou pasta selecionada
-            </div>
-            <button onclick="selecionarMultiplosXlsx()" class="px-4 py-2 bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/30 text-tertiary rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[18px]">upload_file</span>
-                Arquivos
-            </button>
-            <button onclick="selecionarPastaOrigemUniao()" class="px-4 py-2 bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/30 text-tertiary rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[18px]">folder_open</span>
-                Pasta
-            </button>
-        </div>
-        
-        <div class="flex items-center gap-2 px-1">
-            <input id="chk-remover-duplicados" type="checkbox" checked class="w-4 h-4 accent-tertiary rounded border-white/10 bg-black/30" />
-            <label for="chk-remover-duplicados" class="text-xs text-on-surface-variant cursor-pointer font-medium">Remover linhas duplicadas automaticamente</label>
-        </div>
-
-        <div id="lista-xlsx-selecionados" class="space-y-1 text-xs text-on-surface-variant max-h-40 overflow-y-auto custom-scrollbar">
-            <!-- Arquivos selecionados listados aqui -->
-        </div>
-    </div>
-
-    <!-- Pasta de destino -->
-    <div class="glass-card p-5 rounded-2xl space-y-4">
-        <h4 class="font-bold text-on-surface flex items-center gap-2">
-            <span class="material-symbols-outlined text-tertiary">save</span>
-            Pasta de Destino
-        </h4>
-        <div class="flex gap-3">
-            <input id="input-pasta-uniao-destino" type="text" placeholder="Selecione a pasta de saída..." class="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-sm text-on-surface font-mono-console focus:outline-none focus:border-tertiary/50" />
-            <button onclick="selecionarPastaUniaoDestino()" class="px-4 py-2 bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/30 text-tertiary rounded-lg text-sm font-bold transition-all">
-                <span class="material-symbols-outlined align-middle">folder_open</span>
-                Pasta
-            </button>
-        </div>
-    </div>
-
-    <!-- Progresso -->
-    <div id="progresso-container-uniao" class="hidden glass-card p-5 rounded-2xl">
-        <div class="flex justify-between items-center mb-2">
-            <span id="progresso-status-uniao" class="text-sm text-tertiary">Unindo...</span>
-            <span id="progresso-porcentagem-uniao" class="text-sm font-bold text-tertiary">0%</span>
-        </div>
-        <div class="w-full bg-white/10 rounded-full h-2">
-            <div id="progresso-barra-uniao" class="bg-tertiary h-2 rounded-full transition-all duration-300 progress-pulse" style="width: 0%"></div>
-        </div>
-    </div>
-
-    <!-- Botão Unir -->
-    <button id="btn-unir-planilhas" onclick="iniciarUniaoPlanilhas()" class="w-full py-3 bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/30 text-tertiary rounded-xl font-bold tracking-wider transition-all">
-        <span class="material-symbols-outlined align-middle mr-2">merge</span>
-        UNIR PLANILHAS
-    </button>
-
-    <!-- Log Terminal -->
-    <section class="glass-card rounded-2xl overflow-hidden">
-        <div class="bg-black/60 border-b border-white/10 px-6 py-3">
-            <span class="text-xs font-mono-console text-on-surface-variant">uniao_output.log</span>
-        </div>
-        <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 300px; max-height: 300px; overflow-y: auto;" id="log-uniao">
-            <p class="text-on-surface-variant opacity-60">Aguardando seleção de arquivos...</p>
-        </div>
-    </section>
-</main>
-
 <script>
     // Tab Navigation Logic
-    const btnOrganizador = document.getElementById('btn-aba-organizador');
-    const btnExtracao = document.getElementById('btn-aba-extracao');
     const btnAutomacao = document.getElementById('btn-aba-automacao');
-    const btnPrefeitura = document.getElementById('btn-aba-prefeitura');
-    const btnUniao = document.getElementById('btn-aba-uniao');
-    const abaOrganizador = document.getElementById('aba-organizador');
-    const abaExtracao = document.getElementById('aba-extracao');
+    const btnXml = document.getElementById('btn-aba-xml');
     const abaAutomacao = document.getElementById('aba-automacao');
-    const abaPrefeitura = document.getElementById('aba-prefeitura');
-    const abaUniao = document.getElementById('aba-uniao');
+    const abaXml = document.getElementById('aba-xml');
     const headerTitle = document.getElementById('header-title');
 
-    // Lista global de arquivos XLSX selecionados para união
-    let xlsxSelecionados = [];
-
     function setActiveTab(tab) {
-        [btnOrganizador, btnExtracao, btnAutomacao, btnPrefeitura, btnUniao].forEach(btn => {
-            btn.classList.remove('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btn.classList.add('text-on-surface-variant');
+        [btnAutomacao, btnXml].forEach(btn => {
+            if (btn) {
+                btn.classList.remove('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
+                btn.classList.add('text-on-surface-variant');
+            }
         });
-        [abaOrganizador, abaExtracao, abaAutomacao, abaPrefeitura, abaUniao].forEach(a => a.classList.add('hidden'));
+        [abaAutomacao, abaXml].forEach(a => {
+            if (a) a.classList.add('hidden');
+        });
 
-        if (tab === 'organizador') {
-            btnOrganizador.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnOrganizador.classList.remove('text-on-surface-variant');
-            abaOrganizador.classList.remove('hidden');
-            headerTitle.innerText = 'Organizar PDFs por Prefeitura';
-        } else if (tab === 'extracao') {
-            btnExtracao.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnExtracao.classList.remove('text-on-surface-variant');
-            abaExtracao.classList.remove('hidden');
-            headerTitle.innerText = 'Extração com IA';
-        } else if (tab === 'automacao') {
+        if (tab === 'automacao') {
             btnAutomacao.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
             btnAutomacao.classList.remove('text-on-surface-variant');
             abaAutomacao.classList.remove('hidden');
             headerTitle.innerText = 'Automação: Escrituração';
-        } else if (tab === 'prefeitura') {
-            btnPrefeitura.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnPrefeitura.classList.remove('text-on-surface-variant');
-            abaPrefeitura.classList.remove('hidden');
-            headerTitle.innerText = 'Exportar por Prefeitura';
-        } else if (tab === 'uniao') {
-            btnUniao.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnUniao.classList.remove('text-on-surface-variant');
-            abaUniao.classList.remove('hidden');
-            headerTitle.innerText = 'Unir Planilhas';
+        } else if (tab === 'xml') {
+            btnXml.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
+            btnXml.classList.remove('text-on-surface-variant');
+            abaXml.classList.remove('hidden');
+            headerTitle.innerText = 'Processamento de XMLs';
         }
     }
 
-    function toggleSubmenu() {
-        const sub = document.getElementById('submenu-ferramentas');
-        const chev = document.getElementById('submenu-chevron');
-        if (sub.classList.contains('hidden')) {
-            sub.classList.remove('hidden');
-            chev.style.transform = 'rotate(180deg)';
-        } else {
-            sub.classList.add('hidden');
-            chev.style.transform = '';
-        }
-    }
-
-    btnOrganizador.addEventListener('click', () => setActiveTab('organizador'));
-    btnExtracao.addEventListener('click', () => setActiveTab('extracao'));
     btnAutomacao.addEventListener('click', () => setActiveTab('automacao'));
-    btnPrefeitura.addEventListener('click', () => setActiveTab('prefeitura'));
-    btnUniao.addEventListener('click', () => setActiveTab('uniao'));
+    btnXml.addEventListener('click', () => setActiveTab('xml'));
 
-    // ---- Organizar PDFs por Prefeitura ----
-    async function selecionarPastaOrganizar() {
-        if (!window.pywebview) return;
-        const pasta = await window.pywebview.api.selecionar_pasta();
-        if (pasta) {
-            document.getElementById('input-pasta-organizar').value = pasta;
-        }
-    }
-
-    async function iniciarOrganizacaoPDFs() {
-        const pasta = document.getElementById('input-pasta-organizar').value.trim();
-        if (!pasta) {
-            addLogOrganizador('Selecione a pasta de origem dos PDFs.', true);
-            return;
-        }
-
-        addLogOrganizador('Iniciando organização de PDFs...');
-        document.getElementById('progresso-container-organizador').classList.remove('hidden');
-        document.getElementById('btn-organizar-pdfs').disabled = true;
-
-        if (window.pywebview && window.pywebview.api) {
-            await window.pywebview.api.organizar_pdfs_por_prefeitura_gui(pasta);
-        }
-        document.getElementById('btn-organizar-pdfs').disabled = false;
-    }
-
-    function addLogOrganizador(msg, isError=false) {
-        const el = document.getElementById('log-organizador');
-        const p = document.createElement('p');
-        p.innerText = msg;
-        p.className = isError ? 'text-error font-bold' : 'text-secondary';
-        el.appendChild(p);
-        el.scrollTop = el.scrollHeight;
-    }
-    window.log_organizador = addLogOrganizador;
-
-    function updateProgressoOrganizador(porcentagem, status) {
-        document.getElementById('progresso-container-organizador').classList.remove('hidden');
-        document.getElementById('progresso-barra-organizador').style.width = `${porcentagem}%`;
-        document.getElementById('progresso-porcentagem-organizador').innerText = `${porcentagem}%`;
-        document.getElementById('progresso-status-organizador').innerText = status;
-    }
-    window.update_progresso_organizador = updateProgressoOrganizador;
-
-
-    // Gera dinamicamente o grid de prefeituras com seletor de pasta para cada uma
-    const PREFEITURAS = [
-        "Governo do Distrito Federal",
-        "MUNICIPIO DE PETROLINA",
-        "NACIONAL",
-        "PREFEITURA DA ESTANCIA TURISTICA DE SAO ROQUE SP",
-        "PREFEITURA MUNICIPAL DE BARUERI",
-        "PREFEITURA MUNICIPAL DE CAMPO GRANDE",
-        "PREFEITURA MUNICIPAL DE EUSÉBIO",
-        "PREFEITURA MUNICIPAL DE FORTALEZA",
-        "PREFEITURA MUNICIPAL DE MARACANAÚ",
-        "PREFEITURA MUNICIPAL DE TEIXEIRA DE FREITAS",
-        "Prefeitura Municipal de Goiânia - GO",
-        "Prefeitura Municipal de João Pessoa"
-    ];
-
-    const gridPrefeituras = document.getElementById('grid-prefeituras');
-    PREFEITURAS.forEach(pref => {
-        const idSafe = pref.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const card = document.createElement('div');
-        card.className = 'glass-card p-4 rounded-xl space-y-2';
-        card.innerHTML = `
-            <label class="text-xs font-bold text-on-surface-variant uppercase tracking-wider">${pref}</label>
-            <div class="flex gap-2">
-                <input id="input-pref-${idSafe}" type="text" data-prefeitura="${pref}"
-                    placeholder="Selecione a pasta de origem..."
-                    class="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono-console focus:outline-none focus:border-primary/50" />
-                <button onclick="selecionarPastaPrefeitura('${idSafe}')" class="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary rounded-lg text-xs font-bold transition-all">
-                    <span class="material-symbols-outlined text-[14px] align-middle">folder_open</span>
-                </button>
-            </div>
-        `;
-        gridPrefeituras.appendChild(card);
-    });
-
-    async function selecionarPastaPrefeitura(idSafe) {
-        if (!window.pywebview) return;
-        const pasta = await window.pywebview.api.selecionar_pasta();
-        if (pasta) {
-            document.getElementById(`input-pref-${idSafe}`).value = pasta;
-        }
-    }
-
-    function limparTodasAsPastasPrefeitura() {
-        PREFEITURAS.forEach(pref => {
-            const idSafe = pref.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const el = document.getElementById(`input-pref-${idSafe}`);
-            if (el) el.value = '';
-        });
-        addLogPrefeitura('Todas as pastas de prefeituras limpas.');
-    }
-
-    async function iniciarExportacaoPrefeituras() {
-        const mapa = {};
-        PREFEITURAS.forEach(pref => {
-            const idSafe = pref.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const val = document.getElementById(`input-pref-${idSafe}`)?.value?.trim();
-            if (val) mapa[pref] = val;
-        });
-
-        if (Object.keys(mapa).length === 0) {
-            addLogPrefeitura('Selecione ao menos uma pasta de prefeitura.', true);
-            return;
-        }
-
-        addLogPrefeitura('Iniciando exportação...');
-        document.getElementById('progresso-container-prefeitura').classList.remove('hidden');
-        document.getElementById('btn-exportar-prefeituras').disabled = true;
-
-        if (window.pywebview && window.pywebview.api) {
-            await window.pywebview.api.exportar_por_prefeitura(mapa);
-        }
-        document.getElementById('btn-exportar-prefeituras').disabled = false;
-    }
-
-    function addLogPrefeitura(msg, isError=false) {
-        const el = document.getElementById('log-prefeitura');
-        const p = document.createElement('p');
-        p.innerText = msg;
-        p.className = isError ? 'text-error font-bold' : 'text-primary';
-        el.appendChild(p);
-        el.scrollTop = el.scrollHeight;
-    }
-    window.log_prefeitura = addLogPrefeitura;
-
-    function updateProgressoPrefeitura(porcentagem, status) {
-        document.getElementById('progresso-container-prefeitura').classList.remove('hidden');
-        document.getElementById('progresso-barra-prefeitura').style.width = `${porcentagem}%`;
-        document.getElementById('progresso-porcentagem-prefeitura').innerText = `${porcentagem}%`;
-        document.getElementById('progresso-status-prefeitura').innerText = status;
-    }
-    window.update_progresso_prefeitura = updateProgressoPrefeitura;
-
-    // ---- Unir Planilhas ----
-    async function selecionarMultiplosXlsx() {
-        if (!window.pywebview) return;
-        const arquivos = await window.pywebview.api.selecionar_multiplos_xlsx();
-        if (arquivos && arquivos.length > 0) {
-            if (xlsxSelecionados.length === 1 && !xlsxSelecionados[0].toLowerCase().endsWith('.xlsx')) {
-                xlsxSelecionados = [];
-            }
-            arquivos.forEach(f => {
-                if (!xlsxSelecionados.includes(f)) {
-                    xlsxSelecionados.push(f);
-                }
-            });
-            document.getElementById('txt-xlsx-selecionados').innerText = `${xlsxSelecionados.length} arquivo(s) selecionado(s)`;
-            const lista = document.getElementById('lista-xlsx-selecionados');
-            lista.innerHTML = '';
-            xlsxSelecionados.forEach(f => {
-                const p = document.createElement('p');
-                p.className = 'truncate text-on-surface-variant';
-                p.innerText = '📄 ' + f.split('\\').pop();
-                lista.appendChild(p);
-            });
-            addLogUniao(`Selecionado(s) ${arquivos.length} novos arquivo(s) XLSX. Total: ${xlsxSelecionados.length}`);
-        }
-    }
-
-    async function selecionarPastaOrigemUniao() {
-        if (!window.pywebview) return;
-        const pasta = await window.pywebview.api.selecionar_pasta();
-        if (pasta) {
-            xlsxSelecionados = [pasta];
-            document.getElementById('txt-xlsx-selecionados').innerText = `Pasta selecionada: ${pasta.split('\\').pop()}`;
-            const lista = document.getElementById('lista-xlsx-selecionados');
-            lista.innerHTML = '';
-            const p = document.createElement('p');
-            p.className = 'truncate text-on-surface-variant font-bold';
-            p.innerText = '📁 ' + pasta;
-            lista.appendChild(p);
-            addLogUniao(`Pasta selecionada para consolidação: ${pasta}`);
-        }
-    }
-
-    async function selecionarPastaUniaoDestino() {
-        if (!window.pywebview) return;
-        const pasta = await window.pywebview.api.selecionar_pasta();
-        if (pasta) document.getElementById('input-pasta-uniao-destino').value = pasta;
-    }
-
-    async function iniciarUniaoPlanilhas() {
-        const pastaDestino = document.getElementById('input-pasta-uniao-destino').value.trim();
-        if (!xlsxSelecionados || xlsxSelecionados.length === 0) {
-            addLogUniao('Selecione arquivos XLSX, arraste-os para a zona, ou selecione uma pasta de origem.', true);
-            return;
-        }
-        if (!pastaDestino) {
-            addLogUniao('Selecione a pasta de destino.', true);
-            return;
-        }
-        const removerDuplicados = document.getElementById('chk-remover-duplicados').checked;
-
-        addLogUniao('Iniciando consolidação de planilhas...');
-        document.getElementById('progresso-container-uniao').classList.remove('hidden');
-        document.getElementById('btn-unir-planilhas').disabled = true;
-
-        if (window.pywebview && window.pywebview.api) {
-            await window.pywebview.api.unir_planilhas_gui(xlsxSelecionados, pastaDestino, removerDuplicados);
-        }
-        document.getElementById('btn-unir-planilhas').disabled = false;
-    }
-
-    function addLogUniao(msg, isError=false) {
-        const el = document.getElementById('log-uniao');
-        const p = document.createElement('p');
-        p.innerText = msg;
-        p.className = isError ? 'text-error font-bold' : 'text-tertiary';
-        el.appendChild(p);
-        el.scrollTop = el.scrollHeight;
-    }
-    window.log_uniao = addLogUniao;
-
-    function updateProgressoUniao(porcentagem, status) {
-        document.getElementById('progresso-container-uniao').classList.remove('hidden');
-        document.getElementById('progresso-barra-uniao').style.width = `${porcentagem}%`;
-        document.getElementById('progresso-porcentagem-uniao').innerText = `${porcentagem}%`;
-        document.getElementById('progresso-status-uniao').innerText = status;
-    }
-    window.update_progresso_uniao = updateProgressoUniao;
-
-    // Configuração dos eventos de Drag and Drop para a Dropzone
-    window.addEventListener('DOMContentLoaded', () => {
-        const dropzone = document.getElementById('dropzone-xlsx');
-        if (dropzone) {
-            dropzone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropzone.classList.add('border-tertiary', 'bg-tertiary/5');
-            });
-
-            dropzone.addEventListener('dragleave', () => {
-                dropzone.classList.remove('border-tertiary', 'bg-tertiary/5');
-            });
-
-            dropzone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('border-tertiary', 'bg-tertiary/5');
-                
-                const files = e.dataTransfer.files;
-                const paths = [];
-                for (let i = 0; i < files.length; i++) {
-                    if (files[i].name.endsWith('.xlsx')) {
-                        if (files[i].path) {
-                            paths.push(files[i].path);
-                        } else {
-                            paths.push(files[i].name);
-                        }
-                    }
-                }
-                
-                if (paths.length > 0) {
-                    if (xlsxSelecionados.length === 1 && !xlsxSelecionados[0].toLowerCase().endsWith('.xlsx')) {
-                        xlsxSelecionados = [];
-                    }
-                    paths.forEach(p => {
-                        if (!xlsxSelecionados.includes(p)) {
-                            xlsxSelecionados.push(p);
-                        }
-                    });
-                    document.getElementById('txt-xlsx-selecionados').innerText = `${xlsxSelecionados.length} arquivo(s) selecionado(s)`;
-                    const lista = document.getElementById('lista-xlsx-selecionados');
-                    lista.innerHTML = '';
-                    xlsxSelecionados.forEach(f => {
-                        const p = document.createElement('p');
-                        p.className = 'truncate text-on-surface-variant';
-                        p.innerText = '📄 ' + f.split('\\').pop();
-                        lista.appendChild(p);
-                    });
-                    addLogUniao(`Arrastado(s) ${paths.length} novo(s) arquivo(s) XLSX. Total: ${xlsxSelecionados.length}`);
-                } else {
-                    addLogUniao('Nenhum arquivo XLSX válido encontrado no arrasto.', true);
-                }
-            });
-        }
-    });
-
-    // Auto-preencher destino e atualizar estimativa de PDF ao digitar ou colar
-    const inputOrigem = document.getElementById('input-pasta-origem');
-    const inputDestino = document.getElementById('input-pasta-destino');
-
-    inputOrigem.addEventListener('input', (e) => {
-        const val = e.target.value;
-        inputDestino.value = val;
-        atualizarInfoPasta(val);
-    });
-
-    inputOrigem.addEventListener('change', (e) => {
-        const val = e.target.value;
-        inputDestino.value = val;
-        atualizarInfoPasta(val);
-    });
-
-    // API Integration wrappers
-    async function selecionarPastaOrigem() {
-        if(window.pywebview) {
-            const folder = await window.pywebview.api.selecionar_pasta();
-            if(folder) {
-                inputOrigem.value = folder;
-                inputDestino.value = folder;
-                atualizarInfoPasta(folder);
-            }
-        }
-    }
-
-    async function atualizarInfoPasta(folder) {
-        if(window.pywebview && window.pywebview.api) {
-            const count = await window.pywebview.api.contar_pdfs_origem(folder);
-            document.getElementById('txt-total-pdfs').innerText = `${count} PDFs encontrados`;
-            document.getElementById('info-pasta-origem').classList.remove('hidden');
-        }
-    }
-
-    async function selecionarPastaDestino() {
-        if(window.pywebview) {
-            const folder = await window.pywebview.api.selecionar_pasta();
-            if(folder) document.getElementById('input-pasta-destino').value = folder;
-        }
-    }
-
+    // ---- Automação: Escrituração ----
     async function selecionarExcelAutomacao() {
-        if(window.pywebview) {
+        if (window.pywebview) {
             const file = await window.pywebview.api.selecionar_arquivo();
-            if(file) document.getElementById('input-excel-automacao').value = file;
-        }
-    }
-
-    function addLogExtracao(msg, isError=false) {
-        const logContainer = document.getElementById('log-extracao');
-        const p = document.createElement('p');
-        p.innerText = msg;
-        if(isError) p.className = "text-error font-bold";
-        else p.className = "text-secondary";
-        logContainer.appendChild(p);
-        logContainer.scrollTop = logContainer.scrollHeight;
-    }
-
-    function addLogAutomacao(msg, isError=false) {
-        const logContainer = document.getElementById('log-automacao');
-        const p = document.createElement('p');
-        p.innerText = msg;
-        if(isError) p.className = "text-error font-bold";
-        else p.className = "text-[#a3defe]";
-        logContainer.appendChild(p);
-        logContainer.scrollTop = logContainer.scrollHeight;
-    }
-
-    // Expose log functions and progress UI to python
-    window.log_extracao = addLogExtracao;
-    window.log_automacao = addLogAutomacao;
-
-    let extraçãoPausada = false;
-
-    function alternarPausaExtracao() {
-        if (!window.pywebview || !window.pywebview.api) return;
-        extraçãoPausada = !extraçãoPausada;
-        const lbl = document.getElementById('lbl-pausar-retomar');
-        const btn = document.getElementById('btn-pausar-retomar');
-        const icon = btn.querySelector('.material-symbols-outlined');
-        
-        if (extraçãoPausada) {
-            window.pywebview.api.pausar_extracao();
-            lbl.innerText = "CONTINUAR EXTRAÇÃO";
-            icon.innerText = "play_arrow";
-            btn.className = "px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 rounded-lg text-[10px] font-bold tracking-wider transition-all flex items-center gap-1.5 select-none";
-            addLogExtracao("Processo PAUSADO pelo usuário.");
-        } else {
-            window.pywebview.api.retomar_extracao();
-            lbl.innerText = "PARAR EXTRAÇÃO";
-            icon.innerText = "pause";
-            btn.className = "px-3 py-1.5 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[10px] font-bold tracking-wider transition-all flex items-center gap-1.5 select-none";
-            addLogExtracao("Processo RETOMADO pelo usuário.");
-        }
-    }
-
-    function updateProgresso(porcentagem, status) {
-        const container = document.getElementById('progresso-container');
-        const bar = document.getElementById('progresso-barra');
-        const pct = document.getElementById('progresso-porcentagem');
-        const st = document.getElementById('progresso-status');
-        
-        container.classList.remove('hidden');
-        bar.style.width = `${porcentagem}%`;
-        pct.innerText = `${porcentagem}%`;
-        st.innerText = status;
-        
-        // Reseta cores originais
-        bar.style.background = '';
-        pct.className = 'text-secondary';
-        st.className = 'text-secondary';
-    }
-    window.update_progresso = updateProgresso;
-
-    function updateProgressoAutomacao(porcentagem, status) {
-        const container = document.getElementById('progresso-container-automacao');
-        const bar = document.getElementById('progresso-barra-automacao');
-        const pct = document.getElementById('progresso-porcentagem-automacao');
-        const st = document.getElementById('progresso-status-automacao');
-        
-        container.classList.remove('hidden');
-        bar.style.width = `${porcentagem}%`;
-        pct.innerText = `${porcentagem}%`;
-        st.innerText = status;
-    }
-    window.update_progresso_automacao = updateProgressoAutomacao;
-
-    function sinalizarLimiteCota() {
-        document.getElementById('alerta-cota').classList.remove('hidden');
-        
-        const bar = document.getElementById('progresso-barra');
-        const pct = document.getElementById('progresso-porcentagem');
-        const st = document.getElementById('progresso-status');
-        
-        bar.style.width = '100%';
-        bar.style.background = '#ff4a4a';
-        pct.innerText = '100%';
-        pct.className = 'text-error';
-        st.className = 'text-error';
-    }
-    window.sinalizar_limite_cota = sinalizarLimiteCota;
-
-    async function carregarChavesAPI() {
-        if (window.pywebview && window.pywebview.api) {
-            try {
-                const chaves = await window.pywebview.api.obter_chaves_salvas();
-                if (chaves) {
-                    if (chaves.gemini) {
-                        document.getElementById('api-key-gemini').value = chaves.gemini;
-                        document.getElementById('chk-usar-gemini').checked = true;
-                    }
-                    if (chaves.groq) {
-                        document.getElementById('api-key-groq').value = chaves.groq;
-                        document.getElementById('chk-usar-groq').checked = true;
-                    }
-                }
-            } catch (e) {
-                console.error("Erro ao carregar chaves:", e);
+            if (file) {
+                document.getElementById('input-excel-automacao').value = file;
             }
         }
-    }
-
-    async function salvarChavesAPI() {
-        const geminiKey = document.getElementById('api-key-gemini').value.trim();
-        const groqKey = document.getElementById('api-key-groq').value.trim();
-        
-        if (window.pywebview && window.pywebview.api) {
-            const ok = await window.pywebview.api.salvar_chaves(geminiKey, groqKey);
-            if (ok) {
-                addLogExtracao("Chaves de API salvas com sucesso!");
-                if (geminiKey) document.getElementById('chk-usar-gemini').checked = true;
-                if (groqKey) document.getElementById('chk-usar-groq').checked = true;
-            } else {
-                addLogExtracao("Falha ao salvar chaves de API.", true);
-            }
-        }
-    }
-
-    // Tentar carregar após o carregamento da página
-    window.addEventListener('DOMContentLoaded', () => {
-        // Mês e ano competência padrão atual
-        const hoje = new Date();
-        const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
-        const anoAtual = String(hoje.getFullYear());
-        
-        const selectMes = document.getElementById('select-mes-automacao');
-        if (selectMes) {
-            selectMes.value = mesAtual;
-        }
-        const selectAno = document.getElementById('select-ano-automacao');
-        if (selectAno) {
-            let anoExiste = false;
-            for (let option of selectAno.options) {
-                if (option.value === anoAtual) {
-                    anoExiste = true;
-                    break;
-                }
-            }
-            if (!anoExiste) {
-                const opt = document.createElement('option');
-                opt.value = anoAtual;
-                opt.text = anoAtual;
-                selectAno.add(opt, selectAno.options[0]);
-            }
-            selectAno.value = anoAtual;
-        }
-
-        if (window.pywebview && window.pywebview.api) {
-            carregarChavesAPI();
-        } else {
-            window.addEventListener('pywebviewready', carregarChavesAPI);
-        }
-        setActiveTab('extracao');
-    });
-
-    async function iniciarExtracao() {
-        const inputOrigem = document.getElementById('input-pasta-origem').value;
-        const inputDestino = document.getElementById('input-pasta-destino').value;
-        const geminiKey = document.getElementById('api-key-gemini').value;
-        const groqKey = document.getElementById('api-key-groq').value;
-        const usarGemini = document.getElementById('chk-usar-gemini').checked;
-        const usarGroq = document.getElementById('chk-usar-groq').checked;
-        
-        if (!inputOrigem || !inputDestino) {
-            addLogExtracao("Selecione a pasta de origem e destino.", true);
-            return;
-        }
-        if (!usarGemini && !usarGroq) {
-            addLogExtracao("Selecione pelo menos um modelo de IA (Gemini ou Groq).", true);
-            return;
-        }
-        if (usarGemini && !geminiKey) {
-            addLogExtracao("A chave do Gemini é necessária para usar o Gemini.", true);
-            return;
-        }
-        if (usarGroq && !groqKey) {
-            addLogExtracao("A chave do Groq é necessária para usar o Groq.", true);
-            return;
-        }
-
-        document.getElementById('alerta-cota').classList.add('hidden');
-        updateProgresso(0, "Iniciando motor de extração completa...");
-
-        // Configura e exibe o botão de pausar/retomar
-        extraçãoPausada = false;
-        const btnPausa = document.getElementById('btn-pausar-retomar');
-        const lbl = document.getElementById('lbl-pausar-retomar');
-        const icon = btnPausa.querySelector('.material-symbols-outlined');
-        lbl.innerText = "PARAR EXTRAÇÃO";
-        icon.innerText = "pause";
-        btnPausa.className = "px-3 py-1.5 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[10px] font-bold tracking-wider transition-all flex items-center gap-1.5 select-none";
-        btnPausa.classList.remove('hidden');
-
-        document.getElementById('btn-iniciar-extracao').disabled = true;
-        document.getElementById('btn-iniciar-extracao-otimizada').disabled = true;
-        
-        if(window.pywebview) {
-            await window.pywebview.api.iniciar_extracao(inputOrigem, inputDestino, geminiKey, groqKey, usarGemini, usarGroq);
-        }
-        document.getElementById('btn-iniciar-extracao').disabled = false;
-        document.getElementById('btn-iniciar-extracao-otimizada').disabled = false;
-    }
-
-    async function iniciarExtracaoOtimizada() {
-        const inputOrigem = document.getElementById('input-pasta-origem').value;
-        const inputDestino = document.getElementById('input-pasta-destino').value;
-        const geminiKey = document.getElementById('api-key-gemini').value;
-        const groqKey = document.getElementById('api-key-groq').value;
-        const usarGemini = document.getElementById('chk-usar-gemini').checked;
-        const usarGroq = document.getElementById('chk-usar-groq').checked;
-        
-        if (!inputOrigem || !inputDestino) {
-            addLogExtracao("Selecione a pasta de origem e destino.", true);
-            return;
-        }
-        if (!usarGemini && !usarGroq) {
-            addLogExtracao("Selecione pelo menos um modelo de IA (Gemini ou Groq).", true);
-            return;
-        }
-        if (usarGemini && !geminiKey) {
-            addLogExtracao("A chave do Gemini é necessária para usar o Gemini.", true);
-            return;
-        }
-        if (usarGroq && !groqKey) {
-            addLogExtracao("A chave do Groq é necessária para usar o Groq.", true);
-            return;
-        }
-
-        document.getElementById('alerta-cota').classList.add('hidden');
-        updateProgresso(0, "Iniciando motor de extração otimizada...");
-
-        // Configura e exibe o botão de pausar/retomar
-        extraçãoPausada = false;
-        const btnPausa = document.getElementById('btn-pausar-retomar');
-        const lbl = document.getElementById('lbl-pausar-retomar');
-        const icon = btnPausa.querySelector('.material-symbols-outlined');
-        lbl.innerText = "PARAR EXTRAÇÃO";
-        icon.innerText = "pause";
-        btnPausa.className = "px-3 py-1.5 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[10px] font-bold tracking-wider transition-all flex items-center gap-1.5 select-none";
-        btnPausa.classList.remove('hidden');
-
-        document.getElementById('btn-iniciar-extracao').disabled = true;
-        document.getElementById('btn-iniciar-extracao-otimizada').disabled = true;
-        
-        if(window.pywebview) {
-            await window.pywebview.api.iniciar_extracao_otimizada(inputOrigem, inputDestino, geminiKey, groqKey, usarGemini, usarGroq);
-        }
-        document.getElementById('btn-iniciar-extracao').disabled = false;
-        document.getElementById('btn-iniciar-extracao-otimizada').disabled = false;
     }
 
     let automacaoPausada = false;
@@ -1281,6 +370,7 @@
         const bar = document.getElementById('progresso-barra-automacao');
         const pct = document.getElementById('progresso-porcentagem-automacao');
         const st = document.getElementById('progresso-status-automacao');
+        
         container.classList.remove('hidden');
         bar.style.width = '0%';
         pct.innerText = '0%';
@@ -1298,21 +388,21 @@
 
         // Exibe o card de confirmação de login
         document.getElementById('card-confirmar-login').classList.remove('hidden');
-
         document.getElementById('btn-iniciar-automacao').disabled = true;
+        
         addLogAutomacao(`Iniciando portal da ISS Fortaleza (Competência: ${competencia})...`);
         
-        if(window.pywebview) {
+        if (window.pywebview) {
             await window.pywebview.api.iniciar_automacao(inputExcel, competencia);
         }
         document.getElementById('btn-iniciar-automacao').disabled = false;
     }
 
     async function confirmarLoginFeito() {
-        if(window.pywebview && window.pywebview.api) {
+        if (window.pywebview && window.pywebview.api) {
             const ok = await window.pywebview.api.confirmar_login_feito();
-            if(ok) {
-                addLogAutomacao("Login confirmado pelo operador. Retomando fluxo do robô...");
+            if (ok) {
+                addLogAutomacao("Login verificado pelo operador. Retomando robô...");
                 document.getElementById('card-confirmar-login').classList.add('hidden');
                 document.getElementById('btn-pausar-retomar-automacao').classList.remove('hidden');
             } else {
@@ -1342,6 +432,160 @@
             addLogAutomacao("Automação RETOMADA pelo operador.");
         }
     }
+
+    function addLogAutomacao(msg, isError=false) {
+        const logContainer = document.getElementById('log-automacao');
+        if (!logContainer) return;
+        const p = document.createElement('p');
+        p.innerText = msg;
+        if (isError) p.className = "text-error font-bold";
+        else p.className = "text-[#a3defe]";
+        logContainer.appendChild(p);
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    window.log_automacao = addLogAutomacao;
+
+    function updateProgressoAutomacao(porcentagem, status) {
+        const container = document.getElementById('progresso-container-automacao');
+        const bar = document.getElementById('progresso-barra-automacao');
+        const pct = document.getElementById('progresso-porcentagem-automacao');
+        const st = document.getElementById('progresso-status-automacao');
+        
+        if (container) container.classList.remove('hidden');
+        if (bar) bar.style.width = `${porcentagem}%`;
+        if (pct) pct.innerText = `${porcentagem}%`;
+        if (st) st.innerText = status;
+    }
+    window.update_progresso_automacao = updateProgressoAutomacao;
+
+
+    // ---- Processamento de XMLs (Tess AI) ----
+    async function selecionarPastaXML() {
+        if (window.pywebview) {
+            const pasta = await window.pywebview.api.selecionar_pasta();
+            if (pasta) {
+                document.getElementById('input-pasta-xml').value = pasta;
+            }
+        }
+    }
+
+    async function iniciarProcessamentoXML() {
+        const pasta = document.getElementById('input-pasta-xml').value.trim();
+        if (!pasta) {
+            addLogXml('Selecione a pasta de origem dos XMLs.', true);
+            return;
+        }
+
+        const tessKey = document.getElementById('api-key-tess').value.trim();
+        const tessAgent = document.getElementById('agent-id-tess').value.trim();
+
+        document.getElementById('log-xml').innerHTML = '';
+        addLogXml('Iniciando varredura e importação de XMLs...');
+        document.getElementById('progresso-container-xml').classList.remove('hidden');
+        document.getElementById('btn-processar-xml').disabled = true;
+
+        if (window.pywebview && window.pywebview.api) {
+            try {
+                await window.pywebview.api.processar_xmls_gui(pasta, tessKey, tessAgent);
+            } catch (e) {
+                addLogXml('Erro ao chamar processamento de XMLs: ' + e, true);
+            }
+        }
+        document.getElementById('btn-processar-xml').disabled = false;
+    }
+
+    function addLogXml(msg, isError=false) {
+        const el = document.getElementById('log-xml');
+        if (!el) return;
+        const p = document.createElement('p');
+        p.innerText = msg;
+        p.className = isError ? 'text-error font-bold' : 'text-secondary';
+        el.appendChild(p);
+        el.scrollTop = el.scrollHeight;
+    }
+    window.log_xml = addLogXml;
+
+    function updateProgressoXml(porcentagem, status) {
+        const container = document.getElementById('progresso-container-xml');
+        const bar = document.getElementById('progresso-barra-xml');
+        const pct = document.getElementById('progresso-porcentagem-xml');
+        const st = document.getElementById('progresso-status-xml');
+        
+        if (container) container.classList.remove('hidden');
+        if (bar) bar.style.width = `${porcentagem}%`;
+        if (pct) pct.innerText = `${porcentagem}%`;
+        if (st) st.innerText = status;
+    }
+    window.update_progresso_xml = updateProgressoXml;
+
+
+    // ---- Credenciais e Configurações ----
+    async function carregarChavesAPI() {
+        if (window.pywebview && window.pywebview.api) {
+            try {
+                const chaves = await window.pywebview.api.obter_chaves_salvas();
+                if (chaves) {
+                    if (chaves.tess_key) {
+                        document.getElementById('api-key-tess').value = chaves.tess_key;
+                    }
+                    if (chaves.tess_agent_id) {
+                        document.getElementById('agent-id-tess').value = chaves.tess_agent_id;
+                    }
+                }
+            } catch (e) {
+                console.error("Erro ao carregar chaves:", e);
+            }
+        }
+    }
+
+    async function salvarChavesAPI() {
+        const tessKey = document.getElementById('api-key-tess').value.trim();
+        const tessAgent = document.getElementById('agent-id-tess').value.trim();
+        
+        if (window.pywebview && window.pywebview.api) {
+            const ok = await window.pywebview.api.salvar_chaves(tessKey, tessAgent);
+            if (ok) {
+                addLogXml("Configurações do Tess AI salvas com sucesso!");
+            } else {
+                addLogXml("Falha ao salvar configurações do Tess AI.", true);
+            }
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const hoje = new Date();
+        const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+        const anoAtual = String(hoje.getFullYear());
+        
+        const selectMes = document.getElementById('select-mes-automacao');
+        if (selectMes) selectMes.value = mesAtual;
+        
+        const selectAno = document.getElementById('select-ano-automacao');
+        if (selectAno) {
+            let anoExiste = false;
+            for (let option of selectAno.options) {
+                if (option.value === anoAtual) {
+                    anoExiste = true;
+                    break;
+                }
+            }
+            if (!anoExiste) {
+                const opt = document.createElement('option');
+                opt.value = anoAtual;
+                opt.text = anoAtual;
+                selectAno.add(opt, selectAno.options[0]);
+            }
+            selectAno.value = anoAtual;
+        }
+
+        if (window.pywebview && window.pywebview.api) {
+            carregarChavesAPI();
+        } else {
+            window.addEventListener('pywebviewready', carregarChavesAPI);
+        }
+        setActiveTab('xml');
+    });
+
 </script>
 </body>
 </html>

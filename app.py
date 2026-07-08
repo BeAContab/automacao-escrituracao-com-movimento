@@ -10,12 +10,9 @@ import webview
 import re
 
 # Importar lógicas do projeto
-from extrair_nf_pdfs import listar_pdfs, extrair_nota_fiscal, extrair_nota_fiscal_somente_texto, gerar_xlsx, registrar_log_incompletos, registrar_incompleto_realtime, NotaFiscalExtraida
-from gemini_extracao import ErroCotaGemini, ErroCotaGroq
-from iss_fortaleza_automacao import executar_automacao_iss, solicitar_competencia, interpretar_competencia
-from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pasta_logs, configurar_pastas_logs
-from extracao_prefeituras import processar_pasta_prefeitura, PREFEITURAS_SUPORTADAS, organizar_pasta_pdfs
-from unir_planilhas import unir_xlsx
+from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia
+from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
+from processamento_xml import processar_pasta_xmls
 
 class GUIStdoutWrapper:
     def __init__(self, original_stdout, api):
@@ -47,25 +44,18 @@ class BeAContabAPI:
         self._pausa_automacao_event = threading.Event()
         self._pausa_automacao_event.set()
         
-        # Flags para evitar a execução concorrente de múltiplos robôs de automação ou extração
+        # Flags para evitar a execução concorrente de múltiplos robôs de automação
         self._automacao_em_execucao = False
-        self._extracao_em_execucao = False
         
         # Carrega chaves salvas para as variáveis de ambiente na inicialização
         try:
             chaves = self.obter_chaves_salvas()
-            if chaves.get("gemini"):
-                os.environ["GEMINI_API_KEY"] = chaves["gemini"]
-            if chaves.get("groq"):
-                os.environ["GROQ_API_KEY"] = chaves["groq"]
+            if chaves.get("tess_key"):
+                os.environ["TESS_API_KEY"] = chaves["tess_key"]
+            if chaves.get("tess_agent_id"):
+                os.environ["TESS_AGENT_ID"] = chaves["tess_agent_id"]
         except Exception as e:
             print(f"Erro ao carregar chaves na inicialização: {e}")
-
-    def pausar_extracao(self):
-        self._pausa_event.clear()
-
-    def retomar_extracao(self):
-        self._pausa_event.set()
 
     def pausar_automacao(self):
         self._pausa_automacao_event.clear()
@@ -88,209 +78,6 @@ class BeAContabAPI:
         if result:
             return result[0]
         return None
-
-    def selecionar_multiplos_xlsx(self):
-        """Abre o seletor de múltiplos arquivos XLSX para a funcionalidade de união."""
-        result = self.window.create_file_dialog(
-            webview.OPEN_DIALOG,
-            allow_multiple=True,
-            file_types=('Excel Files (*.xlsx)', 'All files (*.*)')
-        )
-        if result:
-            return list(result)
-        return []
-
-    def exportar_por_prefeitura(self, mapa_prefeituras_pastas: dict):
-        """
-        Recebe um dicionário {nome_prefeitura: caminho_pasta} e processa
-        cada pasta em thread separada, emitindo logs em tempo real na GUI.
-        """
-        # Garante que a extração começa não pausada
-        self._pausa_event.set()
-
-        threading.Thread(
-            target=self._processar_exportar_prefeituras,
-            args=(mapa_prefeituras_pastas,),
-            daemon=True
-        ).start()
-
-    def _processar_exportar_prefeituras(self, mapa_prefeituras_pastas: dict):
-        """Thread de processamento da exportação estruturada por prefeitura."""
-        def log_gui(msg: str) -> None:
-            # Usa json.dumps para escapar caracteres especiais nas mensagens de log da GUI
-            try:
-                mensagem_js = json.dumps(msg)
-                self.window.evaluate_js(f"window.log_prefeitura({mensagem_js})")
-            except Exception:
-                pass
-
-        total_xlsx = []
-        total_notas = 0
-
-        # Primeiro conta todos os PDFs para cálculo global do progresso
-        total_pdfs_global = 0
-        pastas_validas = []
-
-        for nome_prefeitura, caminho_pasta in mapa_prefeituras_pastas.items():
-            if not caminho_pasta:
-                continue
-            pasta = Path(caminho_pasta)
-            if pasta.exists() and pasta.is_dir():
-                pdfs_da_pasta = [p for p in pasta.glob("*.pdf") if p.parent == pasta]
-                if pdfs_da_pasta:
-                    total_pdfs_global += len(pdfs_da_pasta)
-                    pastas_validas.append((nome_prefeitura, pasta, len(pdfs_da_pasta)))
-
-        if total_pdfs_global == 0:
-            log_gui("Nenhum arquivo PDF encontrado para processar.")
-            try:
-                self.window.evaluate_js(f"window.update_progresso_prefeitura(100, 'Concluído!')")
-            except Exception:
-                pass
-            return
-
-        processados_global = 0
-
-        for nome_prefeitura, pasta, qtd_pdfs in pastas_validas:
-            log_gui(f"=== Iniciando: {nome_prefeitura} ===")
-
-            def callback_progresso(indice, total):
-                nao_local = processados_global + indice
-                porcentagem = int((nao_local / total_pdfs_global) * 100)
-                try:
-                    self.window.evaluate_js(
-                        f"window.update_progresso_prefeitura({porcentagem}, 'Processando {nao_local} de {total_pdfs_global}')"
-                    )
-                except Exception:
-                    pass
-
-            try:
-                registros, xlsx = processar_pasta_prefeitura(
-                    pasta,
-                    nome_prefeitura,
-                    callback_log=log_gui,
-                    callback_progresso=callback_progresso,
-                )
-                total_notas += len(registros)
-                if xlsx:
-                    total_xlsx.append(str(xlsx))
-            except Exception as e:
-                log_gui(f"[ERRO] {nome_prefeitura}: {e}")
-
-            processados_global += qtd_pdfs
-
-        msg_final = f"Exportação concluída. {total_notas} nota(s) extraída(s) em {len(total_xlsx)} planilha(s)."
-        log_gui(msg_final)
-        try:
-            self.window.evaluate_js(f"window.update_progresso_prefeitura(100, 'Concluído!')")
-        except Exception:
-            pass
-
-    def unir_planilhas_gui(self, lista_xlsx: list[str], pasta_destino: str, remover_duplicatas: bool = True):
-        """
-        Consolida múltiplos arquivos XLSX ou pastas de origem em um único arquivo de saída.
-        Executado em thread separada.
-        """
-        # Garante que a extração começa não pausada
-        self._pausa_event.set()
-
-        threading.Thread(
-            target=self._processar_uniao_planilhas,
-            args=(lista_xlsx, pasta_destino, remover_duplicatas),
-            daemon=True
-        ).start()
-
-    def _processar_uniao_planilhas(self, lista_xlsx: list[str], pasta_destino: str, remover_duplicatas: bool):
-        """Thread de execução da união de planilhas."""
-        def log_gui(msg: str) -> None:
-            # Usa json.dumps para escapar caracteres especiais nas mensagens de log da GUI
-            try:
-                mensagem_js = json.dumps(msg)
-                self.window.evaluate_js(f"window.log_uniao({mensagem_js})")
-            except Exception:
-                pass
-
-        try:
-            if not lista_xlsx:
-                log_gui("[ERRO] Nenhum arquivo ou pasta XLSX selecionada.")
-                return
-            if not pasta_destino:
-                log_gui("[ERRO] Nenhuma pasta de destino selecionada.")
-                return
-
-            log_gui("Iniciando consolidação das planilhas...")
-            caminho_resultado = unir_xlsx(
-                lista_caminhos=lista_xlsx,
-                caminho_destino=pasta_destino,
-                remover_duplicatas=remover_duplicatas,
-                callback_log=log_gui,
-            )
-            log_gui(f"Concluído! Arquivo unificado salvo em: {caminho_resultado}")
-            try:
-                self.window.evaluate_js("window.update_progresso_uniao(100, 'Concluído!')")
-            except Exception:
-                pass
-        except Exception as e:
-            log_gui(f"[ERRO] Falha ao unir planilhas: {e}")
-
-    def obter_prefeituras_suportadas(self):
-        """Retorna a lista de prefeituras suportadas para popular a GUI."""
-        return list(PREFEITURAS_SUPORTADAS.keys())
-
-    def organizar_pdfs_por_prefeitura_gui(self, pasta_origem: str):
-        """
-        Organiza os PDFs da pasta_origem movendo cada um para a subpasta da respectiva prefeitura.
-        Executado em thread separada.
-        """
-        # Garante que a extração começa não pausada
-        self._pausa_event.set()
-
-        threading.Thread(
-            target=self._processar_organizar_pdfs,
-            args=(pasta_origem,),
-            daemon=True
-        ).start()
-
-    def _processar_organizar_pdfs(self, pasta_origem: str):
-        """Thread de execução da organização de PDFs."""
-        def log_gui(msg: str) -> None:
-            # Usa json.dumps para escapar caracteres especiais nas mensagens de log da GUI
-            try:
-                mensagem_js = json.dumps(msg)
-                self.window.evaluate_js(f"window.log_organizador({mensagem_js})")
-            except Exception:
-                pass
-
-        try:
-            if not pasta_origem:
-                log_gui("[ERRO] Nenhuma pasta de origem selecionada.")
-                return
-            pasta = Path(pasta_origem)
-            if not pasta.exists() or not pasta.is_dir():
-                log_gui(f"[ERRO] Pasta inválida ou inexistente: {pasta_origem}")
-                return
-
-            def callback_progresso(indice, total):
-                porcentagem = int((indice / total) * 100)
-                try:
-                    self.window.evaluate_js(
-                        f"window.update_progresso_organizador({porcentagem}, 'Organizando {indice} de {total}')"
-                    )
-                except Exception:
-                    pass
-
-            sucessos, ignorados = organizar_pasta_pdfs(
-                pasta,
-                callback_log=log_gui,
-                callback_progresso=callback_progresso,
-            )
-            log_gui(f"Organização concluída! {sucessos} PDFs organizados, {ignorados} não movidos.")
-            try:
-                self.window.evaluate_js("window.update_progresso_organizador(100, 'Concluído!')")
-            except Exception:
-                pass
-        except Exception as e:
-            log_gui(f"[ERRO] Falha durante a organização: {e}")
 
     def abrir_link(self, url):
         import webbrowser
@@ -320,8 +107,8 @@ class BeAContabAPI:
         return pasta_config / ".env"
 
     def obter_chaves_salvas(self):
-        """Retorna as chaves salvas no arquivo .env do usuário ou do diretório do script."""
-        chaves = {"gemini": "", "groq": ""}
+        """Retorna as chaves do Tess AI salvas no arquivo .env do usuário."""
+        chaves = {"tess_key": "", "tess_agent_id": ""}
         
         # 1. Tenta obter da pasta AppData do usuário
         env_path = self.obter_caminho_config()
@@ -331,21 +118,34 @@ class BeAContabAPI:
             env_desenv = Path(__file__).parent / ".env"
             if env_desenv.exists():
                 env_path = env_desenv
-
+ 
         if env_path.exists():
             try:
                 conteudo = env_path.read_text(encoding="utf-8")
-                match_gemini = re.search(r"^GEMINI_API_KEY\s*=\s*(.*)$", conteudo, re.MULTILINE)
-                match_groq = re.search(r"^GROQ_API_KEY\s*=\s*(.*)$", conteudo, re.MULTILINE)
-                if match_gemini:
-                    chaves["gemini"] = match_gemini.group(1).strip()
-                if match_groq:
-                    chaves["groq"] = match_groq.group(1).strip()
+                match_tess_key = re.search(r"^TESS_API_KEY\s*=\s*(.*)$", conteudo, re.MULTILINE)
+                match_tess_agent = re.search(r"^TESS_AGENT_ID\s*=\s*(.*)$", conteudo, re.MULTILINE)
+                if match_tess_key:
+                    chaves["tess_key"] = match_tess_key.group(1).strip()
+                if match_tess_agent:
+                    chaves["tess_agent_id"] = match_tess_agent.group(1).strip()
             except Exception as e:
                 print(f"Erro ao ler .env: {e}")
+                
+        # 3. Fallback: Se não encontrou chaves da Tess no .env (ou o .env não existe/está vazio),
+        # tenta carregar as chaves padrões injetadas durante o processo de build.
+        if not chaves.get("tess_key") or not chaves.get("tess_agent_id"):
+            try:
+                import default_keys
+                if not chaves.get("tess_key") and getattr(default_keys, "TESS_API_KEY", ""):
+                    chaves["tess_key"] = default_keys.TESS_API_KEY
+                if not chaves.get("tess_agent_id") and getattr(default_keys, "TESS_AGENT_ID", ""):
+                    chaves["tess_agent_id"] = default_keys.TESS_AGENT_ID
+            except ImportError:
+                pass
+                
         return chaves
 
-    def salvar_chaves(self, gemini_key, groq_key):
+    def salvar_chaves(self, tess_key="", tess_agent_id=""):
         """Salva as chaves no arquivo .env do AppData do usuário e atualiza no ambiente local."""
         env_path = self.obter_caminho_config()
         template_path = Path(__file__).parent / ".env.example"
@@ -372,349 +172,38 @@ class BeAContabAPI:
                     pass
                 
         if not conteudo:
-            conteudo = "GEMINI_API_KEY=\nGROQ_API_KEY=\n"
+            conteudo = "TESS_API_KEY=\nTESS_AGENT_ID=\n"
             
-        if re.search(r"^GEMINI_API_KEY\s*=", conteudo, re.MULTILINE):
-            conteudo = re.sub(r"^GEMINI_API_KEY\s*=.*$", f"GEMINI_API_KEY={gemini_key}", conteudo, flags=re.MULTILINE)
+        if re.search(r"^TESS_API_KEY\s*=", conteudo, re.MULTILINE):
+            conteudo = re.sub(r"^TESS_API_KEY\s*=.*$", f"TESS_API_KEY={tess_key}", conteudo, flags=re.MULTILINE)
         else:
-            conteudo += f"\nGEMINI_API_KEY={gemini_key}"
-            
-        if re.search(r"^GROQ_API_KEY\s*=", conteudo, re.MULTILINE):
-            conteudo = re.sub(r"^GROQ_API_KEY\s*=.*$", f"GROQ_API_KEY={groq_key}", conteudo, flags=re.MULTILINE)
+            conteudo += f"\nTESS_API_KEY={tess_key}"
+
+        if re.search(r"^TESS_AGENT_ID\s*=", conteudo, re.MULTILINE):
+            conteudo = re.sub(r"^TESS_AGENT_ID\s*=.*$", f"TESS_AGENT_ID={tess_agent_id}", conteudo, flags=re.MULTILINE)
         else:
-            conteudo += f"\nGROQ_API_KEY={groq_key}"
+            conteudo += f"\nTESS_AGENT_ID={tess_agent_id}"
             
         try:
             env_path.write_text(conteudo, encoding="utf-8")
-            os.environ["GEMINI_API_KEY"] = gemini_key
-            os.environ["GROQ_API_KEY"] = groq_key
+            os.environ["TESS_API_KEY"] = tess_key
+            os.environ["TESS_AGENT_ID"] = tess_agent_id
             return True
         except Exception as e:
             print(f"Erro ao salvar .env em {env_path}: {e}")
             return False
 
-    def contar_pdfs_origem(self, pasta_caminho):
-        """Retorna a contagem de PDFs na pasta de origem informada."""
-        if not pasta_caminho:
-            return 0
-        try:
-            pasta = Path(pasta_caminho)
-            if pasta.exists() and pasta.is_dir():
-                return len(list(listar_pdfs(pasta)))
-        except Exception:
-            pass
-        return 0
-
     def confirmar_login_feito(self):
-        """Cria o arquivo flag sinalizando que o login manual foi concluído no navegador."""
+        """Cria o arquivo de flag indicando que o login manual foi concluído pelo operador."""
         try:
-            # Usa AppData para garantir permissão de escrita no executável instalado
             appdata = os.environ.get("APPDATA", str(Path.home()))
             flag_path = Path(appdata) / "BeAContab" / "brain" / "funcao2_login_ok.flag"
             flag_path.parent.mkdir(parents=True, exist_ok=True)
             flag_path.write_text("ok", encoding="utf-8")
             return True
         except Exception as e:
-            print(f"Erro ao confirmar login por arquivo: {e}")
+            print(f"Erro ao confirmar login manual: {e}")
             return False
-
-    def iniciar_extracao(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
-        if getattr(self, "_extracao_em_execucao", False):
-            self.window.evaluate_js("window.log_extracao('Erro: O processo de extração já está em andamento no momento!', true)")
-            return
-            
-        # Configurar chaves no processo
-        if gemini_key:
-            os.environ["GEMINI_API_KEY"] = gemini_key
-        if groq_key:
-            os.environ["GROQ_API_KEY"] = groq_key
-        
-        self._extracao_em_execucao = True
-        # Garante que a extração comece não pausada
-        self._pausa_event.set()
-        
-        # Iniciar em thread separada para não travar a UI
-        threading.Thread(
-            target=self._processar_extracao,
-            args=(origem, destino, gemini_key, groq_key, usar_gemini, usar_groq),
-            daemon=True
-        ).start()
-
-    def _processar_extracao(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
-        # Define o callback para logs de extração na GUI
-        def gui_log_callback(mensagem):
-            # Usa json.dumps para escapar corretamente strings com aspas, barras e quebras de linha
-            mensagem_js = json.dumps(mensagem)
-            self.window.evaluate_js(f"window.log_extracao({mensagem_js})")
-        self._gui_log_callback = gui_log_callback
-
-        try:
-            pasta = Path(origem)
-            if not pasta.exists() or not pasta.is_dir():
-                self.window.evaluate_js(f"window.log_extracao('Erro: Pasta de origem inválida.', true)")
-                return
-            
-            caminho_destino = Path(destino)
-            if caminho_destino.is_dir():
-                caminho_destino = caminho_destino / "nf_compilado.xlsx"
-            
-            # Configura diretórios de logs simultâneos
-            configurar_pastas_logs([pasta, caminho_destino.parent])
-
-            # Limpa logs antigos de extração
-            for p_log in [pasta, caminho_destino.parent]:
-                if p_log:
-                    caminho_log_antigo = p_log / "log" / f"{caminho_destino.stem}_log_extracao.txt"
-                    if caminho_log_antigo.exists():
-                        try:
-                            caminho_log_antigo.unlink()
-                        except Exception:
-                            pass
-
-            pdfs = list(listar_pdfs(pasta))
-            if not pdfs:
-                self.window.evaluate_js(f"window.log_extracao('Nenhum PDF encontrado na pasta.', true)")
-                return
-            
-            self.window.evaluate_js(f"window.log_extracao('Encontrados {len(pdfs)} PDFs.')")
-            
-            registros = []
-            notas_nao_analisadas = []
-            
-            for indice, pdf in enumerate(pdfs, start=1):
-                # Aguarda se a extração estiver pausada pelo usuário
-                self._pausa_event.wait()
-                
-                porcentagem = int((indice / len(pdfs)) * 100)
-                self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] Processando PDF: {pdf.name}...')")
-                try:
-                    registro = extrair_nota_fiscal(
-                        pdf,
-                        usar_gemini=usar_gemini,
-                        usar_groq=usar_groq,
-                        gemini_key=gemini_key,
-                        groq_key=groq_key
-                    )
-                    registros.append(registro)
-                    registrar_incompleto_realtime(registro, caminho_destino, origem_dir=pasta)
-                    self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] {pdf.name} extraído com sucesso.')")
-                except (ErroCotaGemini, ErroCotaGroq) as exc:
-                    self.window.evaluate_js(f"window.log_extracao('Erro: Suas cotas de IA atingiram o limite! Por favor, tente no dia seguinte ou troque sua chave de API.', true)")
-                    self.window.evaluate_js("window.sinalizar_limite_cota()")
-                    
-                    # Salva log de limite de cota com as notas restantes não processadas nas duas pastas
-                    nao_processados = [p.name for p in pdfs[indice - 1:]]
-                    for p_log in [pasta, caminho_destino.parent]:
-                        if p_log:
-                            caminho_log_cota = p_log / "log" / "log_limite_cota.txt"
-                            try:
-                                caminho_log_cota.parent.mkdir(parents=True, exist_ok=True)
-                                with open(caminho_log_cota, "w", encoding="utf-8") as f:
-                                    f.write("LOG DE LIMITE DE COTA DE IA EXCEDIDO\n")
-                                    f.write("====================================\n")
-                                    f.write("O processamento foi interrompido porque o limite de cotas (rate limit / requests limit) da API do Gemini ou do Groq foi atingido.\n")
-                                    f.write("Você pode retomar a execução amanhã ou atualizar suas chaves de API nas configurações do aplicativo.\n")
-                                    f.write("Os dados das notas processadas até o momento foram salvos com sucesso na planilha Excel.\n\n")
-                                    f.write("As seguintes notas fiscais NÃO foram processadas:\n")
-                                    for nome_pdf in nao_processados:
-                                        f.write(f"- {nome_pdf}\n")
-                            except Exception:
-                                pass
-                    break
-                except ValueError as exc:
-                    notas_nao_analisadas.append(pdf.name)
-                    self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] Falha ao processar {pdf.name}.', true)")
-                except Exception as exc:
-                    registros.append(NotaFiscalExtraida(arquivo_pdf=pdf.name, descricao_servico=f"ERRO NA EXTRAÇÃO: {exc}"))
-                    self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] Falha ao processar {pdf.name}.', true)")
-
-                self.window.evaluate_js(f"window.update_progresso({porcentagem}, 'Processados {indice} de {len(pdfs)} PDFs')")
-
-            if notas_nao_analisadas:
-                for p_log in [pasta, caminho_destino.parent]:
-                    if p_log:
-                        caminho_log_na = p_log / "log" / "log_nao_analisados.txt"
-                        try:
-                            caminho_log_na.parent.mkdir(parents=True, exist_ok=True)
-                            with open(caminho_log_na, "w", encoding="utf-8") as f:
-                                f.write("Ocorreram falhas ao tentar extrair dados com as IAs (Gemini e Groq) para as seguintes notas fiscais:\n")
-                                for nome_pdf in notas_nao_analisadas:
-                                    f.write(f"- {nome_pdf}\n")
-                        except Exception:
-                            pass
-
-            registros_completos = [r for r in registros if not r.campos_vazios()]
-            gerar_xlsx(registros_completos, caminho_destino)
-            registrar_log_incompletos(registros, caminho_destino, origem_dir=pasta)
-            
-            msg_final = f"Extração concluída. {len(registros_completos)} linhas exportadas em {caminho_destino.name}."
-            self.window.evaluate_js(f"window.log_extracao('{msg_final}')")
-
-        except Exception as e:
-            tb = traceback.format_exc()
-            # Registra o traceback completo no log da GUI para facilitar o diagnóstico
-            print(f"[ERRO INTERNO] {tb}")
-            mensagem_js = json.dumps(f"Erro crítico: {str(e)}")
-            try:
-                self.window.evaluate_js(f"window.log_extracao({mensagem_js}, true)")
-            except Exception:
-                pass
-        finally:
-            self._extracao_em_execucao = False
-            self._gui_log_callback = None
-            try:
-                self.window.evaluate_js("document.getElementById('btn-pausar-retomar').classList.add('hidden')")
-            except Exception:
-                pass
-
-    def iniciar_extracao_otimizada(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
-        if getattr(self, "_extracao_em_execucao", False):
-            self.window.evaluate_js("window.log_extracao('Erro: O processo de extração já está em andamento no momento!', true)")
-            return
-            
-        # Configurar chaves no processo
-        if gemini_key:
-            os.environ["GEMINI_API_KEY"] = gemini_key
-        if groq_key:
-            os.environ["GROQ_API_KEY"] = groq_key
-        
-        self._extracao_em_execucao = True
-        # Garante que a extração comece não pausada
-        self._pausa_event.set()
-        
-        # Iniciar em thread separada para não travar a UI
-        threading.Thread(
-            target=self._processar_extracao_otimizada,
-            args=(origem, destino, gemini_key, groq_key, usar_gemini, usar_groq),
-            daemon=True
-        ).start()
-
-    def _processar_extracao_otimizada(self, origem, destino, gemini_key, groq_key, usar_gemini, usar_groq):
-        # Define o callback para logs de extração na GUI
-        def gui_log_callback(mensagem):
-            # Usa json.dumps para escapar corretamente strings com aspas, barras e quebras de linha
-            mensagem_js = json.dumps(mensagem)
-            self.window.evaluate_js(f"window.log_extracao({mensagem_js})")
-        self._gui_log_callback = gui_log_callback
-
-        try:
-            pasta = Path(origem)
-            if not pasta.exists() or not pasta.is_dir():
-                self.window.evaluate_js(f"window.log_extracao('Erro: Pasta de origem inválida.', true)")
-                return
-            
-            caminho_destino = Path(destino)
-            if caminho_destino.is_dir():
-                caminho_destino = caminho_destino / "nf_compilado.xlsx"
-            
-            # Configura diretórios de logs simultâneos
-            configurar_pastas_logs([pasta, caminho_destino.parent])
-
-            # Limpa logs antigos de extração
-            for p_log in [pasta, caminho_destino.parent]:
-                if p_log:
-                    caminho_log_antigo = p_log / "log" / f"{caminho_destino.stem}_log_extracao.txt"
-                    if caminho_log_antigo.exists():
-                        try:
-                            caminho_log_antigo.unlink()
-                        except Exception:
-                            pass
-
-            pdfs = list(listar_pdfs(pasta))
-            if not pdfs:
-                self.window.evaluate_js(f"window.log_extracao('Nenhum PDF encontrado na pasta.', true)")
-                return
-            
-            self.window.evaluate_js(f"window.log_extracao('Encontrados {len(pdfs)} PDFs.')")
-            
-            registros = []
-            notas_nao_analisadas = []
-            
-            for indice, pdf in enumerate(pdfs, start=1):
-                # Aguarda se a extração estiver pausada pelo usuário
-                self._pausa_event.wait()
-                
-                porcentagem = int((indice / len(pdfs)) * 100)
-                self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] Processando PDF: {pdf.name} (Modo Otimizado - Texto)...')")
-                try:
-                    registro = extrair_nota_fiscal_somente_texto(
-                        pdf,
-                        usar_gemini=usar_gemini,
-                        usar_groq=usar_groq,
-                        gemini_key=gemini_key,
-                        groq_key=groq_key
-                    )
-                    registros.append(registro)
-                    registrar_incompleto_realtime(registro, caminho_destino, origem_dir=pasta)
-                    self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] {pdf.name} extraído com sucesso.')")
-                except (ErroCotaGemini, ErroCotaGroq) as exc:
-                    self.window.evaluate_js(f"window.log_extracao('Erro: Suas cotas de IA atingiram o limite! Por favor, tente no dia seguinte ou troque sua chave de API.', true)")
-                    self.window.evaluate_js("window.sinalizar_limite_cota()")
-                    
-                    # Salva log de limite de cota com as notas restantes não processadas nas duas pastas
-                    nao_processados = [p.name for p in pdfs[indice - 1:]]
-                    for p_log in [pasta, caminho_destino.parent]:
-                        if p_log:
-                            caminho_log_cota = p_log / "log" / "log_limite_cota.txt"
-                            try:
-                                caminho_log_cota.parent.mkdir(parents=True, exist_ok=True)
-                                with open(caminho_log_cota, "w", encoding="utf-8") as f:
-                                    f.write("LOG DE LIMITE DE COTA DE IA EXCEDIDO\n")
-                                    f.write("====================================\n")
-                                    f.write("O processamento foi interrompido porque o limite de cotas (rate limit / requests limit) da API do Gemini ou do Groq foi atingido.\n")
-                                    f.write("Você pode retomar a execução amanhã ou atualizar suas chaves de API nas configurações do aplicativo.\n")
-                                    f.write("Os dados das notas processadas até o momento foram salvos com sucesso na planilha Excel.\n\n")
-                                    f.write("As seguintes notas fiscais NÃO foram processadas:\n")
-                                    for nome_pdf in nao_processados:
-                                        f.write(f"- {nome_pdf}\n")
-                            except Exception:
-                                pass
-                    break
-                except ValueError as exc:
-                    notas_nao_analisadas.append(pdf.name)
-                    self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] Falha ao processar {pdf.name}.', true)")
-                except Exception as exc:
-                    registros.append(NotaFiscalExtraida(arquivo_pdf=pdf.name, descricao_servico=f"ERRO NA EXTRAÇÃO: {exc}"))
-                    self.window.evaluate_js(f"window.log_extracao('[{indice}/{len(pdfs)}] Falha ao processar {pdf.name}.', true)")
-
-                self.window.evaluate_js(f"window.update_progresso({porcentagem}, 'Processados {indice} de {len(pdfs)} PDFs')")
-
-            if notas_nao_analisadas:
-                for p_log in [pasta, caminho_destino.parent]:
-                    if p_log:
-                        caminho_log_na = p_log / "log" / "log_nao_analisados.txt"
-                        try:
-                            caminho_log_na.parent.mkdir(parents=True, exist_ok=True)
-                            with open(caminho_log_na, "w", encoding="utf-8") as f:
-                                f.write("Ocorreram falhas ao tentar extrair dados com as IAs (Gemini e Groq) para as seguintes notas fiscais:\n")
-                                for nome_pdf in notas_nao_analisadas:
-                                    f.write(f"- {nome_pdf}\n")
-                        except Exception:
-                            pass
-
-            registros_completos = [r for r in registros if not r.campos_vazios()]
-            gerar_xlsx(registros_completos, caminho_destino)
-            registrar_log_incompletos(registros, caminho_destino, origem_dir=pasta)
-            
-            msg_final = f"Extração concluída (Otimizada). {len(registros_completos)} linhas exportadas em {caminho_destino.name}."
-            self.window.evaluate_js(f"window.log_extracao('{msg_final}')")
-
-        except Exception as e:
-            tb = traceback.format_exc()
-            # Registra o traceback completo no log da GUI para facilitar o diagnóstico
-            print(f"[ERRO INTERNO] {tb}")
-            mensagem_js = json.dumps(f"Erro crítico: {str(e)}")
-            try:
-                self.window.evaluate_js(f"window.log_extracao({mensagem_js}, true)")
-            except Exception:
-                pass
-        finally:
-            self._extracao_em_execucao = False
-            self._gui_log_callback = None
-            try:
-                self.window.evaluate_js("document.getElementById('btn-pausar-retomar').classList.add('hidden')")
-            except Exception:
-                pass
 
     def iniciar_automacao(self, excel_path, competencia_str):
         if getattr(self, "_automacao_em_execucao", False):
@@ -813,6 +302,53 @@ class BeAContabAPI:
             except Exception:
                 pass
 
+    def processar_xmls_gui(self, pasta_origem: str, tess_key: str = "", tess_agent_id: str = ""):
+        """
+        Inicia o processamento de XMLs com classificação de CNAE via Tess AI
+        e gravação na planilha a partir de uma thread.
+        """
+        threading.Thread(
+            target=self._processar_xmls,
+            args=(pasta_origem, tess_key, tess_agent_id),
+            daemon=True
+        ).start()
+
+    def _processar_xmls(self, pasta_origem: str, tess_key: str = "", tess_agent_id: str = ""):
+        """Thread que executa o processamento de XMLs."""
+        def log_gui(msg: str, is_error: bool = False) -> None:
+            try:
+                mensagem_js = json.dumps(msg)
+                erro_js = "true" if is_error else "false"
+                self.window.evaluate_js(f"window.log_xml({mensagem_js}, {erro_js})")
+            except Exception:
+                pass
+
+        def callback_progresso(porcentagem: int, status: str) -> None:
+            try:
+                status_js = json.dumps(status)
+                self.window.evaluate_js(f"window.update_progresso_xml({porcentagem}, {status_js})")
+            except Exception:
+                pass
+
+        try:
+            log_gui("Iniciando varredura e importação de XMLs...")
+            
+            caminho_resultado = processar_pasta_xmls(
+                pasta_origem=pasta_origem,
+                tess_key=tess_key,
+                tess_agent_id=tess_agent_id,
+                callback_log=log_gui,
+                callback_progresso=callback_progresso
+            )
+            log_gui(f"Processamento concluído com sucesso!")
+            log_gui(f"Planilha consolidada salva em: {caminho_resultado}")
+            self.window.evaluate_js("window.update_progresso_xml(100, 'Concluído!')")
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO XML] {tb}")
+            log_gui(f"Erro crítico no processamento de XMLs: {e}", is_error=True)
+            self.window.evaluate_js("window.update_progresso_xml(100, 'Falha no processamento')")
+
 def obter_caminho_recurso(caminho_relativo: str) -> str:
     """Retorna o caminho absoluto do recurso, funcionando no desenvolvimento ou no executável empacotado."""
     if hasattr(sys, '_MEIPASS'):
@@ -832,26 +368,17 @@ if __name__ == '__main__':
     sys.stderr = GUIStdoutWrapper(sys.stderr, api)
 
     window.expose(
-        api.iniciar_extracao,
-        api.iniciar_extracao_otimizada,
         api.iniciar_automacao,
         api.selecionar_pasta,
         api.selecionar_arquivo,
-        api.selecionar_multiplos_xlsx,
         api.fechar_app,
         api.abrir_link,
         api.obter_chaves_salvas,
         api.salvar_chaves,
-        api.contar_pdfs_origem,
-        api.pausar_extracao,
-        api.retomar_extracao,
         api.confirmar_login_feito,
         api.pausar_automacao,
         api.retomar_automacao,
-        api.exportar_por_prefeitura,
-        api.unir_planilhas_gui,
-        api.obter_prefeituras_suportadas,
-        api.organizar_pdfs_por_prefeitura_gui,
+        api.processar_xmls_gui,
     )
     
     webview.start(debug=False)

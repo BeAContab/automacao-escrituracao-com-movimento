@@ -1,5 +1,84 @@
 # CHANGELOG
 
+## [2.18.0] - 2026-07-08
+
+### Removido
+- **Módulos Físicos e Lógicas de PDF/IA Legadas**: Exclusão física dos arquivos `extrair_nf_pdfs.py`, `gemini_extracao.py`, `extracao_prefeituras.py`, `unir_planilhas.py` e `extrair_iss_uma_vez.py`.
+- **APIs Gemini e Groq**: Removido completamente o suporte e qualquer menção a chaves de API ou chamadas do Gemini e Groq, migrando o foco do projeto estritamente para o Tess AI e arquivos XML.
+- **Submenu e Abas Legadas**: Removidas as abas "Organizar PDFs", "Exportar por Prefeitura", "Extração Lote (Sem IA)", "Unir Planilhas" e o submenu correspondente na interface gráfica.
+
+### Alterado
+- **Automação de Escrituração** (`iss_fortaleza_automacao.py`): Adaptado o robô do Selenium para ler o novo formato da planilha (sem a coluna `PREFEITURA`) e obter o arquivo associado dinamicamente das colunas `ARQUIVO_XML` ou `ARQUIVO_PDF`.
+- **Simplificação do Painel Central** (`gui/index.html`): Reestruturação da interface gráfica para expor apenas as duas funcionalidades essenciais ("Processar XMLs" como padrão e "Automação: Escrituração"). Os campos de credenciais do Tess AI foram elegantemente realocados para o rodapé do menu lateral (`aside`).
+- **Limpeza de Rotas** (`app.py`): Remoção de imports e métodos legados de PDF, mantendo e otimizando apenas as rotas chamadas pelo front-end para XML e Automação ISS.
+- **Recuperação de Função de Login Manual** (`app.py`): Reintroduzida a função `confirmar_login_feito`, corrigindo um `AttributeError` de inicialização e permitindo que o robô do Selenium saiba quando o operador efetuou o login manual.
+
+## [2.17.0] - 2026-07-08
+
+### Adicionado
+- **Processamento de XMLs de NFS-e** (`processamento_xml.py`, `app.py`, `gui/index.html`): Adicionada uma nova aba "Processar XMLs" na interface gráfica. A funcionalidade permite selecionar uma pasta, fazer a varredura recursiva de arquivos XML de NFS-e (padrão nacional do SPED ou equivalentes), realizar o parse seguro ignorando namespaces, classificar os CNAEs usando a IA do Tess baseando-se nas opções oficiais de `cnae_oficial.xlsx`, e consolidar todos os dados fiscais e tributários em uma planilha Excel no modelo exato de `EXEMPLOS/planilha exemplo.xlsx` (salva na pasta selecionada).
+- **Classificação CNAE via Tess AI**: Criada lógica backend que realiza a pré-filtragem local de CNAEs candidatos baseados nos termos do XML e envia à API do Tess AI para selecionar obrigatoriamente um único item do banco de CNAEs reais oficiais.
+
+## [2.16.3] - 2026-07-07
+
+### Corrigido
+- **Recuperação de Tela** (`iss_fortaleza_automacao.py`): Implementado o fallback dinâmico no bloco `finally`. Caso ocorra qualquer falha durante o preenchimento de uma nota na tela de serviços e o botão "Novo Documento" fique inacessível (causando um "efeito cascata" que quebrava as próximas linhas), a automação agora realiza um reset preventivo, navegando pelo menu para limpar o formulário e recomeçar a digitação na tela limpa.
+- **Resiliência AJAX (RichFaces)**: Ajustada a função interna de interação com selects (`_selecionar_opcao_por_texto`). Caso a lista de opções de um combo venha vazia ou com apenas o texto genérico ("Selecione"), a automação não falhará mais de imediato; ela detecta o carregamento assíncrono e passa a realizar retentativas ativas com uma latência maior, impedindo falsos erros de `NoSuchElementException` ao popular dados de "Tipo de Documento".
+
+## [2.16.2] - 2026-07-07
+
+### Adicionado
+- **Validação Preventiva de Planilha** (`iss_fortaleza_automacao.py`): Criada verificação automática que analisa se todos os 15 campos obrigatórios de notas e cadastro do prestador estão preenchidos na planilha. Caso algum campo crucial esteja ausente (ou se o valor do serviço for menor/igual a zero), a nota fiscal é ignorada, registrando os motivos detalhados no log principal e gerando o log `log_notas_incompletas.txt` em tempo real para permitir que a automação avance sem travar no portal.
+
+## [2.16.1] - 2026-07-07
+
+### Melhorado
+- **Build / Chaves Padrão** (`build.py` e `app.py`): O script de compilação agora extrai automaticamente a `TESS_API_KEY` e a `TESS_AGENT_ID` do `.env` local do desenvolvedor e as embute de forma segura no executável final. Quando o software for instalado na máquina do cliente e ele não tiver configurado o `.env`, a aplicação usará as chaves injetadas como fallback, permitindo o uso imediato e contínuo sem a necessidade de configuração prévia.
+
+## [2.16.0] - 2026-07-07
+
+### Adicionado
+- **ISS Fortaleza**: Implementado fluxo de preenchimento manual do formulário de identificação do prestador de serviços.
+  - A automação agora escritura notas fiscais independentemente de o prestador estar cadastrado previamente no portal da prefeitura.
+  - O sistema passa a utilizar os dados de endereço do prestador extraídos pela IA e preenche todos os campos necessários manualmente na tela.
+  - Remoção da dependência da lista do portal de prestadores já registrados, aumentando a taxa de sucesso da escrituração contínua.
+
+## [2.15.3] - 2026-07-07
+
+### Melhorado
+- **Ajuste de Prompt de Local de Prestação** (`gemini_extracao.py`): Removida a instrução de que a IA deveria priorizar informações próximas ao termo "PRESTADOR" para os campos `uf_local_prestacao` e `cidade_local_prestacao`. Isso evita que a IA confunda erroneamente o local de prestação de serviços com o endereço do próprio prestador, deixando a extração do local de prestação real do serviço mais precisa.
+
+## [2.15.2] - 2026-07-07
+
+### Melhorado
+- **Flexibilização de Modelos no Tess AI** (`gemini_extracao.py`): Removida a chave `"model"` hardcoded nas requisições do Tess AI. Com isso, o sistema agora utiliza de forma dinâmica qualquer modelo configurado diretamente por você no painel web do Agente 49525 (como o *Claude 5 Sonnet* selecionado na interface).
+
+## [2.15.1] - 2026-07-07
+
+### Corrigido
+- **Processamento de Arquivos no Tess AI** (`gemini_extracao.py`): Corrigido o erro `422 Client Error` (Unprocessable Entity) que ocorria ao tentar executar o agente com um arquivo recém-enviado. Agora, definimos o parâmetro `"process": "true"` no multipart/form-data do upload de arquivos e implementamos um loop de polling resiliente para aguardar o status `"completed"` antes de chamar `/execute`.
+
+## [2.15.0] - 2026-07-06
+
+### Adicionado
+- **Integração com Tess AI (tess.im)** (`gemini_extracao.py`, `extrair_nf_pdfs.py`, `app.py`, `gui/index.html`): Adicionado suporte completo à API do Tess AI (tess.im) para a extração otimizada de NFS-e (baseada em leitura local de texto) utilizando o modelo **Gemini 3.5 Flash**. A interface gráfica agora conta com inputs para Chave da API Tess e ID do Agente de Chat (Template).
+- **Tratamento de Cota para Tess AI** (`gemini_extracao.py`): Implementada a exceção `ErroCotaTessAI` para tratar o erro HTTP 429 (saldo ou limite excedido) e realizar automaticamente o fallback para outros provedores diretos ativos (Gemini ou Groq).
+- **Habilitação de Controles Visuais**: Ao ativar a checkbox do Tess AI, a interface automaticamente desabilita o botão de Extração Completa (Multimodal) por incompatibilidade do binário, preservando o fluxo estável.
+
+## [2.14.10] - 2026-07-06
+
+### Adicionado
+- **Extração em Lote (Sem IA)** (`app.py`, `gui/index.html`): Adicionada nova opção na interface gráfica para realizar a extração estruturada de PDFs locais. Essa função processa múltiplos arquivos misturados de diferentes prefeituras de uma só vez, gera logs em tempo real na interface, identifica a origem de cada arquivo internamente usando `identificar_nome_prefeitura` e unifica todos os dados em um único Excel (`nf_lote_compilado_sem_ia.xlsx`), sem mover os PDFs originais.
+
+## [2.14.9] - 2026-07-06
+
+### Adicionado
+- **Novos Campos do Prestador na Extração com IA** (`gemini_extracao.py`, `extrair_nf_pdfs.py`): Adicionados novos campos do prestador (Nome/Razão Social, UF, Cidade, CEP, Logradouro, Número, Bairro e E-mail) à extração de metadados das notas fiscais por inteligência artificial (Gemini e Groq). As novas colunas no Excel gerado possuem destaque com cabeçalho em vermelho escuro.
+
+### Corrigido
+- **Formato Numérico do Número de NF** (`extrair_nf_pdfs.py`): Os valores da coluna `NUMERO_NF` são convertidos para o tipo numérico nativo (`int`) na geração do Excel, evitando avisos de "número armazenado como texto" e facilitando fórmulas.
+- **Suporte a CNPJ Alfanumérico** (`extrair_nf_pdfs.py`, `gemini_extracao.py`): Adaptado o filtro de validação anti-alucinação e o método `limpar_cnpj` para aceitar caracteres alfanuméricos (limite de até 14 caracteres de letras e números úteis, desconsiderando pontos, barras, traços e espaços), suportando a nova máscara da Receita Federal.
+
 ## [2.14.8] - 2026-07-06
 
 ### Melhorado
