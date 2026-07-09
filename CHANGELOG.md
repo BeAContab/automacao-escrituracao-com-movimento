@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [2.19.1] - 2026-07-09
+
+### Adicionado
+- **Mecanismo de Cache de Classificação CNAE** (`processamento_xml.py`): Implementado cache local em memória que armazena as classificações computadas pelo Tess AI para evitar chamadas redundantes de notas de mesmo fornecedor, serviço e CNAE.
+
 ## [2.19.0] - 2026-07-09
 
 ### Adicionado

@@ -438,6 +438,7 @@ def processar_pasta_xmls(
     processadas = 0
     ignoradas = 0
     total = len(arquivos_xml)
+    cache_cnae: dict[tuple[str, str, str], tuple[str, str]] = {}
 
     for idx, xml_file in enumerate(arquivos_xml, start=1):
         # Emite progresso em tempo real
@@ -454,20 +455,32 @@ def processar_pasta_xmls(
 
         log(f"[{idx}/{total}] Processando NFS-e {dados['numero_nf']} do prestador {dados['nome_prestador']}")
 
-        # Classificação CNAE final com IA do Tess
+        # Classificação CNAE final com IA do Tess (com cache local por prestador + serviço)
         id_cnae_final = ""
         desc_cnae_final = ""
-        try:
-            id_cnae_final, desc_cnae_final = resolver_cnae_tess_ai(
-                desc_cnae=dados["desc_cnae"],
-                descricao_servico=dados["descricao_servico"],
-                id_cnae=dados["id_cnae"],
-                tess_key=tess_key,
-                tess_agent_id=tess_agent_id,
-                caminho_oficial=caminho_oficial_cnae
-            )
-        except Exception as err:
-            log(f"Erro na IA do Tess ao classificar CNAE para a nota {dados['numero_nf']}: {err}", True)
+        
+        cnae_orig = (dados["id_cnae"] or "").strip()
+        desc_serv_norm = " ".join((dados["descricao_servico"] or "").split()).lower()
+        cnpj_prest = (dados["cnpj_prestador"] or "").strip()
+        chave_cache = (cnpj_prest, cnae_orig, desc_serv_norm)
+        
+        if chave_cache in cache_cnae:
+            id_cnae_final, desc_cnae_final = cache_cnae[chave_cache]
+            log(f"[{idx}/{total}] Reutilizando classificação de CNAE do cache local para o prestador {dados['nome_prestador']}")
+        else:
+            try:
+                id_cnae_final, desc_cnae_final = resolver_cnae_tess_ai(
+                    desc_cnae=dados["desc_cnae"],
+                    descricao_servico=dados["descricao_servico"],
+                    id_cnae=dados["id_cnae"],
+                    tess_key=tess_key,
+                    tess_agent_id=tess_agent_id,
+                    caminho_oficial=caminho_oficial_cnae
+                )
+                if id_cnae_final and desc_cnae_final:
+                    cache_cnae[chave_cache] = (id_cnae_final, desc_cnae_final)
+            except Exception as err:
+                log(f"Erro na IA do Tess ao classificar CNAE para a nota {dados['numero_nf']}: {err}", True)
 
         dados["id_cnae_final"] = id_cnae_final
         dados["desc_cnae_final"] = desc_cnae_final
