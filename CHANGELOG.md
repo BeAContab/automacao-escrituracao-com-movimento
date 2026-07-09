@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [2.19.0] - 2026-07-09
+
+### Adicionado
+- **Extração de Regime Tributário** (`processamento_xml.py`): Adicionado mapeamento automático da tag XML `opSimpNac`. Quando o valor do campo for igual a `2`, a nota é classificada sob o regime `"MEI"`; caso contrário, é classificada como `"OUTROS"`.
+- **Coluna REGIME_TRIBUTARIO** (`processamento_xml.py`): Inclusão dinâmica de uma nova coluna `"REGIME_TRIBUTARIO"` na linha de cabeçalho e de dados do arquivo Excel gerado na aba "Processar XMLs".
+
+### Alterado
+- **Lógica de Descarte Local** (`iss_fortaleza_automacao.py`): O robô do Selenium agora pula e ignora notas fiscais emitidas por prestadores cujo endereço esteja localizado em Fortaleza/CE (UF `CE` e Cidade `FORTALEZA`).
+- **Exceção de Escrituração MEI** (`iss_fortaleza_automacao.py`): Caso o prestador seja classificado no regime tributário `"MEI"`, a nota é obrigatoriamente escriturada no portal, ignorando e prevalecendo sobre a regra de pulo local descrita acima.
+- **Configurações e Apresentação** (`.env.example`, `README.md`): Atualizado o arquivo de variáveis de exemplo para remover chaves do Gemini/Groq e revisado o README comercial para focar estritamente na leitura de XMLs e no uso do Tess AI.
+
 ## [2.18.0] - 2026-07-08
 
 ### Removido

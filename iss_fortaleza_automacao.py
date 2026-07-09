@@ -152,6 +152,7 @@ class DocumentoPortalISS:
     cofins_nao_retido: str = ""
     csrf: str = ""
     inss: str = ""
+    regime_tributario: str = "OUTROS"
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +502,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 cofins_nao_retido=cofins_nao_retido,
                 csrf=csrf,
                 inss=inss,
+                regime_tributario=str(linha[colunas["REGIME_TRIBUTARIO"]] or "OUTROS") if "REGIME_TRIBUTARIO" in colunas else "OUTROS",
             )
         )
     return documentos
@@ -1812,25 +1814,31 @@ def executar_fluxo_iss(
                     callback_progresso(indice, len(documentos))
                 except Exception:
                     pass
-            prefeitura_normalizada = normalizar_texto(candidato.prefeitura).upper()
-            if prefeitura_normalizada == "PREFEITURA MUNICIPAL DE FORTALEZA":
+            
+            # Regra: Se o prestador for de Fortaleza/CE, ignora a nota, EXCETO se for MEI
+            cidade_prest = normalizar_texto(candidato.cidade_prestador).upper()
+            uf_prest = normalizar_texto(candidato.uf_prestador).upper()
+            is_fortaleza_ce = (uf_prest == "CE" and "FORTALEZA" in cidade_prest)
+            is_mei = (candidato.regime_tributario.upper().strip() == "MEI")
+            
+            if is_fortaleza_ce and not is_mei:
                 mensagem_log = (
                     f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
                     f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
-                    f"IGNORADO: Nota emitida pela Prefeitura de Fortaleza"
+                    f"IGNORADO: Prestador estabelecido em Fortaleza/CE (não MEI)"
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
-                print(f"Linha {indice}/{len(documentos)} ignorada: Nota da Prefeitura de Fortaleza.")
+                print(f"Linha {indice}/{len(documentos)} ignorada: Prestador de Fortaleza/CE e não é MEI.")
                 
-                # Grava no log exclusivo de Fortaleza em tempo real
+                # Grava no log de Fortaleza/CE
                 caminho_fortaleza = pasta_log / "log_prefeitura_fortaleza.txt"
                 try:
                     if not caminho_fortaleza.exists():
                         with open(caminho_fortaleza, "w", encoding="utf-8") as f:
-                            f.write("As seguintes notas fiscais foram ignoradas por terem sido emitidas pela Prefeitura Municipal de Fortaleza:\n\n")
+                            f.write("As seguintes notas fiscais foram ignoradas por terem sido emitidas por prestadores estabelecidos em Fortaleza/CE (não MEI):\n\n")
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     with open(caminho_fortaleza, "a", encoding="utf-8") as f:
-                        f.write(f"[{timestamp}] {candidato.arquivo_pdf} - CNPJ: {candidato.cnpj_prestador} - NF: {candidato.numero_nf}\n")
+                        f.write(f"[{timestamp}] {candidato.arquivo_pdf} - CNPJ: {candidato.cnpj_prestador} - NF: {candidato.numero_nf} - Cidade: {candidato.cidade_prestador}\n")
                 except Exception as exc_fort:
                     print(f"Erro ao registrar log de Fortaleza: {exc_fort}")
                 continue

@@ -331,6 +331,9 @@ def extrair_dados_xml(caminho_xml: Path) -> dict[str, Any] | None:
     if vDescCond:
         descontos_condicionados = formatar_monetario(vDescCond)
 
+    opSimpNac = obter_texto_tag(root, "opSimpNac")
+    regime_tributario = "MEI" if opSimpNac == "2" else "OUTROS"
+
     return {
         "arquivo_xml": caminho_xml.name,
         "prefeitura": prefeitura,
@@ -363,6 +366,7 @@ def extrair_dados_xml(caminho_xml: Path) -> dict[str, Any] | None:
         "csrf": csrf,
         "inss": inss,
         "aliquota": aliquota,
+        "regime_tributario": regime_tributario,
     }
 
 def processar_pasta_xmls(
@@ -422,6 +426,9 @@ def processar_pasta_xmls(
         col_b_val = str(ws.cell(row=1, column=2).value or "").strip().upper()
         if col_b_val == "PREFEITURA":
             ws.delete_cols(2)
+
+    # Adiciona o cabeçalho REGIME_TRIBUTARIO no final da linha 1
+    ws.cell(row=1, column=ws.max_column + 1).value = "REGIME_TRIBUTARIO"
 
     # Garante a limpeza de possíveis linhas remanescentes abaixo do cabeçalho
     if ws.max_row > 1:
@@ -504,6 +511,7 @@ def processar_pasta_xmls(
             dados["aliquota"],
             dados["id_cnae_final"],
             dados["desc_cnae_final"],
+            dados["regime_tributario"],
         ]
 
         ws.append(linha)
