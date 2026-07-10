@@ -308,7 +308,9 @@ def executar_exportacao_xml_prestados(
         log(f"Erro crítico durante a exportação de XMLs: {e}", is_error=True)
         raise
     finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
+        # Mantém o navegador aberto a pedido do usuário ao final do processamento
+        # try:
+        #     driver.quit()
+        # except Exception:
+        #     pass
+        pass
