@@ -3,7 +3,7 @@
 
 #define MyAppName "Automação ISS Fortaleza"
 #define MyAppFullName "Automação ISS Fortaleza"
-#define MyAppVersion "2.19.1"
+#define MyAppVersion "2.20.0"
 #define MyAppPublisher "Barreira & Associados"
 #define MyAppExeName "automacao-iss-fortaleza.exe"
 
