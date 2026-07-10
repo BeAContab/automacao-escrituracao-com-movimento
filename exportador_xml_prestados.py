@@ -1,4 +1,4 @@
-﻿"""Módulo de automação para exportação em lote de XMLs de Serviços Prestados do portal da ISS Fortaleza."""
+"""Módulo de automação para exportação em lote de XMLs de Serviços Prestados do portal da ISS Fortaleza."""
 
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ XPATH_BTN_SELECIONAR_PAGINA  = "//*[@id='consultarnfseForm:j_id324']"
 XPATH_BTN_EXPORTAR_XML       = "//*[@id='consultarnfseForm:j_id321']/div[1]/input[3]"
 
 # Base ID do calendário de competência na tela de Consulta
-BASE_ID_COMPETENCIA = "consultarnfseForm:competenciaHeader"
+# ATENÇÃO: NÃO incluir o sufixo 'Header' — _abrir_editor_calendario o concatena internamente
+BASE_ID_COMPETENCIA = "consultarnfseForm:competencia"
 
 # Número máximo de páginas por lote antes de exportar
 MAX_PAGINAS_POR_LOTE = 10
@@ -58,8 +59,9 @@ def _tentar_avancar_pagina(driver) -> bool:
 
 def _selecionar_competencia_consulta(driver, competencia: CompetenciaTrabalho) -> None:
     """Seleciona o mês/ano no campo de competência da tela de Consulta de NFS-e."""
+    # Aguarda o botão popup do calendário ficar disponível na tela
     WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.XPATH, f"//*[@id='{BASE_ID_COMPETENCIA}']"))
+        EC.presence_of_element_located((By.ID, f"{BASE_ID_COMPETENCIA}PopupButton"))
     )
     time.sleep(1.0)
     _selecionar_campo_competencia(driver, BASE_ID_COMPETENCIA, "Competência", competencia)
