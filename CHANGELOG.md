@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [2.20.0] - 2026-07-10
+
+### Adicionado
+- **Funcionalidade: Exportar XML de Serviços Prestados** (`exportador_xml_prestados.py`): Novo módulo de automação Selenium que acessa o portal da ISS Fortaleza, navega até a tela de Consulta de NFS-e, seleciona a competência (mês/ano) escolhida pelo usuário na GUI, itera pelas páginas de resultados em lotes de até 10 páginas e exporta os XMLs automaticamente para a pasta de destino selecionada.
+- **Nova Aba na GUI** (`gui/index.html`): Adicionada a terceira aba "Exportar XML de Prestados" na barra lateral com seletores de mês/ano de competência, seletor de pasta de destino, card de confirmação de login manual, barra de progresso e console de log dedicado.
+- **Suporte a Pasta de Download no Chrome** (`iss_fortaleza_automacao.py`): Adicionado parâmetro `pasta_downloads` em `_criar_opcoes_chrome`, `abrir_navegador_visivel` e `abrir_navegador_com_perfil_persistente`, configurando o diretório de download automático sem exibir diálogos de salvamento.
+- **Novos Métodos de API** (`app.py`): Adicionados `iniciar_exportacao_xml_gui`, `_executar_exportacao_xml` e `confirmar_login_exportacao` para orquestrar a automação de exportação via pywebview.
+
 ## [2.19.1] - 2026-07-09
 
 ### Adicionado

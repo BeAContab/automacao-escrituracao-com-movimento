@@ -516,6 +516,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
 def _criar_opcoes_chrome(
     depuracao: bool = False,
     perfil_persistente: Path | None = None,
+    pasta_downloads: Path | None = None,
 ) -> Options:
     """Monta as opções do Chrome para o Selenium, incluindo proteções anti-detecção."""
 
@@ -530,13 +531,26 @@ def _criar_opcoes_chrome(
     if perfil_persistente:
         perfil_persistente.mkdir(parents=True, exist_ok=True)
         opcoes.add_argument(f"--user-data-dir={perfil_persistente.resolve()}")
+    # Configura pasta de download automático sem exibir diálogos de salvamento
+    if pasta_downloads:
+        pasta_downloads.mkdir(parents=True, exist_ok=True)
+        prefs = {
+            "download.default_directory": str(pasta_downloads.resolve()),
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+        }
+        opcoes.add_experimental_option("prefs", prefs)
     return opcoes
 
 
-def abrir_navegador_visivel(depuracao: bool = False) -> WebDriver:
+def abrir_navegador_visivel(
+    depuracao: bool = False,
+    pasta_downloads: Path | None = None,
+) -> WebDriver:
     """Abre um Chrome visível e maximizado, com inicialização híbrida resiliente."""
 
-    opcoes = _criar_opcoes_chrome(depuracao=depuracao)
+    opcoes = _criar_opcoes_chrome(depuracao=depuracao, pasta_downloads=pasta_downloads)
     
     try:
         # Tenta inicializar nativamente usando o Selenium Manager (embutido no Selenium 4.6+)
@@ -569,10 +583,11 @@ def abrir_navegador_visivel(depuracao: bool = False) -> WebDriver:
 def abrir_navegador_com_perfil_persistente(
     perfil_persistente: Path,
     depuracao: bool = False,
+    pasta_downloads: Path | None = None,
 ) -> WebDriver:
     """Abre o Chrome com perfil de usuário persistente com inicialização híbrida resiliente."""
 
-    opcoes = _criar_opcoes_chrome(depuracao=depuracao, perfil_persistente=perfil_persistente)
+    opcoes = _criar_opcoes_chrome(depuracao=depuracao, perfil_persistente=perfil_persistente, pasta_downloads=pasta_downloads)
     
     try:
         # Tenta inicializar nativamente usando o Selenium Manager (embutido no Selenium 4.6+)

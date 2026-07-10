@@ -11,6 +11,7 @@ import re
 
 # Importar lógicas do projeto
 from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia
+from exportador_xml_prestados import executar_exportacao_xml_prestados
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
 from processamento_xml import processar_pasta_xmls
 
@@ -313,6 +314,14 @@ class BeAContabAPI:
             daemon=True
         ).start()
 
+    def iniciar_exportacao_xml_gui(self, pasta_destino: str, competencia_str: str):
+        """Dispara a automação de exportação de XMLs de Serviços Prestados em uma thread separada."""
+        threading.Thread(
+            target=self._executar_exportacao_xml,
+            args=(pasta_destino, competencia_str),
+            daemon=True
+        ).start()
+
     def _processar_xmls(self, pasta_origem: str, tess_key: str = "", tess_agent_id: str = ""):
         """Thread que executa o processamento de XMLs."""
         def log_gui(msg: str, is_error: bool = False) -> None:
@@ -349,6 +358,73 @@ class BeAContabAPI:
             log_gui(f"Erro crítico no processamento de XMLs: {e}", is_error=True)
             self.window.evaluate_js("window.update_progresso_xml(100, 'Falha no processamento')")
 
+    def _executar_exportacao_xml(self, pasta_destino: str, competencia_str: str):
+        """Thread que executa a exportação de XMLs de Serviços Prestados."""
+        def log_gui(msg: str, is_error: bool = False) -> None:
+            try:
+                mensagem_js = json.dumps(msg)
+                erro_js = "true" if is_error else "false"
+                self.window.evaluate_js(f"window.log_exportar({mensagem_js}, {erro_js})")
+            except Exception:
+                pass
+
+        def callback_progresso(pct: int, status: str) -> None:
+            try:
+                status_js = json.dumps(status)
+                self.window.evaluate_js(f"window.update_progresso_exportar({pct}, {status_js})")
+            except Exception:
+                pass
+
+        # Gera o caminho do arquivo de flag de confirmação de login
+        appdata = os.environ.get("APPDATA", str(Path.home()))
+        flag_path = Path(appdata) / "BeAContab" / "brain" / "funcao3_login_ok.flag"
+        flag_path.parent.mkdir(parents=True, exist_ok=True)
+        if flag_path.exists():
+            try:
+                flag_path.unlink()
+            except Exception:
+                pass
+
+        # Exibe o card de confirmação de login na aba de exportação
+        try:
+            self.window.evaluate_js("document.getElementById('card-confirmar-login-exportar').classList.remove('hidden')")
+            self.window.evaluate_js("document.getElementById('btn-iniciar-exportacao').disabled = true")
+        except Exception:
+            pass
+
+        try:
+            log_gui(f"Iniciando exportação de XMLs - Competência: {competencia_str}")
+            executar_exportacao_xml_prestados(
+                pasta_destino=pasta_destino,
+                competencia_str=competencia_str,
+                callback_log=log_gui,
+                callback_progresso=callback_progresso,
+                caminho_confirmacao_login=flag_path,
+            )
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO EXPORTAÇÃO] {tb}")
+            log_gui(f"Erro crítico na exportação de XMLs: {e}", is_error=True)
+            self.window.evaluate_js("window.update_progresso_exportar(100, 'Falha na exportação')")
+        finally:
+            try:
+                self.window.evaluate_js("document.getElementById('card-confirmar-login-exportar').classList.add('hidden')")
+                self.window.evaluate_js("document.getElementById('btn-iniciar-exportacao').disabled = false")
+            except Exception:
+                pass
+
+    def confirmar_login_exportacao(self):
+        """Cria o arquivo de flag indicando que o login manual foi concluído pelo operador na aba de exportação."""
+        try:
+            appdata = os.environ.get("APPDATA", str(Path.home()))
+            flag_path = Path(appdata) / "BeAContab" / "brain" / "funcao3_login_ok.flag"
+            flag_path.parent.mkdir(parents=True, exist_ok=True)
+            flag_path.write_text("ok", encoding="utf-8")
+            return True
+        except Exception as e:
+            print(f"Erro ao confirmar login de exportação: {e}")
+            return False
+
 def obter_caminho_recurso(caminho_relativo: str) -> str:
     """Retorna o caminho absoluto do recurso, funcionando no desenvolvimento ou no executável empacotado."""
     if hasattr(sys, '_MEIPASS'):
@@ -379,6 +455,8 @@ if __name__ == '__main__':
         api.pausar_automacao,
         api.retomar_automacao,
         api.processar_xmls_gui,
+        api.iniciar_exportacao_xml_gui,
+        api.confirmar_login_exportacao,
     )
     
     webview.start(debug=False)
