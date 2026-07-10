@@ -55,9 +55,11 @@ def _tentar_avancar_pagina(driver) -> bool:
         
         for botao in botoes:
             if botao.is_displayed():
-                # Se o botão tiver a classe 'rich-datascr-button-inactive', chegamos ao fim
                 classes = botao.get_attribute("class") or ""
-                if "rich-datascr-button-inactive" in classes:
+                onclick = botao.get_attribute("onclick")
+                
+                # Se o botão for apenas exibição (-dsp), inativo ou não tiver evento de clique (onclick)
+                if "rich-datascr-button-inactive" in classes or "-dsp" in classes or not onclick:
                     return False
                 
                 # Clica para avançar
