@@ -1,0 +1,239 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manual do Sistema — BeAContab Automação</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: "Inter", sans-serif; font-size: 11pt; line-height: 1.7; color: #1a1a2e; background: #fff; }
+        @page { size: A4; margin: 20mm 18mm 20mm 18mm; }
+        @media print {
+            body { font-size: 10pt; }
+            .no-print { display: none !important; }
+            .page-break { page-break-before: always; }
+            .avoid-break { page-break-inside: avoid; }
+            a { color: inherit; text-decoration: none; }
+        }
+        h1 { font-size: 26pt; font-weight: 800; color: #0f0f23; letter-spacing: -0.5px; }
+        h2 { font-size: 15pt; font-weight: 700; color: #1a1a2e; margin-top: 28px; margin-bottom: 10px; }
+        h3 { font-size: 12pt; font-weight: 700; color: #2c2c54; margin-top: 18px; margin-bottom: 6px; }
+        p  { margin-bottom: 10px; color: #333; }
+        ul, ol { padding-left: 22px; margin-bottom: 10px; }
+        li { margin-bottom: 4px; color: #333; }
+        strong { color: #1a1a2e; }
+        code { font-family: "Courier New", monospace; background: #f0f0f5; border: 1px solid #ddd; border-radius: 3px; padding: 1px 5px; font-size: 9pt; color: #c0392b; }
+        .cover { min-height: 220mm; display: flex; flex-direction: column; justify-content: center; padding: 40px 0; border-bottom: 3px solid #2c2c54; margin-bottom: 36px; }
+        .cover-logo { font-size: 12pt; font-weight: 800; letter-spacing: 3px; color: #6c5ce7; text-transform: uppercase; margin-bottom: 8px; }
+        .cover-subtitle { font-size: 13pt; color: #555; font-weight: 400; margin-bottom: 32px; }
+        .cover-badge { display: inline-block; background: #2c2c54; color: #fff; font-size: 9pt; font-weight: 600; padding: 4px 12px; border-radius: 20px; letter-spacing: 0.5px; margin-bottom: 48px; }
+        .cover-meta { font-size: 9pt; color: #888; }
+        .cover-meta span { display: block; }
+        .section { margin-bottom: 36px; }
+        .section-header { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #2c2c54; padding-bottom: 8px; margin-bottom: 16px; }
+        .section-number { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #2c2c54; color: #fff; font-weight: 800; font-size: 12pt; border-radius: 50%; flex-shrink: 0; }
+        .feature-card { border: 1px solid #e0e0ef; border-left: 4px solid #6c5ce7; border-radius: 6px; padding: 16px 18px; margin-bottom: 18px; background: #fafafa; }
+        .feature-card h3 { margin-top: 0; color: #2c2c54; }
+        .steps { counter-reset: steps; list-style: none; padding: 0; }
+        .steps li { counter-increment: steps; display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+        .steps li::before { content: counter(steps); display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; background: #6c5ce7; color: #fff; font-size: 8pt; font-weight: 700; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+        .alert { border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; display: flex; gap: 10px; align-items: flex-start; font-size: 10pt; }
+        .alert-icon { font-size: 14pt; flex-shrink: 0; }
+        .alert-info  { background: #eef2ff; border: 1px solid #a5b4fc; }
+        .alert-warn  { background: #fffbeb; border: 1px solid #fcd34d; }
+        .alert-tip   { background: #ecfdf5; border: 1px solid #6ee7b7; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 10pt; }
+        th { background: #2c2c54; color: #fff; padding: 8px 10px; text-align: left; font-weight: 600; }
+        td { padding: 7px 10px; border-bottom: 1px solid #e0e0ef; vertical-align: top; }
+        tr:nth-child(even) td { background: #f7f7fb; }
+        .footer { border-top: 1px solid #ddd; padding-top: 14px; margin-top: 40px; font-size: 8pt; color: #999; display: flex; justify-content: space-between; }
+        .toc-item { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; font-size: 10pt; }
+        .toc-num  { font-weight: 700; color: #6c5ce7; min-width: 20px; }
+        .toc-dots { flex: 1; border-bottom: 1px dotted #ccc; }
+        .toc-page { color: #888; font-size: 9pt; }
+    </style>
+</head>
+<body>
+
+<div class="cover">
+    <div class="cover-logo">Barreira &amp; Associados</div>
+    <h1>BeAContab<br>Automação</h1>
+    <p class="cover-subtitle">Sistema de Automação Contábil com Inteligência Artificial</p>
+    <span class="cover-badge">Manual de Operação — Uso Interno</span>
+    <div class="cover-meta">
+        <span><strong>Versão do Sistema:</strong> 2.20.0</span>
+        <span><strong>Data de Emissão:</strong> Julho de 2026</span>
+        <span><strong>Classificação:</strong> Documento Interno Confidencial — All Rights Reserved</span>
+    </div>
+</div>
+
+<div class="section avoid-break">
+    <div class="section-header"><h2 style="border:none;margin:0;">Sumário</h2></div>
+    <div class="toc-item"><span class="toc-num">1.</span><span>Visão Geral do Sistema</span><span class="toc-dots"></span><span class="toc-page">2</span></div>
+    <div class="toc-item"><span class="toc-num">2.</span><span>Requisitos e Instalação</span><span class="toc-dots"></span><span class="toc-page">2</span></div>
+    <div class="toc-item"><span class="toc-num">3.</span><span>Configuração do Tess AI</span><span class="toc-dots"></span><span class="toc-page">3</span></div>
+    <div class="toc-item"><span class="toc-num">4.</span><span>Função 1 — Processamento de XMLs</span><span class="toc-dots"></span><span class="toc-page">3</span></div>
+    <div class="toc-item"><span class="toc-num">5.</span><span>Função 2 — Automação de Escrituração</span><span class="toc-dots"></span><span class="toc-page">5</span></div>
+    <div class="toc-item"><span class="toc-num">6.</span><span>Função 3 — Exportar XML de Serviços Prestados</span><span class="toc-dots"></span><span class="toc-page">6</span></div>
+    <div class="toc-item"><span class="toc-num">7.</span><span>Solução de Problemas</span><span class="toc-dots"></span><span class="toc-page">7</span></div>
+</div>
+
+<div class="section avoid-break">
+    <div class="section-header"><span class="section-number">1</span><h2 style="border:none;margin:0;">Visão Geral do Sistema</h2></div>
+    <p>O <strong>BeAContab Automação</strong> é uma plataforma de robótica de processos contábeis (RPA) desenvolvida exclusivamente para o escritório <strong>Barreira &amp; Associados</strong>. O sistema é composto por três módulos integrados que cobrem o ciclo completo de tratamento de notas fiscais de serviços (NFS-e) junto ao portal da Prefeitura de Fortaleza — ISS Fortaleza.</p>
+    <table class="avoid-break">
+        <tr><th>Módulo</th><th>Descrição</th><th>Tecnologia</th></tr>
+        <tr><td><strong>Processar XMLs</strong></td><td>Leitura e classificação de NFS-e com IA</td><td>Python + Tess AI</td></tr>
+        <tr><td><strong>Automação: Escrituração</strong></td><td>Digitação automatizada no portal ISS</td><td>Python + Selenium</td></tr>
+        <tr><td><strong>Exportar XMLs Prestados</strong></td><td>Download em lote de NFS-e emitidas</td><td>Python + Selenium</td></tr>
+    </table>
+    <div class="alert alert-info"><span class="alert-icon">ℹ️</span><div>O sistema não realiza nenhuma ação no portal da Prefeitura sem a <strong>autenticação manual e prévia</strong> do operador responsável. O robô aguarda o login ser concluído antes de executar qualquer automação.</div></div>
+</div>
+
+<div class="section avoid-break">
+    <div class="section-header"><span class="section-number">2</span><h2 style="border:none;margin:0;">Requisitos e Instalação</h2></div>
+    <h3>Requisitos de Sistema</h3>
+    <ul>
+        <li>Sistema Operacional: <strong>Windows 10 ou superior</strong> (64 bits)</li>
+        <li>Navegador: <strong>Google Chrome</strong> instalado (versão atualizada)</li>
+        <li>Acesso à internet para comunicação com o portal ISS Fortaleza e a API do Tess AI</li>
+        <li>Credenciais de acesso válidas ao portal <strong>ISS Fortaleza</strong></li>
+        <li>Chave de API e ID do Agente do <strong>Tess AI</strong> (para o módulo de Processamento de XML)</li>
+    </ul>
+    <h3>Instalação</h3>
+    <ol class="steps">
+        <li>Execute o instalador <code>BeAContab_Automacao_Setup.exe</code> fornecido pelo administrador do sistema.</li>
+        <li>Siga as etapas do assistente de instalação. O sistema será instalado em <code>C:\Program Files\BeAContab</code> por padrão.</li>
+        <li>Após a instalação, localize o ícone <strong>BeAContab Automação</strong> na área de trabalho e execute-o.</li>
+        <li>Na primeira execução, configure a Chave de API e o ID do Agente do Tess AI no painel lateral esquerdo (veja a Seção 3).</li>
+    </ol>
+    <div class="alert alert-warn"><span class="alert-icon">⚠️</span><div><strong>Atenção:</strong> O Google Chrome deve estar instalado na máquina. A automação de navegador não é compatível com outros navegadores como Firefox, Edge ou Opera.</div></div>
+</div>
+
+<div class="section avoid-break page-break">
+    <div class="section-header"><span class="section-number">3</span><h2 style="border:none;margin:0;">Configuração do Tess AI</h2></div>
+    <p>O Tess AI é a plataforma de inteligência artificial utilizada para classificar os códigos CNAE das notas fiscais de forma automática durante o Processamento de XMLs.</p>
+    <ol class="steps">
+        <li>Acesse o painel do Tess AI em <strong>tess.pareto.io</strong> e faça login com a conta do escritório.</li>
+        <li>Gere uma <strong>Chave de API</strong> nas configurações da sua conta e copie-a.</li>
+        <li>Localize o ID do <strong>Agente de Classificação de CNAE</strong> criado pelo administrador.</li>
+        <li>No sistema BeAContab, informe a Chave de API e o ID do Agente nos campos na parte inferior da barra lateral esquerda.</li>
+        <li>Clique em <strong>Salvar Configuração</strong>. As credenciais são armazenadas localmente de forma segura.</li>
+    </ol>
+    <div class="alert alert-tip"><span class="alert-icon">✅</span><div>As credenciais do Tess AI são armazenadas de forma persistente no computador do usuário. Elas <strong>não são perdidas</strong> ao fechar o programa.</div></div>
+</div>
+
+<div class="section">
+    <div class="section-header"><span class="section-number">4</span><h2 style="border:none;margin:0;">Função 1 — Processamento de XMLs</h2></div>
+    <div class="feature-card avoid-break">
+        <h3>O que faz?</h3>
+        <p>Lê uma pasta de arquivos XML de NFS-e, extrai as informações fiscais relevantes de cada nota e utiliza o agente de inteligência artificial do Tess AI para classificar automaticamente o <strong>código CNAE</strong>. Ao final, gera uma planilha Excel consolidada com todos os dados estruturados, pronta para ser utilizada na escrituração.</p>
+    </div>
+    <h3>Pré-requisitos</h3>
+    <ul>
+        <li>Pasta com os arquivos XML das NFS-e (exportados do portal ISS Fortaleza).</li>
+        <li>Arquivo <code>cnae_oficial.xlsx</code> presente no diretório de instalação do sistema (já incluído).</li>
+        <li>Chave de API e ID do Agente do Tess AI configurados (ver Seção 3).</li>
+    </ul>
+    <h3>Passo a Passo de Operação</h3>
+    <ol class="steps">
+        <li>Clique na aba <strong>Processar XMLs</strong> na barra lateral esquerda.</li>
+        <li>Clique em <strong>Pasta</strong> e selecione a pasta onde estão os arquivos <code>.xml</code>.</li>
+        <li>Verifique se a Chave de API e o ID do Agente do Tess AI estão preenchidos no painel lateral.</li>
+        <li>Clique em <strong>INICIAR PROCESSAMENTO DE XMLs</strong>.</li>
+        <li>Acompanhe o progresso e os logs na tela.</li>
+        <li>Ao finalizar, o caminho da planilha gerada será exibido no console de log.</li>
+    </ol>
+    <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div><strong>Cache Local de CNAE:</strong> Para otimizar o uso de tokens da API, o sistema armazena em cache os CNAEs já classificados. Se o mesmo código de serviço aparecer em múltiplas notas, a classificação é reutilizada sem novas chamadas à IA.</div></div>
+    <table class="avoid-break">
+        <tr><th>Campo na Planilha Gerada</th><th>Descrição</th></tr>
+        <tr><td>Número da NFS-e</td><td>Identificador único da nota fiscal</td></tr>
+        <tr><td>Data de Emissão</td><td>Data em que a nota foi emitida</td></tr>
+        <tr><td>CNPJ / CPF do Tomador</td><td>Documento do tomador do serviço</td></tr>
+        <tr><td>Razão Social do Tomador</td><td>Nome ou razão social do contratante</td></tr>
+        <tr><td>Valor do Serviço</td><td>Valor bruto da nota fiscal</td></tr>
+        <tr><td>Código de Serviço</td><td>Código LC 116/2003 do serviço prestado</td></tr>
+        <tr><td>CNAE Classificado</td><td>CNAE identificado pelo Tess AI</td></tr>
+        <tr><td>ISS Retido</td><td>Indicativo se o ISS foi retido na fonte</td></tr>
+    </table>
+</div>
+
+<div class="section page-break">
+    <div class="section-header"><span class="section-number">5</span><h2 style="border:none;margin:0;">Função 2 — Automação de Escrituração</h2></div>
+    <div class="feature-card avoid-break">
+        <h3>O que faz?</h3>
+        <p>Automatiza a digitação dos dados de notas fiscais no portal <strong>ISS Fortaleza</strong>, substituindo o processo manual e repetitivo. O robô lê a planilha Excel gerada no módulo anterior e, após o login manual do operador, realiza os lançamentos de forma sequencial e precisa.</p>
+    </div>
+    <h3>Pré-requisitos</h3>
+    <ul>
+        <li>Planilha Excel previamente gerada pelo módulo de Processamento de XMLs.</li>
+        <li>Credenciais de acesso válidas ao portal ISS Fortaleza.</li>
+        <li>Conexão estável com a internet durante toda a execução.</li>
+    </ul>
+    <h3>Passo a Passo de Operação</h3>
+    <ol class="steps">
+        <li>Clique na aba <strong>Automação: Escrituração</strong> na barra lateral esquerda.</li>
+        <li>Clique em <strong>Selecionar</strong> e escolha o arquivo <code>.xlsx</code> gerado no processamento.</li>
+        <li>Selecione o <strong>Mês</strong> e o <strong>Ano de Competência</strong> nos campos de seleção.</li>
+        <li>Clique em <strong>Iniciar Automação</strong>. O Chrome será aberto no portal ISS Fortaleza.</li>
+        <li>Quando o card <strong>"Aguardando Login Manual"</strong> aparecer, faça login no portal e clique em <strong>Confirmar Login Realizado</strong>.</li>
+        <li>O robô assumirá o controle e iniciará a escrituração nota a nota. Acompanhe o progresso no console.</li>
+    </ol>
+    <div class="alert alert-warn avoid-break"><span class="alert-icon">⚠️</span><div><strong>Importante:</strong> Não interaja com o navegador aberto pelo robô durante a automação. Qualquer clique ou digitação manual pode interromper o fluxo e causar erros.</div></div>
+    <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div><strong>Pausar e Retomar:</strong> Caso precise interromper momentaneamente a automação, utilize o botão <strong>PARAR AUTOMAÇÃO</strong> que aparece no console durante a execução. Clique novamente para retomar.</div></div>
+</div>
+
+<div class="section page-break">
+    <div class="section-header"><span class="section-number">6</span><h2 style="border:none;margin:0;">Função 3 — Exportar XML de Serviços Prestados</h2></div>
+    <div class="feature-card avoid-break">
+        <h3>O que faz?</h3>
+        <p>Automatiza o download em lote dos arquivos XML de NFS-e (Serviços Prestados) diretamente do portal <strong>ISS Fortaleza</strong>. O robô filtra as notas pela competência escolhida e realiza a exportação em lotes de até 10 páginas por vez.</p>
+    </div>
+    <h3>Pré-requisitos</h3>
+    <ul>
+        <li>Credenciais de acesso válidas ao portal ISS Fortaleza.</li>
+        <li>Uma pasta de destino com permissão de escrita para receber os arquivos XML baixados.</li>
+        <li>Conexão estável com a internet durante toda a execução.</li>
+    </ul>
+    <h3>Passo a Passo de Operação</h3>
+    <ol class="steps">
+        <li>Clique na aba <strong>Exportar XML de Prestados</strong> na barra lateral esquerda.</li>
+        <li>Clique em <strong>Selecionar</strong> e escolha a pasta onde os XMLs serão salvos.</li>
+        <li>Selecione o <strong>Mês</strong> e o <strong>Ano de Competência</strong> desejados.</li>
+        <li>Clique em <strong>Iniciar Exportação</strong>. O Chrome será aberto no portal ISS Fortaleza.</li>
+        <li>Quando o card <strong>"Aguardando Login Manual"</strong> aparecer, faça login no portal e clique em <strong>Confirmar Login Realizado</strong>.</li>
+        <li>O robô acessará "Consultar NFS-e", filtrará pela competência e iniciará o processo de seleção e exportação em lote.</li>
+        <li>Cada lote de até 10 páginas será exportado como um arquivo ZIP separado, salvo na pasta de destino.</li>
+        <li>A mensagem <em>"Exportação concluída!"</em> será exibida ao término do processamento.</li>
+    </ol>
+    <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div><strong>Lotes de 10 páginas:</strong> O portal ISS Fortaleza impõe limites de seleção por vez. O sistema divide automaticamente a exportação em grupos de até 10 páginas, garantindo que todos os registros sejam exportados sem perda de dados.</div></div>
+    <div class="alert alert-tip avoid-break"><span class="alert-icon">✅</span><div>O navegador permanece aberto ao final da exportação, permitindo que o operador realize outras consultas manualmente.</div></div>
+</div>
+
+<div class="section page-break">
+    <div class="section-header"><span class="section-number">7</span><h2 style="border:none;margin:0;">Solução de Problemas</h2></div>
+    <table class="avoid-break">
+        <tr><th>Problema</th><th>Causa Provável</th><th>Solução</th></tr>
+        <tr><td><strong>Erro ao abrir o Chrome</strong></td><td>Google Chrome não instalado ou desatualizado</td><td>Instale ou atualize o Google Chrome para a versão estável mais recente.</td></tr>
+        <tr><td><strong>Timeout ao aguardar elemento</strong></td><td>Lentidão na conexão ou no carregamento do portal</td><td>Verifique a conexão com a internet e tente novamente em horário de menor tráfego.</td></tr>
+        <tr><td><strong>Login expirado durante automação</strong></td><td>Sessão do portal encerrada por inatividade</td><td>Reinicie a automação. Não deixe o computador entrar em modo de espera durante o processamento.</td></tr>
+        <tr><td><strong>Planilha não encontrada</strong></td><td>Caminho do arquivo Excel inválido ou arquivo movido</td><td>Use o botão "Selecionar" para escolher novamente o arquivo correto.</td></tr>
+        <tr><td><strong>Erro de API do Tess AI</strong></td><td>Chave de API inválida, expirada ou sem saldo</td><td>Renove a Chave de API no painel do Tess AI (tess.pareto.io) e atualize a configuração.</td></tr>
+        <tr><td><strong>XMLs não são baixados</strong></td><td>Permissão de escrita negada na pasta de destino</td><td>Escolha uma pasta com permissão de gravação, como Documentos ou Downloads.</td></tr>
+        <tr><td><strong>Automação salta etapas</strong></td><td>Resolução de tela diferente ou layout do portal alterado</td><td>Contate o administrador do sistema para atualização dos seletores do robô.</td></tr>
+    </table>
+    <h3>Onde encontrar os Logs de Execução</h3>
+    <p>O sistema mantém um histórico de execuções em:</p>
+    <p><code>C:\Users\[USUÁRIO]\AppData\Roaming\BeAContab\logs\</code></p>
+    <p>Em caso de erros inesperados, envie o arquivo de log mais recente ao administrador do sistema para análise e suporte técnico.</p>
+    <div class="alert alert-warn avoid-break"><span class="alert-icon">⚠️</span><div><strong>Suporte Técnico:</strong> Este sistema é de uso exclusivo do escritório Barreira &amp; Associados. Em caso de dúvidas ou falhas, contate o responsável técnico pelo desenvolvimento e manutenção da plataforma.</div></div>
+</div>
+
+<div class="footer">
+    <span>© 2026 Barreira &amp; Associados — Todos os direitos reservados.</span>
+    <span>BeAContab Automação v2.20.0 — Documento Interno Confidencial</span>
+</div>
+
+</body>
+</html>
