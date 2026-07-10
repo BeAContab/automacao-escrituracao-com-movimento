@@ -44,15 +44,24 @@ def _aguardar_downloads_concluirem(pasta: Path, timeout: int = 120) -> None:
 
 
 def _tentar_avancar_pagina(driver) -> bool:
-    """Tenta clicar no botão '>' de avançar de página. Retorna False se a última página foi atingida."""
+    """Tenta clicar no botão de avançar página. Retorna False se a última página foi atingida."""
     try:
-        botao = driver.find_element(By.XPATH, "//td[contains(@class,'rich-datascr-button')]/a[normalize-space(text())='>']")
-        if botao.is_displayed() and botao.is_enabled():
-            botao.click()
-            time.sleep(2.5)
-            return True
-    except NoSuchElementException:
-        pass
+        # Encontra o botão de próxima página (o texto usa o caractere › em vez de > e está direto no td)
+        botoes = driver.find_elements(By.XPATH, "//td[contains(@class, 'rich-datascr-button') and contains(text(), '›')]")
+        
+        for botao in botoes:
+            if botao.is_displayed():
+                # Se o botão estiver inativo, significa que chegamos na última página
+                classes = botao.get_attribute("class") or ""
+                if "rich-datascr-button-inactive" in classes:
+                    return False
+                
+                # Se estiver ativo, clica para avançar
+                botao.click()
+                time.sleep(2.5)
+                return True
+    except Exception as e:
+        print(f"Erro ao tentar avançar página: {e}")
     return False
 
 
