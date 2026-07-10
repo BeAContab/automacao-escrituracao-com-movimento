@@ -14,7 +14,6 @@ from iss_fortaleza_automacao import (
     abrir_navegador_visivel,
     interpretar_competencia,
     CompetenciaTrabalho,
-    _selecionar_campo_competencia,
 )
 from tratamento_erros import registrar_evento_execucao
 
@@ -57,14 +56,83 @@ def _tentar_avancar_pagina(driver) -> bool:
     return False
 
 
-def _selecionar_competencia_consulta(driver, competencia: CompetenciaTrabalho) -> None:
-    """Seleciona o mês/ano no campo de competência da tela de Consulta de NFS-e."""
-    # Aguarda o botão popup do calendário ficar disponível na tela
+def _selecionar_competencia_consulta(driver, mes: int, ano: int) -> None:
+    """
+    Seleciona mês e ano no calendário inline RichFaces da tela Consulta de NFS-e.
+
+    Este calendário é sempre visível (não é popup), portanto NÃO usa PopupButton.
+    O fluxo correto é clicar diretamente no botão de edição (.rich-calendar-tool-btn)
+    dentro do elemento pai do calendário para abrir a grade de meses/anos.
+    """
+    # Seletor do botão de cabeçalho que abre a grade de meses/anos
+    SELETOR_EDITOR_BTN = f"[id='{BASE_ID_COMPETENCIA}'] .rich-calendar-tool-btn"
+
+    # Passo 1: Aguarda e clica no botão de edição para abrir a grade de meses/anos
     WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.ID, f"{BASE_ID_COMPETENCIA}PopupButton"))
+        EC.element_to_be_clickable((By.CSS_SELECTOR, SELETOR_EDITOR_BTN))
+    ).click()
+    time.sleep(0.5)
+
+    # Passo 2: Aguarda o editor carregar (verifica pelo botão OK como indicador de prontidão)
+    WebDriverWait(driver, 10).until(
+        EC.visibility_of_element_located(
+            (By.ID, f"{BASE_ID_COMPETENCIA}DateEditorButtonOk")
+        )
     )
-    time.sleep(1.0)
-    _selecionar_campo_competencia(driver, BASE_ID_COMPETENCIA, "Competência", competencia)
+
+    # Passo 3: Seleciona o mês pelo índice 0-based (Janeiro=M0, ..., Dezembro=M11)
+    id_mes = f"{BASE_ID_COMPETENCIA}DateEditorLayoutM{mes - 1}"
+    WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.ID, id_mes))
+    ).click()
+
+    # Passo 4: Localiza o ano-alvo navegando entre décadas se necessário
+    for _ in range(20):  # limite de 20 iterações para evitar loop infinito
+        anos_visiveis = {}
+        for i in range(10):
+            try:
+                el = driver.find_element(
+                    By.ID, f"{BASE_ID_COMPETENCIA}DateEditorLayoutY{i}"
+                )
+                texto = el.text.strip()
+                if texto.isdigit():
+                    anos_visiveis[int(texto)] = el
+            except NoSuchElementException:
+                continue
+
+        # Clica no ano se ele estiver visível na grade atual
+        if ano in anos_visiveis:
+            anos_visiveis[ano].click()
+            break
+
+        if not anos_visiveis:
+            raise RuntimeError("Grade de anos do calendário vazia ou não renderizada.")
+
+        # Define a direção de navegação entre décadas
+        menor = min(anos_visiveis)
+        sinal = "<" if ano < menor else ">"
+        botoes = driver.find_elements(
+            By.CSS_SELECTOR, f"[id='{BASE_ID_COMPETENCIA}'] .rich-calendar-editor-btn"
+        )
+        clicou = False
+        for btn in botoes:
+            if btn.text.strip() == sinal and btn.is_displayed():
+                btn.click()
+                clicou = True
+                time.sleep(0.3)
+                break
+        if not clicou:
+            raise RuntimeError(
+                f"Botão de navegação '{sinal}' não encontrado no calendário de anos."
+            )
+    else:
+        raise RuntimeError(
+            f"Não foi possível localizar o ano {ano} no calendário após 20 tentativas."
+        )
+
+    # Passo 5: Confirma a seleção clicando em OK
+    driver.find_element(By.ID, f"{BASE_ID_COMPETENCIA}DateEditorButtonOk").click()
+    time.sleep(0.5)
 
 
 def executar_exportacao_xml_prestados(
@@ -131,9 +199,9 @@ def executar_exportacao_xml_prestados(
         ).click()
         time.sleep(1.5)
 
-        # Passo 3: Selecionar mês/ano no calendário
+        # Passo 3: Selecionar mês/ano no calendário com a função dedicada a esta tela
         log(f"Selecionando competência {competencia.mes:02d}/{competencia.ano}...")
-        _selecionar_competencia_consulta(driver, competencia)
+        _selecionar_competencia_consulta(driver, competencia.mes, competencia.ano)
         progresso(20, "Competência selecionada. Consultando notas...")
 
         # Passo 4: Clicar em "Consultar"
