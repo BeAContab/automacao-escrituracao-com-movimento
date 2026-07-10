@@ -241,13 +241,9 @@ def executar_exportacao_xml_prestados(
                 break
 
             lote_atual += 1
-            pagina_atual += 1
 
-            # Tenta avançar para a próxima página antes de decidir se exporta
-            ultima_pagina = not _tentar_avancar_pagina(driver)
-
-            # Exporta se atingiu o lote máximo ou chegou na última página
-            if lote_atual >= MAX_PAGINAS_POR_LOTE or ultima_pagina:
+            # Exporta se atingiu o lote máximo ANTES de mudar de página
+            if lote_atual >= MAX_PAGINAS_POR_LOTE:
                 log(f"Exportando lote de {lote_atual} página(s)...")
                 progresso(min(30 + (total_exportados * 5), 90), f"Exportando lote ({total_exportados + 1})...")
 
@@ -268,9 +264,32 @@ def executar_exportacao_xml_prestados(
 
                 lote_atual = 0
 
-                if ultima_pagina:
-                    log("Todas as páginas foram processadas. Exportação concluída!")
-                    break
+            # Tenta avançar para a próxima página
+            if not _tentar_avancar_pagina(driver):
+                # Se não conseguiu avançar, é porque era a última página.
+                # Exporta o saldo remanescente, se houver
+                if lote_atual > 0:
+                    log(f"Exportando últimas {lote_atual} página(s)...")
+                    progresso(min(30 + (total_exportados * 5), 90), f"Exportando lote final ({total_exportados + 1})...")
+                    
+                    try:
+                        btn_exportar = WebDriverWait(driver, 20).until(
+                            EC.element_to_be_clickable((By.XPATH, XPATH_BTN_EXPORTAR_XML))
+                        )
+                        btn_exportar.click()
+                        time.sleep(2.0)
+
+                        log("Aguardando conclusão do download final...")
+                        _aguardar_downloads_concluirem(pasta)
+                        total_exportados += 1
+                        log(f"Download do lote final {total_exportados} concluído com sucesso!")
+                    except TimeoutException:
+                        log("Botão de exportação não encontrado ou não clicável.", is_error=True)
+
+                log("Todas as páginas foram processadas. Exportação concluída!")
+                break
+
+            pagina_atual += 1
 
         registrar_evento_execucao(
             f"Exportação de XMLs concluída: {total_exportados} lote(s) exportados para {pasta}.",
