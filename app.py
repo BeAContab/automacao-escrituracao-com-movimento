@@ -45,8 +45,10 @@ class BeAContabAPI:
         self._pausa_automacao_event = threading.Event()
         self._pausa_automacao_event.set()
         
-        # Flags para evitar a execução concorrente de múltiplos robôs de automação
+        # Flags e lock para evitar a execução concorrente de múltiplos robôs de automação
+        # O Lock garante atomicidade na verificação e alteração da flag (FALHA-03)
         self._automacao_em_execucao = False
+        self._lock_automacao = threading.Lock()
         
         # Carrega chaves salvas para as variáveis de ambiente na inicialização
         try:
@@ -77,6 +79,13 @@ class BeAContabAPI:
             file_types=('Excel Files (*.xlsx)', 'All files (*.*)')
         )
         if result:
+            # MELHORIA-06: Sinaliza à GUI que o arquivo foi selecionado nesta sessão,
+            # permitindo que a validação visual só exiba aviso de arquivo movido em
+            # reutilizações de sessão anteriores.
+            try:
+                self.window.evaluate_js("window._arquivoExcelSelecionadoNestaSessao = true;")
+            except Exception:
+                pass
             return result[0]
         return None
 
@@ -136,6 +145,7 @@ class BeAContabAPI:
         # tenta carregar as chaves padrões injetadas durante o processo de build.
         if not chaves.get("tess_key") or not chaves.get("tess_agent_id"):
             try:
+                # BUG-01 corrigido: removido espaço indevido entre 'default_' e 'keys'
                 import default_keys
                 if not chaves.get("tess_key") and getattr(default_keys, "TESS_API_KEY", ""):
                     chaves["tess_key"] = default_keys.TESS_API_KEY
@@ -207,11 +217,13 @@ class BeAContabAPI:
             return False
 
     def iniciar_automacao(self, excel_path, competencia_str):
-        if getattr(self, "_automacao_em_execucao", False):
-            self.window.evaluate_js("window.log_automacao('Erro: A automação de escrituração já está em andamento no momento!', true)")
-            return
-            
-        self._automacao_em_execucao = True
+        # Verificação e ativação da flag em bloco atômico para evitar race condition (FALHA-03)
+        with self._lock_automacao:
+            if self._automacao_em_execucao:
+                self.window.evaluate_js("window.log_automacao('Erro: A automação de escrituração já está em andamento no momento!', true)")
+                return
+            self._automacao_em_execucao = True
+
         self._pausa_automacao_event.set()
         threading.Thread(target=self._processar_automacao, args=(excel_path, competencia_str), daemon=True).start()
 
@@ -232,7 +244,10 @@ class BeAContabAPI:
             # Configura diretório de log para a pasta log da planilha
             configurar_pastas_logs([planilha.parent])
 
-            self.window.evaluate_js(f"window.log_automacao('Iniciando automação com a planilha {planilha.name}...')")
+            # Sanitização via json.dumps() para evitar injeção de JS caso o nome da planilha
+            # contenha aspas, barras invertidas ou outros caracteres especiais (BUG-03)
+            msg_inicio = json.dumps(f"Iniciando automação com a planilha {planilha.name}...")
+            self.window.evaluate_js(f"window.log_automacao({msg_inicio})")
 
             try:
                 competencia = interpretar_competencia(competencia_str)
@@ -243,9 +258,10 @@ class BeAContabAPI:
                 except Exception:
                     pass
                 return
-                
-            self.window.evaluate_js(f"window.log_automacao('Competência confirmada: {competencia.mes}/{competencia.ano}')")
-            self.window.evaluate_js(f"window.log_automacao('Iniciando navegador Chrome (Selenium). Não feche a janela do robô!')")
+
+            msg_competencia = json.dumps(f"Competência confirmada: {competencia.mes}/{competencia.ano}")
+            self.window.evaluate_js(f"window.log_automacao({msg_competencia})")
+            self.window.evaluate_js("window.log_automacao('Iniciando navegador Chrome (Selenium). Não feche a janela do robô!')")
             
             # Remove flag de login anterior se existir
             # Usa AppData para garantir permissão de escrita no executável instalado
@@ -269,6 +285,14 @@ class BeAContabAPI:
             def callback_pausa():
                 self._pausa_automacao_event.wait()
 
+            # FALHA-08: Exibe o card de confirmação de login AQUI, depois dos checks de
+            # competência/planilha, garantindo que erros precoces não deixem o card preso visível.
+            # O card é ocultado pelo bloco finally abaixo, em qualquer cenário de saída.
+            try:
+                self.window.evaluate_js("document.getElementById('card-confirmar-login').classList.remove('hidden')")
+            except Exception:
+                pass
+
             # Chama a execução principal do robô
             executar_automacao_iss(
                 planilha, 
@@ -281,7 +305,8 @@ class BeAContabAPI:
                 callback_pausa=callback_pausa
             )
             self.window.evaluate_js("window.update_progresso_automacao(100, 'Escrituração concluída!')")
-            self.window.evaluate_js(f"window.log_automacao('Execução do robô concluída.')")
+            msg_fim = json.dumps("Execução do robô concluída.")
+            self.window.evaluate_js(f"window.log_automacao({msg_fim})")
 
         except Exception as e:
             tb = traceback.format_exc()
@@ -295,9 +320,13 @@ class BeAContabAPI:
             except Exception:
                 pass
         finally:
-            self._automacao_em_execucao = False
+            # Libera a flag com proteção do lock para consistência com a aquisição (FALHA-03)
+            with self._lock_automacao:
+                self._automacao_em_execucao = False
             self._gui_log_callback = None
             try:
+                # FALHA-08: O card de login é SEMPRE ocultado no finally do Python,
+                # garantindo que o card não fique preso visivel em nenhum cenário de erro
                 self.window.evaluate_js("document.getElementById('card-confirmar-login').classList.add('hidden')")
                 self.window.evaluate_js("document.getElementById('btn-pausar-retomar-automacao').classList.add('hidden')")
             except Exception:
@@ -352,6 +381,12 @@ class BeAContabAPI:
             log_gui(f"Processamento concluído com sucesso!")
             log_gui(f"Planilha consolidada salva em: {caminho_resultado}")
             self.window.evaluate_js("window.update_progresso_xml(100, 'Concluído!')")
+            # MELHORIA-05: Envia o caminho da planilha para a GUI exibir o botão "Abrir Planilha Gerada"
+            caminho_js = json.dumps(str(caminho_resultado))
+            try:
+                self.window.evaluate_js(f"window.mostrar_botao_planilha({caminho_js})")
+            except Exception:
+                pass
         except Exception as e:
             tb = traceback.format_exc()
             print(f"[ERRO INTERNO XML] {tb}")

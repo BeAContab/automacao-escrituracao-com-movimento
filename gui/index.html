@@ -188,10 +188,22 @@
         INICIAR PROCESSAMENTO DE XMLs
     </button>
 
+    <!-- Botão Abrir Planilha Gerada (oculto até o fim do processamento) MELHORIA-05 -->
+    <div id="container-abrir-planilha" class="hidden">
+        <button id="btn-abrir-planilha" onclick="abrirPlanilhaGerada()" class="w-full py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary rounded-xl font-bold tracking-wider transition-all flex items-center justify-center gap-2">
+            <span class="material-symbols-outlined align-middle">table_view</span>
+            ABRIR PLANILHA GERADA
+        </button>
+    </div>
+
     <!-- Log Terminal -->
     <section class="glass-card rounded-2xl overflow-hidden">
-        <div class="bg-black/60 border-b border-white/10 px-6 py-3">
+        <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
             <span class="text-xs font-mono-console text-on-surface-variant">xml_processamento_output.log</span>
+            <button onclick="limparLogXml()" title="Limpar terminal" class="flex items-center gap-1 text-on-surface-variant hover:text-error transition-colors text-xs">
+                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                Limpar
+            </button>
         </div>
         <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 350px; max-height: 350px; overflow-y: auto;" id="log-xml">
             <p class="text-on-surface-variant opacity-60">Aguardando início do processamento...</p>
@@ -298,6 +310,11 @@
                     <div class="flex items-center gap-2">
                         <span class="text-xs font-mono-console text-on-surface-variant">console_output.log</span>
                     </div>
+                    <!-- Botão Limpar Log da Automação (MELHORIA-02) -->
+                    <button onclick="limparLogAutomacao()" title="Limpar terminal" class="flex items-center gap-1 text-on-surface-variant hover:text-error transition-colors text-xs">
+                        <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                        Limpar
+                    </button>
                     <!-- Botão de Pausar/Retomar Automação -->
                     <button id="btn-pausar-retomar-automacao" onclick="alternarPausaAutomacao()" class="hidden px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none">
                         <span class="material-symbols-outlined text-[12px]">pause</span>
@@ -410,8 +427,13 @@
                     </div>
                 </div>
 
-                <div class="bg-black/60 border-b border-white/10 px-6 py-3">
+                <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
                     <span class="text-xs font-mono-console text-on-surface-variant">exportar_xml_output.log</span>
+                    <!-- Botão Limpar Log da Exportação (MELHORIA-02) -->
+                    <button onclick="limparLogExportar()" title="Limpar terminal" class="flex items-center gap-1 text-on-surface-variant hover:text-error transition-colors text-xs">
+                        <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                        Limpar
+                    </button>
                 </div>
                 <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 450px; max-height: 450px; overflow-y: auto;" id="log-exportar">
                     <p class="text-on-surface-variant opacity-60">Initializing Shell...</p>
@@ -487,6 +509,11 @@
             return;
         }
 
+        // MELHORIA-06: Aviso visual se o arquivo não foi selecionado nesta sessão
+        if (!window._arquivoExcelSelecionadoNestaSessao) {
+            addLogAutomacao("Atenção: verifique se o arquivo Excel selecionado ainda existe no caminho informado antes de continuar.", false);
+        }
+
         // Configura e exibe a barra de progresso da automação
         const container = document.getElementById('progresso-container-automacao');
         const bar = document.getElementById('progresso-barra-automacao');
@@ -508,11 +535,10 @@
         iconPausaAut.innerText = "pause";
         btnPausaAut.className = "hidden px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none";
 
-        // Exibe o card de confirmação de login
-        document.getElementById('card-confirmar-login').classList.remove('hidden');
-        document.getElementById('btn-iniciar-automacao').disabled = true;
-        
+        // FALHA-08: O card de confirmação de login é exibido APÓS a chamada da API Python,
+        // não antes — evita que o card fique preso visível em caso de erro precoce.
         addLogAutomacao(`Iniciando portal da ISS Fortaleza (Competência: ${competencia})...`);
+        document.getElementById('btn-iniciar-automacao').disabled = true;
         
         if (window.pywebview) {
             await window.pywebview.api.iniciar_automacao(inputExcel, competencia);
@@ -525,6 +551,7 @@
             const ok = await window.pywebview.api.confirmar_login_feito();
             if (ok) {
                 addLogAutomacao("Login verificado pelo operador. Retomando robô...");
+                // FALHA-08: O card só é ocultado AQUI (após confirmação OK) e é exibido pela API Python
                 document.getElementById('card-confirmar-login').classList.add('hidden');
                 document.getElementById('btn-pausar-retomar-automacao').classList.remove('hidden');
             } else {
@@ -559,13 +586,20 @@
         const logContainer = document.getElementById('log-automacao');
         if (!logContainer) return;
         const p = document.createElement('p');
-        p.innerText = msg;
+        // MELHORIA-01: Prefixar mensagem com timestamp local
+        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        p.innerText = `[${agora}] ${msg}`;
         if (isError) p.className = "text-error font-bold";
         else p.className = "text-[#a3defe]";
         logContainer.appendChild(p);
         logContainer.scrollTop = logContainer.scrollHeight;
     }
     window.log_automacao = addLogAutomacao;
+
+    function limparLogAutomacao() {
+        const el = document.getElementById('log-automacao');
+        if (el) el.innerHTML = '';
+    }
 
     function updateProgressoAutomacao(porcentagem, status) {
         const container = document.getElementById('progresso-container-automacao');
@@ -631,12 +665,19 @@
         const el = document.getElementById('log-exportar');
         if (!el) return;
         const p = document.createElement('p');
-        p.innerText = msg;
+        // MELHORIA-01: Prefixar mensagem com timestamp local
+        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        p.innerText = `[${agora}] ${msg}`;
         p.className = isError ? 'text-error font-bold' : 'text-[#a3defe]';
         el.appendChild(p);
         el.scrollTop = el.scrollHeight;
     }
     window.log_exportar = addLogExportar;
+
+    function limparLogExportar() {
+        const el = document.getElementById('log-exportar');
+        if (el) el.innerHTML = '';
+    }
 
     function updateProgressoExportar(porcentagem, status) {
         const container = document.getElementById('progresso-container-exportar');
@@ -673,9 +714,17 @@
         const tessAgent = document.getElementById('agent-id-tess').value.trim();
 
         document.getElementById('log-xml').innerHTML = '';
+        // Oculta botão de abrir planilha de execução anterior (MELHORIA-05)
+        document.getElementById('container-abrir-planilha').classList.add('hidden');
+        window._ultimaPlanilhaGerada = null;
+
         addLogXml('Iniciando varredura e importação de XMLs...');
         document.getElementById('progresso-container-xml').classList.remove('hidden');
-        document.getElementById('btn-processar-xml').disabled = true;
+
+        // MELHORIA-10: Muda o botão para estado "processando" com ícone animado
+        const btnProcessar = document.getElementById('btn-processar-xml');
+        btnProcessar.disabled = true;
+        btnProcessar.innerHTML = '<span class="material-symbols-outlined align-middle mr-2" style="animation: spin 1s linear infinite; display:inline-block;">progress_activity</span> PROCESSANDO...';
 
         if (window.pywebview && window.pywebview.api) {
             try {
@@ -684,19 +733,43 @@
                 addLogXml('Erro ao chamar processamento de XMLs: ' + e, true);
             }
         }
-        document.getElementById('btn-processar-xml').disabled = false;
+
+        // MELHORIA-10: Restaura o botão após o processamento
+        btnProcessar.disabled = false;
+        btnProcessar.innerHTML = '<span class="material-symbols-outlined align-middle mr-2">play_arrow</span> INICIAR PROCESSAMENTO DE XMLs';
     }
 
     function addLogXml(msg, isError=false) {
         const el = document.getElementById('log-xml');
         if (!el) return;
         const p = document.createElement('p');
-        p.innerText = msg;
+        // MELHORIA-01: Prefixar mensagem com timestamp local
+        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        p.innerText = `[${agora}] ${msg}`;
         p.className = isError ? 'text-error font-bold' : 'text-secondary';
         el.appendChild(p);
         el.scrollTop = el.scrollHeight;
     }
     window.log_xml = addLogXml;
+
+    function limparLogXml() {
+        const el = document.getElementById('log-xml');
+        if (el) el.innerHTML = '';
+    }
+
+    // MELHORIA-05: Exibe o botão de abrir planilha e armazena o caminho gerado pelo Python
+    function mostrarBotaoPlanilha(caminho) {
+        window._ultimaPlanilhaGerada = caminho;
+        const container = document.getElementById('container-abrir-planilha');
+        if (container) container.classList.remove('hidden');
+    }
+    window.mostrar_botao_planilha = mostrarBotaoPlanilha;
+
+    function abrirPlanilhaGerada() {
+        if (window._ultimaPlanilhaGerada && window.pywebview && window.pywebview.api) {
+            window.pywebview.api.abrir_link('file:///' + window._ultimaPlanilhaGerada.replace(/\\/g, '/'));
+        }
+    }
 
     function updateProgressoXml(porcentagem, status) {
         const container = document.getElementById('progresso-container-xml');
@@ -749,27 +822,38 @@
         const hoje = new Date();
         const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
         const anoAtual = String(hoje.getFullYear());
-        
-        const selectMes = document.getElementById('select-mes-automacao');
-        if (selectMes) selectMes.value = mesAtual;
-        
-        const selectAno = document.getElementById('select-ano-automacao');
-        if (selectAno) {
-            let anoExiste = false;
-            for (let option of selectAno.options) {
-                if (option.value === anoAtual) {
-                    anoExiste = true;
-                    break;
-                }
-            }
+
+        // MELHORIA-06: Flag para detectar se o arquivo foi selecionado nesta sessão
+        window._arquivoExcelSelecionadoNestaSessao = false;
+
+        // FALHA-07: Função reutilizável para inicializar seletores de ano em ambas as abas
+        function inicializarSeletorAno(idSelect) {
+            const select = document.getElementById(idSelect);
+            if (!select) return;
+            let anoExiste = Array.from(select.options).some(o => o.value === anoAtual);
             if (!anoExiste) {
                 const opt = document.createElement('option');
                 opt.value = anoAtual;
                 opt.text = anoAtual;
-                selectAno.add(opt, selectAno.options[0]);
+                select.add(opt, select.options[0]);
             }
-            selectAno.value = anoAtual;
+            select.value = anoAtual;
         }
+
+        // Aplica inicialização dinâmica para os seletores de ano (automação e exportação)
+        inicializarSeletorAno('select-ano-automacao');
+        inicializarSeletorAno('select-ano-exportar'); // FALHA-07
+
+        const selectMes = document.getElementById('select-mes-automacao');
+        if (selectMes) selectMes.value = mesAtual;
+
+        const selectMesExportar = document.getElementById('select-mes-exportar');
+        if (selectMesExportar) selectMesExportar.value = mesAtual;
+
+        // Adiciona keyframe de rotação para o spinner (MELHORIA-10)
+        const style = document.createElement('style');
+        style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
 
         if (window.pywebview && window.pywebview.api) {
             carregarChavesAPI();

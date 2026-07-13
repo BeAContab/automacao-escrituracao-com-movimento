@@ -376,9 +376,15 @@ def processar_pasta_xmls(
     caminho_oficial_cnae: str = "cnae_oficial.xlsx",
     modelo_planilha: str = "EXEMPLOS/planilha exemplo.xlsx",
     callback_log = None,
-    callback_progresso = None
+    callback_progresso = None,
+    checkpoint_a_cada: int = 50,
 ) -> str:
-    """Escaneia a pasta recursivamente procurando XMLs, classifica com Tess AI e gera a planilha de saída."""
+    """Escaneia a pasta recursivamente procurando XMLs, classifica com Tess AI e gera a planilha de saída.
+    
+    Parâmetros:
+        checkpoint_a_cada: A planilha é salva parcialmente a cada N notas processadas,
+                           evitando perda total de dados em caso de falha (MELHORIA-03).
+    """
     
     def log(msg: str, is_error: bool = False) -> None:
         if callback_log:
@@ -395,8 +401,9 @@ def processar_pasta_xmls(
     arquivos_xml = list(caminho_origem.rglob("*.xml"))
     if not arquivos_xml:
         log("Nenhum arquivo XML encontrado na pasta selecionada.", True)
+        # Exibe estado de erro na barra de progresso, não "Concluído!" (FALHA-05)
         if callback_progresso:
-            callback_progresso(100, "Concluído!")
+            callback_progresso(0, "Erro: nenhum XML encontrado.")
         raise FileNotFoundError("Nenhum arquivo XML encontrado para processamento.")
 
     log(f"Total de XMLs localizados para análise: {len(arquivos_xml)}")
@@ -427,8 +434,13 @@ def processar_pasta_xmls(
         if col_b_val == "PREFEITURA":
             ws.delete_cols(2)
 
-    # Adiciona o cabeçalho REGIME_TRIBUTARIO no final da linha 1
-    ws.cell(row=1, column=ws.max_column + 1).value = "REGIME_TRIBUTARIO"
+    # Adiciona o cabeçalho REGIME_TRIBUTARIO no final da linha 1, somente se ainda não existir (FALHA-02)
+    cabecalhos_existentes = [
+        str(ws.cell(row=1, column=c).value or "").strip().upper()
+        for c in range(1, ws.max_column + 1)
+    ]
+    if "REGIME_TRIBUTARIO" not in cabecalhos_existentes:
+        ws.cell(row=1, column=ws.max_column + 1).value = "REGIME_TRIBUTARIO"
 
     # Garante a limpeza de possíveis linhas remanescentes abaixo do cabeçalho
     if ws.max_row > 1:
@@ -529,6 +541,14 @@ def processar_pasta_xmls(
 
         ws.append(linha)
         processadas += 1
+
+        # Checkpoint: salva a planilha parcialmente a cada N notas para não perder progresso (MELHORIA-03)
+        if checkpoint_a_cada > 0 and processadas % checkpoint_a_cada == 0:
+            try:
+                wb.save(caminho_destino)
+                log(f"Checkpoint: planilha salva com {processadas} nota(s) até agora.")
+            except Exception as e_ckpt:
+                log(f"Aviso: falha ao salvar checkpoint ({e_ckpt}).", True)
 
     wb.save(caminho_destino)
     wb.close()

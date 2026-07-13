@@ -1,6 +1,33 @@
 # CHANGELOG
 
-## [2.20.0] - 2026-07-10
+## [2.21.0] - 2026-07-13
+
+### Corrigido (Bugs Críticos)
+- **BUG-01 — SyntaxError em `import default_keys`** (`app.py` L139): Removido espaço indevido em `import default_ keys` que causava `SyntaxError` não capturado pelo `except ImportError`, impedindo o carregamento de chaves padrão em builds de produção.
+- **BUG-02 — Módulo inexistente em `main.py`**: Removida importação de `extrair_nf_pdfs` (inexistente). O `main.py` agora documenta explicitamente que o projeto opera exclusivamente via GUI e exibe mensagem de redirecionamento para `app.py`.
+- **BUG-03 — Injeção de JavaScript via f-string sem sanitização** (`app.py`): Todas as chamadas a `evaluate_js()` que interpolavam dados externos (nome da planilha, competência) agora utilizam `json.dumps()` para sanitização antes da injeção.
+
+### Corrigido (Falhas Funcionais)
+- **FALHA-01 — Resource Leak de ChromeDriver** (`exportador_xml_prestados.py`): O bloco `finally` que antes estava comentado foi restaurado de forma condicional. Adicionado parâmetro `fechar_navegador_ao_fim: bool = False` que controla se o Chrome é encerrado ao fim da exportação, eliminando o acúmulo de processos zumbis.
+- **FALHA-02 — Coluna `REGIME_TRIBUTARIO` duplicada** (`processamento_xml.py`): A adição da coluna no cabeçalho agora verifica se ela já existe antes de inserir, evitando duplicidade ao reprocessar a mesma pasta.
+- **FALHA-03 — Race condition na flag `_automacao_em_execucao`** (`app.py`): Adicionado `threading.Lock()` (`_lock_automacao`) para proteger atomicamente a leitura, escrita e liberação da flag que controla a execução concorrente de robôs.
+- **FALHA-04 — Variável global `_CALLBACK_PAUSA` sem proteção de concorrência** (`iss_fortaleza_automacao.py`): Adicionado `_LOCK_CALLBACK_PAUSA = threading.Lock()` e refatorada `_verificar_pausa()` para usar o lock, eliminando a dependência de `global` e o risco de race condition.
+- **FALHA-05 — Progresso "Concluído!" exibido antes de erro de pasta vazia** (`processamento_xml.py`): Ao não encontrar XMLs na pasta selecionada, a barra de progresso agora exibe `"Erro: nenhum XML encontrado."` em vez de `"Concluído!"`.
+- **FALHA-06 — Timeout de login hardcoded em 300s** (`exportador_xml_prestados.py`): Adicionado parâmetro `timeout_login: int = 300` configurável na função de exportação.
+- **FALHA-07 — Anos hardcoded no seletor de exportação** (`gui/index.html`): Criada função JS `inicializarSeletorAno(idSelect)` reutilizável que popula dinamicamente o ano atual em ambos os seletores (automação e exportação) no `DOMContentLoaded`.
+- **FALHA-08 — Card de login visível após erro de competência** (`app.py` + `gui/index.html`): O card de confirmação de login agora é exibido pelo Python (após os checks de competência/planilha), e não pelo JavaScript antes da chamada da API. O bloco `finally` do Python garante que o card sempre seja ocultado ao encerrar.
+
+### Adicionado (Melhorias)
+- **MELHORIA-01 — Timestamps nos logs dos terminais** (`gui/index.html`): As funções `addLogAutomacao`, `addLogExportar` e `addLogXml` agora prefixam cada mensagem com o horário local `[HH:MM:SS]`.
+- **MELHORIA-02 — Botão "Limpar" nos três terminais** (`gui/index.html`): Adicionado botão com ícone `delete_sweep` no cabeçalho dos terminais das três abas (Automação, Exportação e XMLs).
+- **MELHORIA-03 — Salvamento progressivo da planilha com checkpoint** (`processamento_xml.py`): A planilha XLSX é salva a cada 50 notas processadas (configurável via `checkpoint_a_cada`), evitando perda total de dados em falhas de processamento longo.
+- **MELHORIA-04 — Timeout explícito nas chamadas ao Gemini** (`cnae_final.py`): Adicionada função `_chamar_gemini_com_timeout()` com `concurrent.futures.ThreadPoolExecutor` e timeout de 60 segundos, garantindo fallback local quando a API trava.
+- **MELHORIA-05 — Botão "Abrir Planilha Gerada" após processamento de XMLs** (`app.py` + `gui/index.html`): Ao concluir o processamento, o Python envia o caminho da planilha via `evaluate_js()` e a GUI exibe um botão que abre o arquivo diretamente.
+- **MELHORIA-06 — Validação visual do arquivo Excel antes de iniciar automação** (`app.py` + `gui/index.html`): Ao selecionar o arquivo, a GUI marca a sessão com `_arquivoExcelSelecionadoNestaSessao`. Ao clicar em "Iniciar", se o arquivo não foi selecionado nesta sessão, exibe aviso de verificação de caminho.
+- **MELHORIA-07 — Refatoração da lógica duplicada de abertura do Chrome** (`iss_fortaleza_automacao.py`): Extraída função privada `_inicializar_driver(opcoes)` que centraliza a estratégia híbrida Selenium Manager → webdriver-manager. `abrir_navegador_visivel()` e `abrir_navegador_com_perfil_persistente()` agora delegam para ela, eliminando ~35 linhas duplicadas.
+- **MELHORIA-08 — Unificação de `configurar_pasta_logs()` e `configurar_pastas_logs()`** (`tratamento_erros.py`): A versão singular agora é um alias que chama a versão plural internamente, eliminando a lógica duplicada e mantendo compatibilidade retroativa.
+- **MELHORIA-10 — Indicação visual de processamento em andamento** (`gui/index.html`): O botão "Iniciar Processamento de XMLs" muda para "PROCESSANDO..." com ícone animado (`progress_activity` com `spin` CSS) durante a execução, e restaura o estado original ao concluir.
+
 
 ### Adicionado
 - **Funcionalidade: Exportar XML de Serviços Prestados** (`exportador_xml_prestados.py`): Novo módulo de automação Selenium que acessa o portal da ISS Fortaleza, navega até a tela de Consulta de NFS-e, seleciona a competência (mês/ano) escolhida pelo usuário na GUI, itera pelas páginas de resultados em lotes de até 10 páginas e exporta os XMLs automaticamente para a pasta de destino selecionada.

@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -178,14 +179,17 @@ class CompetenciaSemEscriturarDisponivelError(RuntimeError):
 # Verificação de pausa global do robô
 # ---------------------------------------------------------------------------
 
+# Protegido por Lock para evitar race conditions entre threads de pausa e execução (FALHA-04)
+_LOCK_CALLBACK_PAUSA = threading.Lock()
 _CALLBACK_PAUSA = None
 
 def _verificar_pausa() -> None:
     """Bloqueia a execução do robô se o operador tiver solicitado a pausa na GUI."""
-    global _CALLBACK_PAUSA
-    if _CALLBACK_PAUSA:
+    with _LOCK_CALLBACK_PAUSA:
+        cb = _CALLBACK_PAUSA
+    if cb:
         try:
-            _CALLBACK_PAUSA()
+            cb()
         except Exception:
             pass
 
@@ -544,20 +548,18 @@ def _criar_opcoes_chrome(
     return opcoes
 
 
-def abrir_navegador_visivel(
-    depuracao: bool = False,
-    pasta_downloads: Path | None = None,
-) -> WebDriver:
-    """Abre um Chrome visível e maximizado, com inicialização híbrida resiliente."""
-
-    opcoes = _criar_opcoes_chrome(depuracao=depuracao, pasta_downloads=pasta_downloads)
+def _inicializar_driver(opcoes: Options) -> WebDriver:
+    """Inicializa o ChromeDriver com estratégia híbrida: Selenium Manager nativo → webdriver-manager.
     
+    Centraliza a lógica de fallback que antes era duplicada em abrir_navegador_visivel()
+    e abrir_navegador_com_perfil_persistente() (MELHORIA-07).
+    """
     try:
         # Tenta inicializar nativamente usando o Selenium Manager (embutido no Selenium 4.6+)
         # Isso evita problemas com downloads de drivers bloqueados por proxy/firewall ou falhas de SSL.
         driver = webdriver.Chrome(options=opcoes)
     except Exception as e_native:
-        print(f"Aviso: Não foi possível iniciar o Chrome de forma nativa ({e_native}). Tentando com webdriver-manager...")
+        print(f"Aviso: não foi possível iniciar o Chrome de forma nativa ({e_native}). Tentando com webdriver-manager...")
         try:
             # Fallback para o webdriver-manager convencional
             servico = Service(ChromeDriverManager().install())
@@ -571,6 +573,17 @@ def abrir_navegador_visivel(
             )
             registrar_evento_execucao(msg_erro, "ISS Fortaleza")
             raise RuntimeError(msg_erro) from e_fallback
+    return driver
+
+
+def abrir_navegador_visivel(
+    depuracao: bool = False,
+    pasta_downloads: Path | None = None,
+) -> WebDriver:
+    """Abre um Chrome visível e maximizado, com inicialização híbrida resiliente."""
+
+    opcoes = _criar_opcoes_chrome(depuracao=depuracao, pasta_downloads=pasta_downloads)
+    driver = _inicializar_driver(opcoes)
 
     # Remove o atributo webdriver para evitar a detecção pelo portal
     driver.execute_script(
@@ -588,25 +601,8 @@ def abrir_navegador_com_perfil_persistente(
     """Abre o Chrome com perfil de usuário persistente com inicialização híbrida resiliente."""
 
     opcoes = _criar_opcoes_chrome(depuracao=depuracao, perfil_persistente=perfil_persistente, pasta_downloads=pasta_downloads)
-    
-    try:
-        # Tenta inicializar nativamente usando o Selenium Manager (embutido no Selenium 4.6+)
-        driver = webdriver.Chrome(options=opcoes)
-    except Exception as e_native:
-        print(f"Aviso: Não foi possível iniciar o Chrome persistente de forma nativa ({e_native}). Tentando com webdriver-manager...")
-        try:
-            # Fallback para o webdriver-manager convencional
-            servico = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=servico, options=opcoes)
-        except Exception as e_fallback:
-            msg_erro = (
-                f"Erro crítico: Não foi possível inicializar o navegador Google Chrome com perfil persistente.\n"
-                f"Detalhes do erro nativo: {e_native}\n"
-                f"Detalhes do erro de fallback: {e_fallback}\n"
-                f"Por favor, verifique se o Google Chrome está instalado corretamente nesta máquina."
-            )
-            registrar_evento_execucao(msg_erro, "ISS Fortaleza")
-            raise RuntimeError(msg_erro) from e_fallback
+    # Reutiliza _inicializar_driver() para evitar duplicação da lógica de fallback (MELHORIA-07)
+    driver = _inicializar_driver(opcoes)
 
     driver.execute_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
@@ -1656,8 +1652,9 @@ def executar_fluxo_iss(
 ) -> None:
     """Executa o fluxo visual completo do portal da ISS até o preenchimento do formulário."""
 
-    global _CALLBACK_PAUSA
-    _CALLBACK_PAUSA = callback_pausa
+    # Protege a escrita do callback global com o mesmo Lock usado na leitura (FALHA-04)
+    with _LOCK_CALLBACK_PAUSA:
+        _CALLBACK_PAUSA = callback_pausa
 
     if not documentos:
         raise RuntimeError("A planilha não contém linhas válidas para a automação.")

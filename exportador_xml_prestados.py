@@ -156,6 +156,8 @@ def executar_exportacao_xml_prestados(
     callback_log=None,
     callback_progresso=None,
     caminho_confirmacao_login: Path | None = None,
+    fechar_navegador_ao_fim: bool = False,
+    timeout_login: int = 300,
 ) -> None:
     """
     Executa a automação de exportação de XMLs de Serviços Prestados do portal da ISS Fortaleza.
@@ -166,6 +168,10 @@ def executar_exportacao_xml_prestados(
     3. Navega até a tela de Consulta de NFS-e, aba Competência/Tomador.
     4. Seleciona a competência informada pelo usuário na GUI.
     5. Consulta e itera pelas páginas em lotes de até 10, exportando o XML a cada lote.
+
+    Parâmetros:
+        fechar_navegador_ao_fim: Se True, encerra o Chrome ao concluir (FALHA-01).
+        timeout_login: Tempo limite em segundos para aguardar o login do operador (FALHA-06).
     """
 
     def log(msg: str, is_error: bool = False) -> None:
@@ -191,10 +197,11 @@ def executar_exportacao_xml_prestados(
         # Aguarda login manual do operador por arquivo de flag
         if caminho_confirmacao_login:
             log("Aguardando login manual no portal. Confirme na interface após fazer o login...")
-            prazo_login = time.monotonic() + 300
+            # Usa o parâmetro timeout_login no lugar do valor hardcoded de 300s (FALHA-06)
+            prazo_login = time.monotonic() + timeout_login
             while not caminho_confirmacao_login.exists():
                 if time.monotonic() > prazo_login:
-                    raise TimeoutError("Tempo limite de login (5 min) esgotado.")
+                    raise TimeoutError(f"Tempo limite de login ({timeout_login}s) esgotado.")
                 time.sleep(1.0)
             log("Login confirmado pelo operador. Iniciando navegação...")
 
@@ -308,9 +315,10 @@ def executar_exportacao_xml_prestados(
         log(f"Erro crítico durante a exportação de XMLs: {e}", is_error=True)
         raise
     finally:
-        # Mantém o navegador aberto a pedido do usuário ao final do processamento
-        # try:
-        #     driver.quit()
-        # except Exception:
-        #     pass
-        pass
+        # Encerra o navegador somente se o parâmetro fechar_navegador_ao_fim for True.
+        # Por padrão (False), o Chrome permanece aberto para inspeção do operador. (FALHA-01)
+        if fechar_navegador_ao_fim:
+            try:
+                driver.quit()
+            except Exception:
+                pass

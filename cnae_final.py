@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import re
@@ -378,6 +379,29 @@ def _chamar_gemini(
     raise RuntimeError("Todas as chamadas aos modelos do Gemini falharam ou retornaram dados inválidos.")
 
 
+def _chamar_gemini_com_timeout(
+    desc_cnae: str,
+    descricao_servico: str,
+    id_cnae: str,
+    candidatos: list[CnaeOficial],
+    timeout_segundos: int = 60,
+) -> tuple[str, str]:
+    """Invoca _chamar_gemini() com timeout explícito para evitar bloqueio indefinido.
+    
+    Caso a chamada à API do Gemini não responda dentro de timeout_segundos,
+    levanta RuntimeError e permite que o fluxo use o fallback local (MELHORIA-04).
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_chamar_gemini, desc_cnae, descricao_servico, id_cnae, candidatos)
+        try:
+            return future.result(timeout=timeout_segundos)
+        except concurrent.futures.TimeoutError:
+            raise RuntimeError(
+                f"Timeout de {timeout_segundos}s atingido na chamada ao Gemini. "
+                f"Usando classificação local como fallback."
+            )
+
+
 def resolver_cnae_final(
     desc_cnae: str,
     descricao_servico: str = "",
@@ -400,7 +424,9 @@ def resolver_cnae_final(
         return id_cnae.strip(), desc_cnae.strip()
 
     try:
-        return _chamar_gemini(desc_cnae, descricao_servico, id_cnae, candidatos)
+        # Usa _chamar_gemini_com_timeout() no lugar da chamada direta para garantir
+        # que a thread nunca fique bloqueada indefinidamente por falha silenciosa da API (MELHORIA-04)
+        return _chamar_gemini_com_timeout(desc_cnae, descricao_servico, id_cnae, candidatos)
     except Exception:
         return _classificar_localmente(desc_cnae, descricao_servico, id_cnae, oficiais)
 

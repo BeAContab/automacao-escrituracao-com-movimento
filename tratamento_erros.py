@@ -12,11 +12,12 @@ PASTAS_LOGS: list[Path] = [RAIZ_PROJETO]
 
 
 def configurar_pasta_logs(pasta_pdf: Path) -> None:
-    """Configura o diretório de logs para a pasta 'log' dentro de pasta_pdf."""
-    global PASTAS_LOGS
-    pasta_log = pasta_pdf if pasta_pdf.name == "log" else pasta_pdf / "log"
-    pasta_log.mkdir(parents=True, exist_ok=True)
-    PASTAS_LOGS = [pasta_log]
+    """Alias de compatibilidade para configurar_pastas_logs().
+    
+    Configura o diretório de logs para a pasta 'log' dentro de pasta_pdf.
+    Mantido para compatibilidade com os chamadores que usam a versão singular (MELHORIA-08).
+    """
+    configurar_pastas_logs([pasta_pdf])
 
 
 def configurar_pastas_logs(pastas: list[Path]) -> None:
