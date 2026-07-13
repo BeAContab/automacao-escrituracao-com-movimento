@@ -41,3 +41,6 @@ build/
 dist/
 installer_output/
 *.spec
+
+# Pastas de exemplos e testes (XMLs / Fiscais)
+EXEMPLOS/
