@@ -44,3 +44,6 @@ installer_output/
 
 # Pastas de exemplos e testes (XMLs / Fiscais)
 EXEMPLOS/
+
+# Saída gerada pelo agente (grafo de conhecimento do codebase)
+graphify-out/

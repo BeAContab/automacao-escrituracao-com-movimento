@@ -32,7 +32,7 @@ A solução é dividida em três grandes módulos integrados acessíveis diretam
 * **Navegação Inteligente:** Controle automatizado de navegador (Selenium WebDriver) para acessar o Portal da ISS de Fortaleza.
 * **Preenchimento Guiado:** Alimentação automatizada de todos os campos da escrituração (CNPJ, número da nota, data de emissão, código do serviço, descrição, valores e retenção de ISS).
 * **Filtragem de Prestadores Locais:** Pulagem automática preventiva de notas cujo prestador seja estabelecido em Fortaleza-CE (pois estas já constam do sistema da prefeitura), abrindo exceção para escriturar notas de prestadores classificados no regime tributário **MEI**.
-* **Segurança na Gravação:** A automação realiza o preenchimento dos formulários e aguarda na etapa final, permitindo que um operador humano valide visualmente a tela antes de confirmar a gravação definitiva no portal.
+* **Segurança na Gravação:** O login no portal é sempre manual, com confirmação explícita do operador antes de a automação iniciar. A partir daí, o preenchimento e a gravação de cada nota (botão "Gravar Documento") acontecem automaticamente nota a nota; o operador pode pausar e retomar o robô a qualquer momento pela interface, e notas com campos obrigatórios ausentes ou erros de preenchimento são automaticamente puladas e registradas em log (`log_notas_incompletas.txt`), em vez de gravadas no portal.
 
 ### 3. Exportar XML de Prestados
 * **Download em Lote de XMLs:** Automatiza o download de arquivos XML de NFS-e (Serviços Prestados) diretamente do portal da ISS Fortaleza.

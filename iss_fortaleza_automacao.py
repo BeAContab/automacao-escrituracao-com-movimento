@@ -17,7 +17,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -209,9 +209,20 @@ def normalizar_texto(texto: str) -> str:
 
 
 def limpar_cnpj_para_digitacao(cnpj: str) -> str:
-    """Retorna apenas os dígitos do CNPJ para uma digitação mais estável."""
+    """Retorna o CNPJ pronto para digitação no portal.
 
-    return re.sub(r"\D+", "", cnpj or "")
+    Remove apenas a máscara de pontuação (".", "-", "/", espaços) e qualquer
+    outro caractere que não seja letra ou dígito, preservando as letras do
+    novo formato alfanumérico de CNPJ (Receita Federal). O resultado é
+    normalizado para maiúsculas, conforme o layout oficial (12 caracteres
+    alfanuméricos + 2 dígitos verificadores numéricos).
+
+    Não usar re.sub(r"\\D+", ...) aqui: isso destruiria as letras do CNPJ
+    alfanumérico.
+    """
+
+    texto = (cnpj or "").strip().upper()
+    return re.sub(r"[^0-9A-Z]", "", texto)
 
 
 def validar_campos_obrigatorios(documento: DocumentoPortalISS) -> list[str]:
@@ -273,6 +284,31 @@ def _formatar_celula_para_string_de_valor(valor: Any) -> str:
         except ValueError:
             pass
     return texto
+
+
+def _normalizar_celula_cnpj(valor: Any) -> str:
+    """Normaliza a célula CNPJ_PRESTADOR lida do Excel para uma string consistente.
+
+    openpyxl entrega o tipo que o Excel detectou para a célula: int/float quando
+    a célula "parece" um número (típico de CNPJ numérico legado, o que pode ter
+    descartado um zero à esquerda), ou str em qualquer outro caso — incluindo
+    sempre o novo CNPJ alfanumérico, já que o Excel não converte letras em número.
+
+    Valores impossíveis para um CNPJ (célula vazia, booleano, zero ou negativo)
+    retornam string vazia de propósito: assim `validar_campos_obrigatorios()`
+    continua acusando "CNPJ do Prestador" ausente e a nota é registrada em
+    `log_notas_incompletas.txt` em vez de ser escriturada com um CNPJ inventado.
+    """
+
+    if valor is None or isinstance(valor, bool):
+        return ""
+    if isinstance(valor, (int, float)):
+        if valor <= 0:
+            return ""
+        # zfill repõe zeros à esquerda que o Excel descartou ao tratar a célula
+        # como número (ex.: 191 -> "00000000000191", CNPJ legado válido).
+        return str(int(round(valor))).zfill(14)
+    return str(valor).strip()
 
 
 def limpar_valor_para_digitacao(valor: str) -> str:
@@ -478,7 +514,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
             DocumentoPortalISS(
                 arquivo_pdf=str(linha[colunas[col_arquivo]] or ""),
                 prefeitura=prefeitura_val,
-                cnpj_prestador=str(linha[colunas["CNPJ_PRESTADOR"]] or ""),
+                cnpj_prestador=_normalizar_celula_cnpj(linha[colunas["CNPJ_PRESTADOR"]]),
                 numero_nf=str(linha[colunas["NUMERO_NF"]] or ""),
                 id_cnae_final=str(linha[colunas["ID_CNAE_FINAL"]] or ""),
                 data_emissao=str(linha[colunas["DATA_EMISSAO"]] or ""),
@@ -706,13 +742,22 @@ def _digitar_campo(
     seletor: str,
     texto: str,
     delay_ms: int = 80,
+    normalizador_fallback: Callable[[str], str] | None = None,
 ) -> None:
     """Localiza o campo, limpa e digita o texto tecla por tecla com pequena pausa entre elas.
 
     Possui lógica de retry para se recuperar caso o elemento mude sob AJAX durante a digitação.
+
+    O parâmetro opcional `normalizador_fallback` substitui a normalização padrão
+    (somente dígitos) usada na verificação de estabilidade do campo. É necessário
+    para campos que podem conter letras (ex.: CNPJ alfanumérico): usar apenas
+    dígitos como fallback nesse caso mascararia silenciosamente uma eventual perda
+    de letras durante a digitação. Quando omitido, o comportamento é idêntico ao
+    anterior para todos os outros campos.
     """
 
     _verificar_pausa()
+    normalizar = normalizador_fallback or _somente_digitos
     for tentativa in range(3):
         try:
             campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
@@ -727,13 +772,13 @@ def _digitar_campo(
                 time.sleep(delay_ms / 1000)
 
             # Verifica se o valor ficou estável antes de seguir
-            esperado_digits = _somente_digitos(texto)
+            esperado_normalizado = normalizar(texto)
             for _ in range(20):
                 try:
                     valor_atual = campo.get_attribute("value") or ""
                     if valor_atual.strip() == texto.strip():
                         return
-                    if esperado_digits and _somente_digitos(valor_atual) == esperado_digits:
+                    if esperado_normalizado and normalizar(valor_atual) == esperado_normalizado:
                         return
                 except StaleElementReferenceException:
                     raise
@@ -1196,6 +1241,7 @@ def preencher_dados_prestador(
             "digitarDocumentoForm:idCPFCNPJ",
             cnpj_limpo,
             delay_ms=60,
+            normalizador_fallback=limpar_cnpj_para_digitacao,
         )
         registrar_evento_execucao(f"CPF/CNPJ preenchido: {cnpj_limpo}", "ISS Fortaleza")
 

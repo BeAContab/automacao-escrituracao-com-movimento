@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [2.21.1] - 2026-07-24
+
+### Corrigido (Bugs Críticos)
+- **BUG-04 — Corrupção do novo CNPJ alfanumérico na escrituração** (`iss_fortaleza_automacao.py`): `limpar_cnpj_para_digitacao()` usava `re.sub(r"\D+", ...)`, que apagava as letras do novo formato de CNPJ da Receita Federal (14 caracteres, 12 alfanuméricos + 2 dígitos verificadores) antes de digitar o valor no campo `idCPFCNPJ` do portal da ISS Fortaleza. A função agora preserva letras, removendo apenas a máscara de pontuação (`.`, `-`, `/`, espaços) e normalizando para maiúsculas.
+- **Verificação de digitação cega a letras** (`_digitar_campo()`): o fallback de estabilidade do campo comparava apenas dígitos, o que poderia reportar sucesso falso mesmo se o portal descartasse letras do CNPJ silenciosamente. Adicionado parâmetro opcional `normalizador_fallback` (retrocompatível para os outros 10 campos que usam a mesma função) e o call site do CNPJ agora usa um normalizador que preserva letras.
+- **Leitura da coluna CNPJ_PRESTADOR do Excel** (`carregar_documentos_xlsx()`): célula numérica (CNPJ legado autoformatado como número pelo Excel) podia perder zero à esquerda; célula vazia, zero ou negativa agora retorna string vazia (novo helper `_normalizar_celula_cnpj()`), garantindo que `validar_campos_obrigatorios()` continue barrando a nota em vez de gravar um CNPJ inválido no portal.
+
+### Adicionado
+- **Cobertura de testes** (`tests/test_cnpj_normalizacao.py`, novo): primeira pasta `tests/` do projeto (via `unittest`, sem dependência nova), cobrindo CNPJ legado e alfanumérico, com e sem máscara, e os casos de borda da leitura de célula do Excel.
+
+### Corrigido (Documentação)
+- **README.md / DEVELOPER.md**: a descrição de "pausa antes da gravação para revisão humana" estava desatualizada desde que o robô passou a clicar em `GRAVAR DOCUMENTO` automaticamente nota a nota (mudança já registrada no changelog anterior). Os dois documentos agora descrevem o comportamento real: login manual obrigatório, pausar/retomar pela GUI a qualquer momento, e notas incompletas/com erro puladas e logadas em vez de gravadas.
+
 ## [2.21.0] - 2026-07-13
 
 ### Corrigido (Bugs Críticos)

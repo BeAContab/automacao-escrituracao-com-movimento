@@ -116,7 +116,7 @@ Os testes validam os PDFs atuais da pasta `dados/` e protegem campos fiscais cr�
 - Em seguida, o programa pergunta qual planilha XLSX será usada na automação, usando `nf_compilado.xlsx` se você apenas pressionar `Enter`.
 - O login continua manual por enquanto, e o programa aguarda confirmação do usuário antes de seguir.
 - A competência informada pelo usuário é aplicada nos dois calendários da tela `Manter Escrituração` (`De` e `Até`) usando o editor real do portal.
-- O fluxo preenche a tela até a etapa anterior a `GRAVAR DOCUMENTO`, conforme a orientação atual do projeto.
+- Após o login manual confirmado, o fluxo preenche os dados do prestador e do serviço e clica em `GRAVAR DOCUMENTO` automaticamente para cada nota, sem pausa para revisão visual prévia; o operador pode pausar/retomar o robô pela GUI a qualquer momento, e notas com campos obrigatórios ausentes ou erro de preenchimento são puladas e registradas em `log_notas_incompletas.txt` em vez de gravadas.
 - Você também pode informar outro arquivo com `--planilha` ao chamar a CLI.
 
 ## Extração avulsa do portal
