@@ -42,8 +42,11 @@ dist/
 installer_output/
 *.spec
 
-# Pastas de exemplos e testes (XMLs / Fiscais)
-EXEMPLOS/
+# Pastas de exemplos e testes (XMLs / Fiscais de clientes reais, PII/sigilo).
+# O template estrutural (planilha exemplo.xlsx) e necessario para build/execucao
+# do app e fica versionado; os XMLs reais dentro de EXEMPLOS/ continuam ignorados.
+EXEMPLOS/*
+!EXEMPLOS/planilha exemplo.xlsx
 
 # Saída gerada pelo agente (grafo de conhecimento do codebase)
 graphify-out/

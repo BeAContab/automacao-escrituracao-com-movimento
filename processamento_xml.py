@@ -413,10 +413,15 @@ def processar_pasta_xmls(
 
     # Copia a planilha exemplo modelo para servir de base estrutural exata
     path_modelo = Path(modelo_planilha)
-    # Se o modelo relativo não for achado, tenta sob o diretório do script
+    # Se o modelo relativo não for achado, tenta no diretório de recursos do
+    # executável empacotado (PyInstaller) e, por fim, no diretório do script
     if not path_modelo.exists():
-        path_modelo = Path(__file__).parent / modelo_planilha
-        
+        import sys
+        if hasattr(sys, "_MEIPASS"):
+            path_modelo = Path(sys._MEIPASS) / modelo_planilha
+        else:
+            path_modelo = Path(__file__).parent / modelo_planilha
+
     if not path_modelo.exists():
         log(f"Planilha de exemplo modelo não encontrada em {modelo_planilha}.", True)
         raise FileNotFoundError(f"Modelo {modelo_planilha} ausente.")
