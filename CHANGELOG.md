@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [2.22.0] - 2026-08-03
+
+### Adicionado
+- **Suporte a pasta com subpastas em "Processar XMLs"** (`processamento_xml.py`, `app.py`, `gui/index.html`): nova função `processar_pasta_xmls_auto()` detecta automaticamente a estrutura da pasta selecionada. Se houver XML diretamente nela, gera 1 planilha (comportamento de sempre); se houver subpastas (ex.: uma por cliente/lote), gera 1 planilha independente dentro de cada subpasta com XML, sem misturar lotes num único arquivo — inclusive quando a pasta selecionada tem XML solto na raiz **e** subpastas ao mesmo tempo (`processar_pasta_xmls()` ganhou o parâmetro `arquivos_xml_forcados` para escopar o processamento sem recursão nesse caso). A GUI ganhou um botão "Abrir pasta com as planilhas geradas" para quando o resultado é mais de um arquivo.
+- **Botão Cancelar na automação de escrituração** (`iss_fortaleza_automacao.py`, `app.py`, `gui/index.html`): novo controle ao lado de Pausar/Retomar que aborta a automação por completo — fecha o navegador e exige reinício do zero (nova seleção de planilha/competência e novo login manual). Implementado com `AutomacaoCanceladaError`, um segundo `threading.Event` (`_cancelar_automacao_event`) e checagem (`_verificar_cancelamento()`) nos mesmos pontos onde a pausa já era checada, incluindo a espera (antes ilimitada e sem nenhum ponto de interrupção) pela confirmação de login manual.
+- **Detecção de nota fiscal duplicada durante a gravação** (`iss_fortaleza_automacao.py`): quando o portal exibe o aviso "Já existe documento fiscal escriturado com o CNPJ do prestador, com o mesmo número de nota, na competência ...", o robô agora reconhece esse modal automaticamente, clica em "Não" (nunca confirma a geração de uma possível duplicata sozinho) e segue para a próxima nota, registrando-a em `log_notas_duplicadas.txt`. Antes, esse modal travava a automação: o robô ficava esperando cegamente por um cabeçalho de sucesso que nunca aparecia, estourava timeout e o clique seguinte de reset de tela também falhava, por estar bloqueado pelo overlay do modal.
+- **Cobertura de testes** (`tests/test_iss_retido.py`, `tests/test_processar_xmls_auto.py`, novos): cobrem a interpretação de valores de ISS Retido e o roteamento de pastas/subpastas do `processar_pasta_xmls_auto()`, incluindo o cenário de XML direto + subpastas simultâneos.
+
+### Corrigido
+- **Checkbox ISS Retido sem auditoria** (`iss_fortaleza_automacao.py`): a lógica de marcar/desmarcar já comparava o estado atual antes de clicar (não era um clique incondicional), mas uma falha no seletor do checkbox era engolida silenciosamente (`except NoSuchElementException: pass`) e a planilha não validava se o valor de `ISS_RETIDO` era um "Sim"/"Não" reconhecível. Agora `validar_campos_obrigatorios()` rejeita valores fora do padrão antes de chegar no navegador, e o estado final do checkbox é sempre registrado em log (sucesso, alerta de divergência, ou erro de elemento não encontrado).
+- **Pausa nos helpers de baixo nível nunca funcionava de fato** (`iss_fortaleza_automacao.py`): a atribuição `_CALLBACK_PAUSA = callback_pausa` dentro de `executar_fluxo_iss()` não tinha a declaração `global`, então criava uma variável local que sombreava o nome do módulo — o callback nunca chegava a atualizar o global de verdade lido por `_verificar_pausa()`. Corrigido junto com a implementação do cancelamento (que usa o mesmo padrão e exigia o fix para funcionar). Na prática, a pausa só surtia efeito no checkpoint entre notas; agora também funciona nos pontos internos de digitação/clique.
+
+## [2.21.2] - 2026-07-27
+
+### Corrigido
+- **Planilha modelo ausente após instalação** (`build.py`, `processamento_xml.py`, `.gitignore`): `EXEMPLOS/planilha exemplo.xlsx` nunca tinha sido incluída no empacotamento do PyInstaller (`build.py` só copiava `gui/` e `cnae_oficial.xlsx`) nem versionada no Git, então "Processar XMLs" falhava com "Modelo EXEMPLOS/planilha exemplo.xlsx ausente" em qualquer instalação nova. Adicionado `--add-data` para o template no `build.py`, fallback de busca via `sys._MEIPASS` em `processamento_xml.py` (mesmo padrão já usado para `cnae_oficial.xlsx`), e o template passou a ser versionado (`.gitignore` mantém os XMLs reais de clientes dentro de `EXEMPLOS/` ignorados, mas abre exceção para esse arquivo específico).
+
 ## [2.21.1] - 2026-07-24
 
 ### Corrigido (Bugs Críticos)

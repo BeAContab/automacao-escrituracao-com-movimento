@@ -10,10 +10,10 @@ import webview
 import re
 
 # Importar lógicas do projeto
-from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia
+from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia, AutomacaoCanceladaError
 from exportador_xml_prestados import executar_exportacao_xml_prestados
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
-from processamento_xml import processar_pasta_xmls
+from processamento_xml import processar_pasta_xmls_auto
 
 class GUIStdoutWrapper:
     def __init__(self, original_stdout, api):
@@ -44,7 +44,9 @@ class BeAContabAPI:
         self._pausa_event.set()
         self._pausa_automacao_event = threading.Event()
         self._pausa_automacao_event.set()
-        
+        self._cancelar_automacao_event = threading.Event()
+        self._cancelar_automacao_event.clear()
+
         # Flags e lock para evitar a execução concorrente de múltiplos robôs de automação
         # O Lock garante atomicidade na verificação e alteração da flag (FALHA-03)
         self._automacao_em_execucao = False
@@ -64,6 +66,16 @@ class BeAContabAPI:
         self._pausa_automacao_event.clear()
 
     def retomar_automacao(self):
+        self._pausa_automacao_event.set()
+
+    def cancelar_automacao(self):
+        """Sinaliza o cancelamento da automação em execução.
+
+        Também libera uma pausa em andamento (`.set()` do evento de pausa), senão
+        o cancelamento ficaria preso esperando o operador retomar antes de poder
+        ser sentido pelo robô.
+        """
+        self._cancelar_automacao_event.set()
         self._pausa_automacao_event.set()
 
     def selecionar_pasta(self):
@@ -225,6 +237,7 @@ class BeAContabAPI:
             self._automacao_em_execucao = True
 
         self._pausa_automacao_event.set()
+        self._cancelar_automacao_event.clear()
         threading.Thread(target=self._processar_automacao, args=(excel_path, competencia_str), daemon=True).start()
 
     def _processar_automacao(self, excel_path, competencia_str):
@@ -285,6 +298,10 @@ class BeAContabAPI:
             def callback_pausa():
                 self._pausa_automacao_event.wait()
 
+            # Define o callback para verificar o cancelamento solicitado pelo operador
+            def callback_cancelamento():
+                return self._cancelar_automacao_event.is_set()
+
             # FALHA-08: Exibe o card de confirmação de login AQUI, depois dos checks de
             # competência/planilha, garantindo que erros precoces não deixem o card preso visível.
             # O card é ocultado pelo bloco finally abaixo, em qualquer cenário de saída.
@@ -295,19 +312,29 @@ class BeAContabAPI:
 
             # Chama a execução principal do robô
             executar_automacao_iss(
-                planilha, 
-                competencia, 
-                depuracao=False, 
+                planilha,
+                competencia,
+                depuracao=False,
                 callback_progresso=callback_progresso,
                 aguardar_login_por_arquivo=True,
                 caminho_confirmacao_login=flag_path,
                 executando_em_gui=True,
-                callback_pausa=callback_pausa
+                callback_pausa=callback_pausa,
+                callback_cancelamento=callback_cancelamento
             )
             self.window.evaluate_js("window.update_progresso_automacao(100, 'Escrituração concluída!')")
             msg_fim = json.dumps("Execução do robô concluída.")
             self.window.evaluate_js(f"window.log_automacao({msg_fim})")
 
+        except AutomacaoCanceladaError:
+            msg_cancel = json.dumps(
+                "Automação cancelada pelo operador. O navegador foi encerrado — "
+                "selecione a planilha/competência e inicie novamente quando quiser."
+            )
+            try:
+                self.window.evaluate_js(f"window.log_automacao({msg_cancel})")
+            except Exception:
+                pass
         except Exception as e:
             tb = traceback.format_exc()
             # Usa json.dumps para escapar corretamente caracteres especiais (aspas,
@@ -329,6 +356,7 @@ class BeAContabAPI:
                 # garantindo que o card não fique preso visivel em nenhum cenário de erro
                 self.window.evaluate_js("document.getElementById('card-confirmar-login').classList.add('hidden')")
                 self.window.evaluate_js("document.getElementById('btn-pausar-retomar-automacao').classList.add('hidden')")
+                self.window.evaluate_js("document.getElementById('btn-cancelar-automacao').classList.add('hidden')")
             except Exception:
                 pass
 
@@ -370,23 +398,36 @@ class BeAContabAPI:
 
         try:
             log_gui("Iniciando varredura e importação de XMLs...")
-            
-            caminho_resultado = processar_pasta_xmls(
+
+            caminhos_resultado = processar_pasta_xmls_auto(
                 pasta_origem=pasta_origem,
                 tess_key=tess_key,
                 tess_agent_id=tess_agent_id,
                 callback_log=log_gui,
                 callback_progresso=callback_progresso
             )
-            log_gui(f"Processamento concluído com sucesso!")
-            log_gui(f"Planilha consolidada salva em: {caminho_resultado}")
+            log_gui("Processamento concluído com sucesso!")
+            for caminho in caminhos_resultado:
+                log_gui(f"Planilha gerada em: {caminho}")
             self.window.evaluate_js("window.update_progresso_xml(100, 'Concluído!')")
-            # MELHORIA-05: Envia o caminho da planilha para a GUI exibir o botão "Abrir Planilha Gerada"
-            caminho_js = json.dumps(str(caminho_resultado))
-            try:
-                self.window.evaluate_js(f"window.mostrar_botao_planilha({caminho_js})")
-            except Exception:
-                pass
+
+            if len(caminhos_resultado) == 1:
+                # MELHORIA-05: Envia o caminho da planilha para a GUI exibir o botão "Abrir Planilha Gerada"
+                caminho_js = json.dumps(str(caminhos_resultado[0]))
+                try:
+                    self.window.evaluate_js(f"window.mostrar_botao_planilha({caminho_js})")
+                except Exception:
+                    pass
+            else:
+                # Múltiplas subpastas processadas: não há um único arquivo para abrir,
+                # então oferece abrir a pasta-pai com todas as planilhas geradas.
+                pasta_js = json.dumps(str(pasta_origem))
+                try:
+                    self.window.evaluate_js(
+                        f"window.mostrar_botao_pasta_resultados({pasta_js}, {len(caminhos_resultado)})"
+                    )
+                except Exception:
+                    pass
         except Exception as e:
             tb = traceback.format_exc()
             print(f"[ERRO INTERNO XML] {tb}")
@@ -489,6 +530,7 @@ if __name__ == '__main__':
         api.confirmar_login_feito,
         api.pausar_automacao,
         api.retomar_automacao,
+        api.cancelar_automacao,
         api.processar_xmls_gui,
         api.iniciar_exportacao_xml_gui,
         api.confirmar_login_exportacao,

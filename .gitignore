@@ -13,25 +13,19 @@ default_keys.py
 log_erro.txt
 log_execucao.txt
 *.xlsx
-brain/
-__pycache__/
-*.pyc
-*.pyo
-*.db
-*.sqlite
-*.sqlite3
-*.sqlite-journal
-nf_compilado.xlsx
-iss_extracao.xlsx
-.env
-log_erro.txt
-log_execucao.txt
-*.xlsx
 dados/
 
 # Notas fiscais locais (PII / sigilo)
 PREFEITURAS/
 *.pdf
+
+# Pastas "log/" geradas ao lado da planilha processada (sucesso, incompletas,
+# duplicadas, prefeitura, log_funcao2) e logs soltos na raiz em modo dev
+log/
+log_notas_incompletas.txt
+log_notas_duplicadas.txt
+log_prefeitura_fortaleza.txt
+log_escrituradas_sucesso.txt
 
 # Rascunhos do agente
 scratch/

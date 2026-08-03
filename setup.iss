@@ -5,13 +5,13 @@
 ; AppId único para identificar esta aplicação no Windows (gerado para controle de atualização/desinstalação)
 AppId={{54DA395C-DA64-4ABE-938A-2E5061AE3821}
 AppName=Automação ISS Fortaleza
-AppVersion=2.21.1
+AppVersion=2.22.0
 AppPublisher=Barreira & Associados
 DefaultDirName={autopf}\Automação ISS Fortaleza
 DisableProgramGroupPage=yes
 ; Local e nome do instalador gerado
 OutputDir=installer_output
-OutputBaseFilename=Setup_Automacao_ISS_Fortaleza_v2.21.1
+OutputBaseFilename=Setup_Automacao_ISS_Fortaleza_v2.22.0
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

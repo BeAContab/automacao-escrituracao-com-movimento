@@ -175,6 +175,12 @@ class PrestadorNaoEncontradoError(RuntimeError):
 
 class CompetenciaSemEscriturarDisponivelError(RuntimeError):
     """Sinaliza que a competência consultada não liberou o botão de escriturar."""
+
+
+class AutomacaoCanceladaError(RuntimeError):
+    """Sinaliza que o operador cancelou a automação em execução pela GUI."""
+
+
 # ---------------------------------------------------------------------------
 # Verificação de pausa global do robô
 # ---------------------------------------------------------------------------
@@ -195,6 +201,27 @@ def _verificar_pausa() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Verificação de cancelamento global do robô
+# ---------------------------------------------------------------------------
+
+# Mesmo padrão de Lock+global usado para a pausa (FALHA-04), mas SEM engolir
+# exceção: é este utilitário quem levanta AutomacaoCanceladaError, e ela precisa
+# se propagar livremente até o finally de executar_fluxo_iss() e o except de app.py.
+_LOCK_CALLBACK_CANCELAMENTO = threading.Lock()
+_CALLBACK_CANCELAMENTO = None
+
+def _verificar_cancelamento() -> None:
+    """Levanta AutomacaoCanceladaError se o operador tiver solicitado o cancelamento
+    da automação pela GUI. O callback registrado deve apenas retornar um bool
+    (nunca lançar por si só) — é aqui, fora de qualquer try/except supressor, que
+    a exceção de cancelamento é de fato levantada."""
+    with _LOCK_CALLBACK_CANCELAMENTO:
+        cb = _CALLBACK_CANCELAMENTO
+    if cb and cb():
+        raise AutomacaoCanceladaError("Automação cancelada pelo operador.")
+
+
+# ---------------------------------------------------------------------------
 # Utilitários de texto
 # ---------------------------------------------------------------------------
 
@@ -206,6 +233,23 @@ def normalizar_texto(texto: str) -> str:
     return "".join(
         caractere for caractere in normalizado if unicodedata.category(caractere) != "Mn"
     ).lower()
+
+
+def _interpretar_iss_retido(valor: str) -> tuple[bool, bool]:
+    """Interpreta o valor da coluna ISS_RETIDO.
+
+    Retorna (deve_marcar, reconhecido). Quando `reconhecido` é False, o valor não
+    corresponde a um formato claro de "Sim"/"Não" — é tratado como "Não retido"
+    por segurança (mesmo comportamento de sempre), mas o chamador deve registrar
+    um aviso em vez de deixar isso passar silenciosamente.
+    """
+
+    normalizado = normalizar_texto(valor or "").strip()
+    if normalizado.startswith("sim"):
+        return True, True
+    if normalizado.startswith("nao") or normalizado == "n":
+        return False, True
+    return False, False
 
 
 def limpar_cnpj_para_digitacao(cnpj: str) -> str:
@@ -255,6 +299,16 @@ def validar_campos_obrigatorios(documento: DocumentoPortalISS) -> list[str]:
         elif isinstance(valor, str) and not valor.strip():
             ausentes.append(label)
             
+    # Validação adicional: garante que ISS_RETIDO tenha formato reconhecível (Sim/Não).
+    # Sem isso, um valor ambíguo (ex.: "talvez", "S", célula com espaço/typo) seria
+    # tratado como "Não retido" no portal sem qualquer aviso ao operador.
+    if documento.iss_retido and documento.iss_retido.strip():
+        _, iss_retido_reconhecido = _interpretar_iss_retido(documento.iss_retido)
+        if not iss_retido_reconhecido:
+            ausentes.append(
+                f"ISS Retido (valor '{documento.iss_retido}' não reconhecido; use apenas 'Sim' ou 'Não')"
+            )
+
     # Validação do valor do serviço
     val_serv = (documento.valor_servico or "").strip().replace(" ", "").replace(".", "").replace(",", ".")
     try:
@@ -692,6 +746,7 @@ def _clicar_com_espera(
     """Aguarda o elemento e efetua o clique, com fallback via JavaScript e retry para elementos obsoletos."""
 
     _verificar_pausa()
+    _verificar_cancelamento()
     for tentativa in range(3):
         try:
             elemento = _aguardar_elemento_clicavel(driver, by, seletor, timeout=timeout)
@@ -715,6 +770,77 @@ def _clicar_por_id(driver: WebDriver, elemento_id: str, timeout: int = 10) -> No
     """Clica em um elemento pelo ID com fallback via JavaScript."""
 
     _clicar_com_espera(driver, By.ID, elemento_id, f"elemento ID={elemento_id}", timeout=timeout)
+
+
+# XPath do modal "Já existe documento fiscal escriturado com o CNPJ do prestador,
+# com o mesmo número de nota, na competência ..." — o portal exibe esse aviso ao
+# clicar em Gravar quando detecta um possível documento duplicado (mesmo CNPJ +
+# mesmo número de nota, em qualquer competência).
+_XPATH_MODAL_NOTA_DUPLICADA = (
+    '//*[@id="digitarDocumentoForm:confirmacao_customizadaContainer"]'
+    '//h3[contains(., "documento fiscal escriturado")]'
+)
+_XPATH_BOTAO_NAO_NOTA_DUPLICADA = (
+    '//*[@id="digitarDocumentoForm:confirmacao_customizadaContainer"]'
+    '//input[@value="Não" or contains(@class, "btn-danger")]'
+)
+_XPATH_HEADING_SUCESSO_GRAVACAO = (
+    '//*[@id="content"]/legend/h2[contains(., "digitado com") '
+    'and (contains(., "Sucesso") or contains(., "sucesso"))]'
+)
+
+
+def _aguardar_resultado_da_gravacao(driver: WebDriver, timeout: int = 15) -> str:
+    """Aguarda o desfecho do clique em "Gravar": sucesso normal, ou o modal de
+    aviso de nota fiscal duplicada (mesmo CNPJ do prestador + mesmo número de
+    nota já escriturados em outra competência).
+
+    Quando o modal de duplicata aparece, clica em "Não" (decisão do operador:
+    nunca confirmar a geração de uma possível duplicata automaticamente) e
+    retorna "duplicata". Quando o cabeçalho de sucesso aparece, retorna
+    "sucesso". Se nenhum dos dois aparecer dentro do prazo, levanta
+    TimeoutException — mesmo comportamento de erro que já existia antes.
+    """
+
+    fim = time.monotonic() + timeout
+    while time.monotonic() < fim:
+        _verificar_cancelamento()
+
+        if driver.find_elements(By.XPATH, _XPATH_HEADING_SUCESSO_GRAVACAO):
+            return "sucesso"
+
+        elementos_modal = driver.find_elements(By.XPATH, _XPATH_MODAL_NOTA_DUPLICADA)
+        if elementos_modal and elementos_modal[0].is_displayed():
+            registrar_evento_execucao(
+                "Portal indicou que já existe documento fiscal escriturado com o mesmo "
+                "CNPJ do prestador e o mesmo número de nota (em outra competência). "
+                "Clicando em 'Não' para não gravar uma possível duplicata.",
+                "ISS Fortaleza",
+            )
+            _clicar_nao_no_modal_duplicata(driver)
+            return "duplicata"
+
+        time.sleep(0.3)
+
+    raise TimeoutException("Timeout aguardando confirmação de gravação do documento.")
+
+
+def _clicar_nao_no_modal_duplicata(driver: WebDriver) -> None:
+    """Clica no botão "Não" do modal de aviso de nota fiscal duplicada e aguarda
+    o modal desaparecer da tela antes de prosseguir."""
+
+    try:
+        driver.find_element(By.XPATH, _XPATH_BOTAO_NAO_NOTA_DUPLICADA).click()
+    except Exception:
+        # Fallback pelo ID auto-gerado pelo JSF observado no momento da implementação
+        # (frágil a mudanças de versão do portal, por isso o XPath acima é a via principal).
+        driver.find_element(By.ID, "digitarDocumentoForm:j_id493").click()
+
+    WebDriverWait(driver, 10).until(
+        EC.invisibility_of_element_located(
+            (By.XPATH, _XPATH_MODAL_NOTA_DUPLICADA)
+        )
+    )
 
 
 def _pausar_para_depuracao(
@@ -757,6 +883,7 @@ def _digitar_campo(
     """
 
     _verificar_pausa()
+    _verificar_cancelamento()
     normalizar = normalizador_fallback or _somente_digitos
     for tentativa in range(3):
         try:
@@ -805,6 +932,7 @@ def _definir_valor_instantaneo(
     e o estado do JSF reconheçam a alteração do valor.
     """
     _verificar_pausa()
+    _verificar_cancelamento()
     for tentativa in range(3):
         try:
             campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
@@ -832,6 +960,7 @@ def _selecionar_opcao_por_texto(
     """Seleciona a primeira opção disponível em um <select> a partir de uma lista de rótulos."""
 
     _verificar_pausa()
+    _verificar_cancelamento()
     # Aumentado para 8 tentativas para maior tolerância ao AJAX do portal
     for tentativa in range(8):
         try:
@@ -901,6 +1030,7 @@ def aguardar_login_manual_por_arquivo(driver: WebDriver, caminho_confirmacao: Pa
     print(f"Arquivo de confirmação esperado: {caminho_confirmacao.resolve()}")
 
     while not caminho_confirmacao.exists():
+        _verificar_cancelamento()
         time.sleep(1)
 
     # Evita que o próximo teste reutilize a mesma confirmação antiga
@@ -1598,7 +1728,15 @@ def preencher_documento_servico(
     )
 
     # Checkbox ISS retido
-    deve_marcar = normalizar_texto(documento.iss_retido).startswith("sim")
+    deve_marcar, iss_retido_reconhecido = _interpretar_iss_retido(documento.iss_retido)
+    if not iss_retido_reconhecido:
+        # Defesa em profundidade: validar_campos_obrigatorios() já deveria ter
+        # barrado esta nota antes de chegar aqui, mas registra o aviso mesmo assim.
+        registrar_evento_execucao(
+            f"AVISO: valor de ISS_RETIDO '{documento.iss_retido}' não reconhecido para "
+            f"a NF {documento.numero_nf}. Tratado como 'Não retido' por padrão.",
+            "ISS Fortaleza",
+        )
     try:
         checkbox_iss = driver.find_element(By.NAME, "digitarDocumentoForm:j_id361")
         marcado_agora = checkbox_iss.is_selected()
@@ -1606,8 +1744,30 @@ def preencher_documento_servico(
             checkbox_iss.click()
         elif not deve_marcar and marcado_agora:
             checkbox_iss.click()
+
+        estado_final = checkbox_iss.is_selected()
+        if estado_final != deve_marcar:
+            registrar_evento_execucao(
+                f"ALERTA: checkbox ISS Retido da NF {documento.numero_nf} ficou "
+                f"{'marcado' if estado_final else 'desmarcado'}, mas o esperado era "
+                f"{'marcado' if deve_marcar else 'desmarcado'} "
+                f"(valor na planilha: '{documento.iss_retido}').",
+                "ISS Fortaleza",
+            )
+        else:
+            registrar_evento_execucao(
+                f"Checkbox ISS Retido da NF {documento.numero_nf} definido como "
+                f"{'marcado' if estado_final else 'desmarcado'} "
+                f"(valor na planilha: '{documento.iss_retido}').",
+                "ISS Fortaleza",
+            )
     except NoSuchElementException:
-        pass
+        registrar_evento_execucao(
+            f"ERRO: elemento do checkbox 'ISS Retido' (digitarDocumentoForm:j_id361) não "
+            f"foi encontrado na tela para a NF {documento.numero_nf}. O estado do ISS "
+            "Retido NÃO pôde ser verificado/definido nesta nota — revise manualmente no portal.",
+            "ISS Fortaleza",
+        )
     registrar_evento_execucao(
         f"Local de prestação e ISS tratados para a NF {documento.numero_nf}",
         "ISS Fortaleza",
@@ -1695,12 +1855,22 @@ def executar_fluxo_iss(
     callback_progresso: Any = None,
     executando_em_gui: bool = False,
     callback_pausa: Any = None,
+    callback_cancelamento: Any = None,
 ) -> None:
     """Executa o fluxo visual completo do portal da ISS até o preenchimento do formulário."""
 
+    global _CALLBACK_PAUSA, _CALLBACK_CANCELAMENTO
+
     # Protege a escrita do callback global com o mesmo Lock usado na leitura (FALHA-04)
+    # BUG CORRIGIDO: sem o 'global' acima, esta atribuição criava uma variável LOCAL a
+    # esta função (sombreando o nome do módulo), e o global de verdade lido por
+    # _verificar_pausa()/_verificar_cancelamento() nunca era atualizado — a pausa nos
+    # helpers de baixo nível (_clicar_com_espera, _digitar_campo, etc.) nunca chegava
+    # a funcionar de fato, apesar do comentário abaixo dizer o contrário.
     with _LOCK_CALLBACK_PAUSA:
         _CALLBACK_PAUSA = callback_pausa
+    with _LOCK_CALLBACK_CANCELAMENTO:
+        _CALLBACK_CANCELAMENTO = callback_cancelamento
 
     if not documentos:
         raise RuntimeError("A planilha não contém linhas válidas para a automação.")
@@ -1717,6 +1887,7 @@ def executar_fluxo_iss(
     else:
         driver = abrir_navegador_visivel(depuracao=depuracao)
 
+    cancelado_pelo_usuario = False
     try:
         registrar_evento_execucao(
             f"Fluxo da ISS iniciado com {len(documentos)} documento(s) e competência {competencia.rotulo}",
@@ -1867,6 +2038,7 @@ def executar_fluxo_iss(
         notas_sucesso: list[str] = []
 
         for indice, candidato in enumerate(documentos, start=1):
+            _verificar_cancelamento()
             if callback_progresso:
                 try:
                     callback_progresso(indice, len(documentos))
@@ -1937,6 +2109,8 @@ def executar_fluxo_iss(
                 # independentemente de ele estar ou não cadastrado no portal da ISS Fortaleza.
                 preencher_dados_prestador(driver, candidato, depuracao=depuracao)
             except Exception as exc_prestador:
+                if isinstance(exc_prestador, AutomacaoCanceladaError):
+                    raise
                 mensagem_log = (
                     f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
                     f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
@@ -1958,29 +2132,54 @@ def executar_fluxo_iss(
                     el = driver.find_element(By.XPATH, "//*[@id='digitarDocumentoForm:j_id477'] | //input[@value='Gravar' or @value='Gravar Documento']")
                     driver.execute_script("arguments[0].click();", el)
 
-                # Aguarda feedback do portal
-                WebDriverWait(driver, 15).until(
-                    # Verificação resiliente a variações de capitalização do portal usando contains() no XPath
-                    EC.presence_of_element_located(
-                        (By.XPATH, '//*[@id="content"]/legend/h2[contains(., "digitado com") and (contains(., "Sucesso") or contains(., "sucesso"))]')
+                # Aguarda feedback do portal: sucesso normal, ou o aviso de nota fiscal
+                # duplicada (mesmo CNPJ do prestador + mesmo número de nota já
+                # escriturados em outra competência) — decisão do operador: quando
+                # esse aviso aparecer, sempre clicar "Não" e seguir para a próxima nota.
+                resultado_gravacao = _aguardar_resultado_da_gravacao(driver, timeout=15)
+
+                if resultado_gravacao == "duplicata":
+                    nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
+                    print(f"Linha {indice}/{len(documentos)} ignorada: portal indicou nota fiscal já escriturada (mesmo CNPJ e número de nota).")
+
+                    mensagem_log = (
+                        f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
+                        f"CNPJ_PRESTADOR={candidato.cnpj_prestador} | "
+                        f"IGNORADO: Portal indicou documento fiscal já escriturado com o mesmo "
+                        f"CNPJ e número de nota, em outra competência"
                     )
-                )
-                registrar_evento_execucao(f"Sucesso na gravação da NF {candidato.numero_nf}", "ISS Fortaleza")
-                nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
-                notas_sucesso.append(nf_info)
-                
-                # Grava no log de sucesso em tempo real
-                caminho_sucesso = pasta_log / "log_escrituradas_sucesso.txt"
-                try:
-                    if not caminho_sucesso.exists():
-                        with open(caminho_sucesso, "w", encoding="utf-8") as f:
-                            f.write("As seguintes notas fiscais foram escrituradas e gravadas com sucesso no portal:\n\n")
-                    with open(caminho_sucesso, "a", encoding="utf-8") as f:
-                        f.write(f"- {nf_info}\n")
-                except Exception as exc_suc:
-                    print(f"Erro ao salvar log de sucesso em tempo real: {exc_suc}")
+                    registrar_log_funcao2(caminho_log, mensagem_log)
+
+                    # Grava no log exclusivo de notas duplicadas
+                    caminho_duplicadas = pasta_log / "log_notas_duplicadas.txt"
+                    try:
+                        if not caminho_duplicadas.exists():
+                            with open(caminho_duplicadas, "w", encoding="utf-8") as f:
+                                f.write("As seguintes notas fiscais foram ignoradas porque o portal indicou que já existe documento fiscal escriturado com o mesmo CNPJ e número de nota, em outra competência:\n\n")
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        with open(caminho_duplicadas, "a", encoding="utf-8") as f:
+                            f.write(f"[{timestamp}] {nf_info}\n")
+                    except Exception as exc_dup:
+                        print(f"Erro ao registrar log de notas duplicadas: {exc_dup}")
+                else:
+                    registrar_evento_execucao(f"Sucesso na gravação da NF {candidato.numero_nf}", "ISS Fortaleza")
+                    nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
+                    notas_sucesso.append(nf_info)
+
+                    # Grava no log de sucesso em tempo real
+                    caminho_sucesso = pasta_log / "log_escrituradas_sucesso.txt"
+                    try:
+                        if not caminho_sucesso.exists():
+                            with open(caminho_sucesso, "w", encoding="utf-8") as f:
+                                f.write("As seguintes notas fiscais foram escrituradas e gravadas com sucesso no portal:\n\n")
+                        with open(caminho_sucesso, "a", encoding="utf-8") as f:
+                            f.write(f"- {nf_info}\n")
+                    except Exception as exc_suc:
+                        print(f"Erro ao salvar log de sucesso em tempo real: {exc_suc}")
 
             except Exception as exc:
+                if isinstance(exc, AutomacaoCanceladaError):
+                    raise
                 registrar_evento_execucao(f"Falha ao processar NF {candidato.numero_nf}: {exc}", "ISS Fortaleza")
                 print(f"Erro ao processar NF {candidato.numero_nf}: {exc}")
                 registrar_log_funcao2(caminho_log, f"ERRO ao processar {candidato.arquivo_pdf}: {exc}")
@@ -1991,6 +2190,8 @@ def executar_fluxo_iss(
                     _clicar_com_espera(driver, By.XPATH, '//*[@id="j_id165:novo"]', "botão Novo Documento", timeout=15)
                     time.sleep(2)
                 except Exception as exc:
+                    if isinstance(exc, AutomacaoCanceladaError):
+                        raise
                     print(f"Não foi possível clicar em 'Novo documento': {exc}. Realizando reset preventivo de tela.")
                     try:
                         resetar_tela_para_digitar_documento(driver, competencia)
@@ -2005,10 +2206,25 @@ def executar_fluxo_iss(
         else:
             print("Execução da GUI concluída. O navegador permanecerá aberto.")
 
+    except AutomacaoCanceladaError:
+        cancelado_pelo_usuario = True
+        registrar_evento_execucao(
+            "Automação cancelada pelo operador. Encerrando o navegador para permitir reinício limpo.",
+            "ISS Fortaleza",
+        )
+        raise
+
     finally:
         # Mantém o navegador aberto em modo de sessão persistente ou quando executado via GUI,
-        # facilitando o teste assistido e a análise em caso de problemas.
-        if not reutilizar_navegador and not executando_em_gui:
+        # facilitando o teste assistido e a análise em caso de problemas — EXCETO quando o
+        # operador cancelou a automação, caso em que o navegador é sempre fechado para que
+        # a próxima execução comece do zero, com login manual novo.
+        if cancelado_pelo_usuario:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        elif not reutilizar_navegador and not executando_em_gui:
             try:
                 driver.quit()
             except Exception:
@@ -2038,6 +2254,7 @@ def executar_automacao_iss(
     callback_progresso: Any = None,
     executando_em_gui: bool = False,
     callback_pausa: Any = None,
+    callback_cancelamento: Any = None,
 ) -> None:
     """Ponto de entrada síncrono para a opção 2 da CLI."""
 
@@ -2059,6 +2276,7 @@ def executar_automacao_iss(
         callback_progresso=callback_progresso,
         executando_em_gui=executando_em_gui,
         callback_pausa=callback_pausa,
+        callback_cancelamento=callback_cancelamento,
     )
 
 

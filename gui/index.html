@@ -196,6 +196,14 @@
         </button>
     </div>
 
+    <!-- Botão Abrir Pasta com Planilhas (caso a pasta selecionada tenha subpastas, uma planilha por subpasta) -->
+    <div id="container-abrir-pasta-resultados" class="hidden">
+        <button id="btn-abrir-pasta-resultados" onclick="abrirPastaResultados()" class="w-full py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary rounded-xl font-bold tracking-wider transition-all flex items-center justify-center gap-2">
+            <span class="material-symbols-outlined align-middle">folder_open</span>
+            <span id="lbl-abrir-pasta-resultados">ABRIR PASTA COM AS PLANILHAS GERADAS</span>
+        </button>
+    </div>
+
     <!-- Log Terminal -->
     <section class="glass-card rounded-2xl overflow-hidden">
         <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
@@ -319,6 +327,11 @@
                     <button id="btn-pausar-retomar-automacao" onclick="alternarPausaAutomacao()" class="hidden px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none">
                         <span class="material-symbols-outlined text-[12px]">pause</span>
                         <span id="lbl-pausar-retomar-automacao">PARAR AUTOMAÇÃO</span>
+                    </button>
+                    <!-- Botão de Cancelar Automação: aborta de vez, diferente de pausar -->
+                    <button id="btn-cancelar-automacao" onclick="cancelarAutomacao()" class="hidden px-2.5 py-1 bg-red-600/10 hover:bg-red-600/20 border border-red-600/40 text-red-500 rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none">
+                        <span class="material-symbols-outlined text-[12px]">cancel</span>
+                        CANCELAR
                     </button>
                 </div>
                 <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 450px; max-height: 450px; overflow-y: auto;" id="log-automacao">
@@ -535,6 +548,13 @@
         iconPausaAut.innerText = "pause";
         btnPausaAut.className = "hidden px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none";
 
+        // Diferente do botão de pausa (só aparece após confirmar login), o de Cancelar
+        // já aparece aqui — o caso mais importante para cancelar é durante a própria
+        // espera da confirmação de login.
+        const btnCancelar = document.getElementById('btn-cancelar-automacao');
+        btnCancelar.classList.remove('hidden');
+        btnCancelar.disabled = false;
+
         // FALHA-08: O card de confirmação de login é exibido APÓS a chamada da API Python,
         // não antes — evita que o card fique preso visível em caso de erro precoce.
         addLogAutomacao(`Iniciando portal da ISS Fortaleza (Competência: ${competencia})...`);
@@ -580,6 +600,20 @@
             btn.className = "px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none";
             addLogAutomacao("Automação RETOMADA pelo operador.");
         }
+    }
+
+    function cancelarAutomacao() {
+        if (!window.pywebview || !window.pywebview.api) return;
+        const confirmado = confirm(
+            "Tem certeza que deseja cancelar a automação?\n\n" +
+            "O navegador será fechado e você precisará começar do zero: selecionar a " +
+            "planilha e a competência novamente, e refazer o login manual."
+        );
+        if (!confirmado) return;
+
+        window.pywebview.api.cancelar_automacao();
+        addLogAutomacao("Cancelamento solicitado pelo operador. Encerrando a automação...", true);
+        document.getElementById('btn-cancelar-automacao').disabled = true;
     }
 
     function addLogAutomacao(msg, isError=false) {
@@ -717,6 +751,9 @@
         // Oculta botão de abrir planilha de execução anterior (MELHORIA-05)
         document.getElementById('container-abrir-planilha').classList.add('hidden');
         window._ultimaPlanilhaGerada = null;
+        // Oculta botão de abrir pasta com planilhas (caso de subpastas) de execução anterior
+        document.getElementById('container-abrir-pasta-resultados').classList.add('hidden');
+        window._ultimaPastaResultados = null;
 
         addLogXml('Iniciando varredura e importação de XMLs...');
         document.getElementById('progresso-container-xml').classList.remove('hidden');
@@ -768,6 +805,23 @@
     function abrirPlanilhaGerada() {
         if (window._ultimaPlanilhaGerada && window.pywebview && window.pywebview.api) {
             window.pywebview.api.abrir_link('file:///' + window._ultimaPlanilhaGerada.replace(/\\/g, '/'));
+        }
+    }
+
+    // Exibe o botão de abrir a pasta-pai quando o processamento gerou uma planilha
+    // por subpasta (várias planilhas), em vez de um único arquivo consolidado.
+    function mostrarBotaoPastaResultados(pasta, quantidade) {
+        window._ultimaPastaResultados = pasta;
+        const lbl = document.getElementById('lbl-abrir-pasta-resultados');
+        if (lbl) lbl.innerText = `ABRIR PASTA COM AS ${quantidade} PLANILHAS GERADAS`;
+        const container = document.getElementById('container-abrir-pasta-resultados');
+        if (container) container.classList.remove('hidden');
+    }
+    window.mostrar_botao_pasta_resultados = mostrarBotaoPastaResultados;
+
+    function abrirPastaResultados() {
+        if (window._ultimaPastaResultados && window.pywebview && window.pywebview.api) {
+            window.pywebview.api.abrir_link('file:///' + window._ultimaPastaResultados.replace(/\\/g, '/'));
         }
     }
 
