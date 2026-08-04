@@ -153,6 +153,7 @@ class DocumentoPortalISS:
     cofins_nao_retido: str = ""
     csrf: str = ""
     inss: str = ""
+    aliquota: str = ""
     regime_tributario: str = "OUTROS"
 
 
@@ -560,6 +561,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
         cofins_nao_retido = _formatar_celula_para_string_de_valor(linha[colunas["COFINS_NAO_RETIDO"]]) if "COFINS_NAO_RETIDO" in colunas else "0,00"
         csrf = _formatar_celula_para_string_de_valor(linha[colunas["CSRF (CSLL + PIS + Cofins Retidos)"]]) if "CSRF (CSLL + PIS + Cofins Retidos)" in colunas else "0,00"
         inss = _formatar_celula_para_string_de_valor(linha[colunas["INSS"]]) if "INSS" in colunas else "0,00"
+        aliquota = _formatar_celula_para_string_de_valor(linha[colunas["ALIQUOTA"]]) if "ALIQUOTA" in colunas else ""
 
         # Leitura flexível da prefeitura
         prefeitura_val = str(linha[colunas["PREFEITURA"]] or "") if "PREFEITURA" in colunas else ""
@@ -596,6 +598,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 cofins_nao_retido=cofins_nao_retido,
                 csrf=csrf,
                 inss=inss,
+                aliquota=aliquota,
                 regime_tributario=str(linha[colunas["REGIME_TRIBUTARIO"]] or "OUTROS") if "REGIME_TRIBUTARIO" in colunas else "OUTROS",
             )
         )
@@ -772,34 +775,70 @@ def _clicar_por_id(driver: WebDriver, elemento_id: str, timeout: int = 10) -> No
     _clicar_com_espera(driver, By.ID, elemento_id, f"elemento ID={elemento_id}", timeout=timeout)
 
 
-# XPath do modal "Já existe documento fiscal escriturado com o CNPJ do prestador,
-# com o mesmo número de nota, na competência ..." — o portal exibe esse aviso ao
-# clicar em Gravar quando detecta um possível documento duplicado (mesmo CNPJ +
-# mesmo número de nota, em qualquer competência).
-_XPATH_MODAL_NOTA_DUPLICADA = (
+# O portal usa o MESMO componente de modal (RichFaces) para vários avisos de
+# confirmação ao clicar em Gravar — só o texto interno muda. Exemplos já
+# observados: "Já existe documento fiscal escriturado com o CNPJ do
+# prestador, com o mesmo número de nota, na competência ..." (possível
+# duplicata) e "Prestador não inscrito no CPOM. ..." (aviso informativo).
+_XPATH_MODAL_CONFIRMACAO_CONTAINER = (
     '//*[@id="digitarDocumentoForm:confirmacao_customizadaContainer"]'
-    '//h3[contains(., "documento fiscal escriturado")]'
 )
-_XPATH_BOTAO_NAO_NOTA_DUPLICADA = (
-    '//*[@id="digitarDocumentoForm:confirmacao_customizadaContainer"]'
-    '//input[@value="Não" or contains(@class, "btn-danger")]'
-)
+_XPATH_MODAL_CONFIRMACAO_H3 = _XPATH_MODAL_CONFIRMACAO_CONTAINER + '//h3'
 _XPATH_HEADING_SUCESSO_GRAVACAO = (
     '//*[@id="content"]/legend/h2[contains(., "digitado com") '
     'and (contains(., "Sucesso") or contains(., "sucesso"))]'
 )
 
+# Marcador de texto (normalizado, sem acento/caixa) que identifica especificamente
+# o aviso de possível nota duplicada — o único caso em que a decisão é "Não".
+# Qualquer outro texto nesse mesmo componente é tratado como aviso informativo
+# (decisão "Sim").
+_MARCADOR_TEXTO_NOTA_DUPLICADA = "documento fiscal escriturado"
+
+# Mensagem de validação inline (NÃO é o modal de confirmação acima — é o
+# componente <rich:messages> do JSF, sem botão, que bloqueia a gravação até o
+# formulário ser corrigido): "CNAE não incide Imposto Sobre Serviço. Solução:
+# Selecione a Natureza de Operação 'Não Incidência'." A correção é trocar a
+# Natureza da Operação e tentar gravar de novo — não há botão para clicar aqui.
+_XPATH_MENSAGEM_CNAE_NAO_INCIDE = (
+    '//span[contains(@class, "rich-messages-label") and contains(., "CNAE não incide")]'
+)
+
+
+def _clicar_botao_modal_confirmacao(driver: WebDriver, valor_botao: str) -> None:
+    """Clica no botão ("Sim" ou "Não") do modal de confirmação genérico do
+    portal e aguarda o modal desaparecer da tela antes de prosseguir."""
+
+    xpath_botao = f'{_XPATH_MODAL_CONFIRMACAO_CONTAINER}//input[@value="{valor_botao}"]'
+    try:
+        driver.find_element(By.XPATH, xpath_botao).click()
+    except Exception:
+        # Fallback pelos IDs auto-gerados pelo JSF observados no momento da implementação
+        # (frágil a mudanças de versão do portal, por isso o XPath acima é a via principal).
+        id_fallback = "digitarDocumentoForm:j_id489" if valor_botao == "Sim" else "digitarDocumentoForm:j_id493"
+        driver.find_element(By.ID, id_fallback).click()
+
+    WebDriverWait(driver, 10).until(
+        EC.invisibility_of_element_located((By.XPATH, _XPATH_MODAL_CONFIRMACAO_H3))
+    )
+
 
 def _aguardar_resultado_da_gravacao(driver: WebDriver, timeout: int = 15) -> str:
-    """Aguarda o desfecho do clique em "Gravar": sucesso normal, ou o modal de
-    aviso de nota fiscal duplicada (mesmo CNPJ do prestador + mesmo número de
-    nota já escriturados em outra competência).
+    """Aguarda o desfecho do clique em "Gravar": sucesso normal, ou algum dos
+    modais de confirmação que o portal pode exibir antes de gravar de fato.
 
-    Quando o modal de duplicata aparece, clica em "Não" (decisão do operador:
-    nunca confirmar a geração de uma possível duplicata automaticamente) e
-    retorna "duplicata". Quando o cabeçalho de sucesso aparece, retorna
-    "sucesso". Se nenhum dos dois aparecer dentro do prazo, levanta
-    TimeoutException — mesmo comportamento de erro que já existia antes.
+    - Se o texto do modal indicar possível nota duplicada (mesmo CNPJ do
+      prestador + mesmo número de nota já escriturados em outra competência),
+      clica em "Não" (decisão do operador: nunca confirmar a geração de uma
+      possível duplicata automaticamente) e retorna "duplicata".
+    - Qualquer outro texto de confirmação (ex.: "Prestador não inscrito no
+      CPOM...") é tratado como aviso informativo: clica em "Sim" e retorna
+      "confirmacao_generica" — cabe ao chamador clicar em Gravar de novo.
+    - Se a mensagem de validação "CNAE não incide Imposto Sobre Serviço..."
+      aparecer (sem botão, bloqueia a gravação), retorna "cnae_nao_incide" —
+      cabe ao chamador trocar a Natureza da Operação e tentar gravar de novo.
+    - Quando o cabeçalho de sucesso aparece, retorna "sucesso".
+    - Se nada aparecer dentro do prazo, levanta TimeoutException.
     """
 
     fim = time.monotonic() + timeout
@@ -809,37 +848,103 @@ def _aguardar_resultado_da_gravacao(driver: WebDriver, timeout: int = 15) -> str
         if driver.find_elements(By.XPATH, _XPATH_HEADING_SUCESSO_GRAVACAO):
             return "sucesso"
 
-        elementos_modal = driver.find_elements(By.XPATH, _XPATH_MODAL_NOTA_DUPLICADA)
-        if elementos_modal and elementos_modal[0].is_displayed():
+        elementos_cnae = driver.find_elements(By.XPATH, _XPATH_MENSAGEM_CNAE_NAO_INCIDE)
+        if any(el.is_displayed() for el in elementos_cnae):
+            return "cnae_nao_incide"
+
+        elementos_modal = driver.find_elements(By.XPATH, _XPATH_MODAL_CONFIRMACAO_H3)
+        elementos_modal = [el for el in elementos_modal if el.is_displayed()]
+        if elementos_modal:
+            texto_modal = normalizar_texto(elementos_modal[0].text or "")
+            if _MARCADOR_TEXTO_NOTA_DUPLICADA in texto_modal:
+                registrar_evento_execucao(
+                    "Portal indicou que já existe documento fiscal escriturado com o mesmo "
+                    "CNPJ do prestador e o mesmo número de nota (em outra competência). "
+                    "Clicando em 'Não' para não gravar uma possível duplicata.",
+                    "ISS Fortaleza",
+                )
+                _clicar_botao_modal_confirmacao(driver, "Não")
+                return "duplicata"
+
             registrar_evento_execucao(
-                "Portal indicou que já existe documento fiscal escriturado com o mesmo "
-                "CNPJ do prestador e o mesmo número de nota (em outra competência). "
-                "Clicando em 'Não' para não gravar uma possível duplicata.",
+                f"Portal exibiu confirmação: '{elementos_modal[0].text.strip()}'. "
+                "Clicando em 'Sim'.",
                 "ISS Fortaleza",
             )
-            _clicar_nao_no_modal_duplicata(driver)
-            return "duplicata"
+            _clicar_botao_modal_confirmacao(driver, "Sim")
+            return "confirmacao_generica"
 
         time.sleep(0.3)
 
     raise TimeoutException("Timeout aguardando confirmação de gravação do documento.")
 
 
-def _clicar_nao_no_modal_duplicata(driver: WebDriver) -> None:
-    """Clica no botão "Não" do modal de aviso de nota fiscal duplicada e aguarda
-    o modal desaparecer da tela antes de prosseguir."""
+def _clicar_gravar_documento(driver: WebDriver) -> None:
+    """Clica no botão "Gravar Documento", com fallback via XPath por valor."""
 
     try:
-        driver.find_element(By.XPATH, _XPATH_BOTAO_NAO_NOTA_DUPLICADA).click()
+        _clicar_por_id(driver, "digitarDocumentoForm:j_id477", timeout=15)
     except Exception:
-        # Fallback pelo ID auto-gerado pelo JSF observado no momento da implementação
-        # (frágil a mudanças de versão do portal, por isso o XPath acima é a via principal).
-        driver.find_element(By.ID, "digitarDocumentoForm:j_id493").click()
-
-    WebDriverWait(driver, 10).until(
-        EC.invisibility_of_element_located(
-            (By.XPATH, _XPATH_MODAL_NOTA_DUPLICADA)
+        el = driver.find_element(
+            By.XPATH,
+            "//*[@id='digitarDocumentoForm:j_id477'] | //input[@value='Gravar' or @value='Gravar Documento']",
         )
+        driver.execute_script("arguments[0].click();", el)
+
+
+def _gravar_documento_com_confirmacoes(
+    driver: WebDriver, numero_nf: str, timeout: int = 15, max_confirmacoes: int = 4
+) -> str:
+    """Clica em Gravar Documento e resolve os bloqueios que o portal pode
+    encadear antes de gravar de fato: nota duplicada (clica "Não", nunca
+    grava), avisos informativos como "Prestador não inscrito no CPOM" (clica
+    "Sim" e tenta Gravar de novo), ou o erro de validação "CNAE não incide
+    Imposto Sobre Serviço" (troca a Natureza da Operação para "Não
+    Incidência" e tenta Gravar de novo) — repete até `max_confirmacoes`
+    vezes, já que o portal pode encadear mais de um bloqueio para a mesma
+    nota. Retorna "sucesso" ou "duplicata".
+    """
+
+    _clicar_gravar_documento(driver)
+    for _ in range(max_confirmacoes):
+        resultado = _aguardar_resultado_da_gravacao(driver, timeout=timeout)
+        if resultado in ("sucesso", "duplicata"):
+            return resultado
+
+        if resultado == "cnae_nao_incide":
+            # O portal não deixa gravar esse CNAE com a Natureza atual; a correção
+            # é forçar "Não Incidência" (sobrescrevendo o que a planilha continha
+            # para esta nota) e tentar gravar de novo. O checkbox de ISS Retido
+            # não precisa de tratamento aqui: o próprio portal o remove da tela ao
+            # selecionar "Não Incidência".
+            registrar_evento_execucao(
+                f"Portal recusou a gravação da NF {numero_nf}: CNAE não incide ISS. "
+                "Selecionando Natureza da Operação = 'Não Incidência' (sobrescrevendo "
+                "o valor da planilha para esta nota) e tentando gravar novamente.",
+                "ISS Fortaleza",
+            )
+            _selecionar_opcao_por_texto(
+                driver,
+                By.ID,
+                "digitarDocumentoForm:comboEscolherLocalPrestacao",
+                ["Não Incidência", "Nao Incidencia"],
+            )
+            # Mesma pausa de estabilização de AJAX já usada para esse campo em
+            # preencher_documento_servico().
+            time.sleep(1.5)
+        else:
+            # resultado == "confirmacao_generica": _aguardar_resultado_da_gravacao já
+            # clicou "Sim" no modal; tenta gravar de novo para ver o próximo desfecho.
+            registrar_evento_execucao(
+                f"Confirmação genérica do portal resolvida (Sim) para a NF {numero_nf}; "
+                "tentando Gravar Documento novamente.",
+                "ISS Fortaleza",
+            )
+
+        _clicar_gravar_documento(driver)
+
+    raise TimeoutException(
+        f"Excedeu o limite de {max_confirmacoes} confirmações encadeadas ao gravar a NF {numero_nf}."
     )
 
 
@@ -948,6 +1053,95 @@ def _definir_valor_instantaneo(
             if tentativa == 2:
                 raise
             time.sleep(0.5)
+
+
+def _definir_campo_rapido(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    texto: str,
+    delay_ms: int = 80,
+    normalizador_fallback: Callable[[str], str] | None = None,
+) -> None:
+    """Tenta preencher o campo instantaneamente via JavaScript (bem mais rápido
+    que digitar caractere por caractere) e confere se o valor realmente ficou
+    correto. Se não ficou — vazio, ou diferente do esperado (ex.: alguma
+    validação/máscara do site descartando o valor) — cai para `_digitar_campo`
+    (digitação caractere por caractere, comportamento de sempre) como fallback
+    garantido.
+    """
+
+    _verificar_pausa()
+    _verificar_cancelamento()
+    normalizar = normalizador_fallback or _somente_digitos
+
+    try:
+        campo = _aguardar_elemento_clicavel(driver, by, seletor, timeout=10)
+        driver.execute_script(
+            "arguments[0].value = arguments[1];"
+            "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));"
+            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+            campo,
+            texto,
+        )
+        time.sleep(0.3)  # pequena espera para eventual validação JS do portal reagir
+
+        valor_atual = campo.get_attribute("value") or ""
+        if valor_atual.strip() == texto.strip() or normalizar(valor_atual) == normalizar(texto):
+            return
+    except (StaleElementReferenceException, NoSuchElementException):
+        pass  # cai para o fallback abaixo
+
+    _digitar_campo(driver, by, seletor, texto, delay_ms=delay_ms, normalizador_fallback=normalizador_fallback)
+
+
+def _campo_aliquota_esta_editavel(driver: WebDriver) -> WebElement | None:
+    """Retorna o elemento do campo Alíquota se ele estiver editável (um <input>
+    sem disabled/readonly), ou None se estiver bloqueado pelo portal.
+
+    O campo é calculado automaticamente para alguns CNAEs — nesse caso o portal
+    renderiza um <span> (não um <input>), sem nenhum campo para digitar. Só
+    tentamos preencher quando existe de fato um <input> habilitado.
+    """
+
+    try:
+        elemento = driver.find_element(By.ID, "digitarDocumentoForm:idAliquota")
+    except NoSuchElementException:
+        return None
+    if elemento.tag_name.lower() != "input":
+        return None
+    if elemento.get_attribute("readonly") or elemento.get_attribute("disabled"):
+        return None
+    if "disabled" in (elemento.get_attribute("class") or ""):
+        return None
+    return elemento
+
+
+def _ler_estado_checkbox_apos_espera(
+    driver: WebDriver,
+    by: str,
+    seletor: str,
+    espera: float,
+):
+    """Aguarda `espera` segundos e retorna checkbox.is_selected(), ou None se o
+    elemento não for encontrado.
+
+    Usado para dar tempo a um onchange AJAX assíncrono do portal (ex.: a
+    mudança de Natureza da Operação, que pode marcar/desmarcar sozinho o
+    checkbox de ISS Retido) terminar de processar antes de ler o estado real.
+    Uma leitura por "debounce" (esperar até duas leituras seguidas baterem)
+    foi cogitada e descartada: como o polling costuma acontecer mais rápido
+    que a resposta do AJAX, duas leituras consecutivas podem coincidir
+    ANTES da mudança tardia chegar, declarando "estável" cedo demais — uma
+    espera de duração fixa (mesmo padrão já usado nesta função para Status
+    NFSE e UF do Prestador) é mais confiável aqui.
+    """
+
+    time.sleep(espera)
+    try:
+        return driver.find_element(by, seletor).is_selected()
+    except NoSuchElementException:
+        return None
 
 
 def _selecionar_opcao_por_texto(
@@ -1365,7 +1559,7 @@ def preencher_dados_prestador(
     # --- CPF/CNPJ do Prestador ---
     cnpj_limpo = limpar_cnpj_para_digitacao(documento.cnpj_prestador)
     if cnpj_limpo:
-        _digitar_campo(
+        _definir_campo_rapido(
             driver,
             By.ID,
             "digitarDocumentoForm:idCPFCNPJ",
@@ -1378,7 +1572,7 @@ def preencher_dados_prestador(
     # --- Nome/Denominação ---
     nome = documento.nome_prestador.strip()
     if nome:
-        _digitar_campo(
+        _definir_campo_rapido(
             driver,
             By.ID,
             "digitarDocumentoForm:idNome",
@@ -1412,6 +1606,12 @@ def preencher_dados_prestador(
             timeout=15,
         )
         registrar_evento_execucao(f"Cidade do prestador selecionada: {cidade}", "ISS Fortaleza")
+        # Aguarda o AJAX da Cidade processar antes de digitar o CEP — o combo de
+        # cidade também dispara um postback do próprio portal (mesmo padrão de
+        # estabilização já usado acima para a UF), e sem essa espera o CEP pode
+        # ser digitado com sucesso e depois limpo por uma resposta tardia desse
+        # AJAX, sem que nada perceba.
+        time.sleep(1.5)
 
     # --- CEP ---
     cep = re.sub(r"\D+", "", documento.cep_prestador or "")
@@ -1423,12 +1623,35 @@ def preencher_dados_prestador(
             cep,
             delay_ms=40,
         )
+
+        # Confere de novo após uma pequena espera extra: se uma resposta AJAX
+        # ainda mais tardia (da seleção de Cidade) limpar o campo, redigita e
+        # registra a correção no log de auditoria.
+        time.sleep(0.8)
+        try:
+            valor_pos_espera = re.sub(r"\D+", "", driver.find_element(By.ID, "digitarDocumentoForm:idCEP").get_attribute("value") or "")
+        except NoSuchElementException:
+            valor_pos_espera = None
+        if valor_pos_espera is not None and valor_pos_espera != cep:
+            registrar_evento_execucao(
+                f"CEP do prestador foi sobrescrito/limpo pelo portal após a digitação "
+                f"(ficou '{valor_pos_espera}'); redigitando '{cep}'.",
+                "ISS Fortaleza",
+            )
+            _digitar_campo(
+                driver,
+                By.ID,
+                "digitarDocumentoForm:idCEP",
+                cep,
+                delay_ms=40,
+            )
+
         registrar_evento_execucao(f"CEP preenchido: {cep}", "ISS Fortaleza")
 
     # --- Logradouro ---
     logradouro = documento.logradouro_prestador.strip()
     if logradouro:
-        _digitar_campo(
+        _definir_campo_rapido(
             driver,
             By.ID,
             "digitarDocumentoForm:idEndereco",
@@ -1451,7 +1674,7 @@ def preencher_dados_prestador(
     # --- Bairro ---
     bairro = documento.bairro_prestador.strip()
     if bairro:
-        _digitar_campo(
+        _definir_campo_rapido(
             driver,
             By.ID,
             "digitarDocumentoForm:idBairro",
@@ -1464,7 +1687,7 @@ def preencher_dados_prestador(
     email = documento.email_prestador.strip()
     if email:
         try:
-            _digitar_campo(
+            _definir_campo_rapido(
                 driver,
                 By.ID,
                 "digitarDocumentoForm:inputEmail3",
@@ -1545,7 +1768,7 @@ def preencher_modal_pesquisar_cnae(
         )
 
     # Preenche o campo de pesquisa dentro do modal
-    _digitar_campo(
+    _definir_campo_rapido(
         driver,
         By.ID,
         "digitarDocumentoForm:idFormularioPesquisaCnae:idCnaePesquisa",
@@ -1655,7 +1878,7 @@ def preencher_documento_servico(
     )
 
     # Número da nota fiscal
-    _digitar_campo(
+    _definir_campo_rapido(
         driver,
         By.ID,
         "digitarDocumentoForm:numeroDocumentoDigitado",
@@ -1695,6 +1918,19 @@ def preencher_documento_servico(
     # Preenche o modal de CNAE (com fallback via JavaScript)
     preencher_modal_pesquisar_cnae(driver, documento.id_cnae_final, depuracao=depuracao)
 
+    # --- Alíquota (bloqueada pelo portal para alguns CNAEs, calculada automaticamente) ---
+    aliquota = documento.aliquota.strip()
+    if aliquota:
+        if _campo_aliquota_esta_editavel(driver) is not None:
+            _digitar_campo(driver, By.ID, "digitarDocumentoForm:idAliquota", aliquota, delay_ms=40)
+            registrar_evento_execucao(f"Alíquota preenchida: {aliquota}", "ISS Fortaleza")
+        else:
+            registrar_evento_execucao(
+                f"Alíquota não preenchida: campo bloqueado pelo portal para este CNAE "
+                f"(calculado automaticamente). Valor da planilha: {aliquota}.",
+                "ISS Fortaleza",
+            )
+
     # Descrição do serviço preenchida de forma instantânea via JS
     _definir_valor_instantaneo(
         driver,
@@ -1726,6 +1962,13 @@ def preencher_documento_servico(
         "digitarDocumentoForm:comboEscolherLocalPrestacao",
         [documento.natureza_operacao],
     )
+    # Aguarda o AJAX da Natureza da Operação processar antes de mexer no checkbox
+    # ISS Retido — o portal marca/desmarca esse checkbox sozinho ao mudar para
+    # certas naturezas (ex.: "Tributação Fora do Município"), e sem essa espera
+    # o código abaixo lê o estado do checkbox antes dessa reação do portal
+    # terminar (mesmo padrão de estabilização já usado para Status NFSE e UF do
+    # Prestador nesta função).
+    time.sleep(1.5)
 
     # Checkbox ISS retido
     deve_marcar, iss_retido_reconhecido = _interpretar_iss_retido(documento.iss_retido)
@@ -1738,14 +1981,30 @@ def preencher_documento_servico(
             "ISS Fortaleza",
         )
     try:
-        checkbox_iss = driver.find_element(By.NAME, "digitarDocumentoForm:j_id361")
-        marcado_agora = checkbox_iss.is_selected()
-        if deve_marcar and not marcado_agora:
-            checkbox_iss.click()
-        elif not deve_marcar and marcado_agora:
-            checkbox_iss.click()
+        seletor_checkbox_iss = (By.NAME, "digitarDocumentoForm:j_id361")
 
-        estado_final = checkbox_iss.is_selected()
+        # A essa altura já esperamos 1.5s pelo AJAX da Natureza da Operação
+        # (acima), então esta leitura reflete o estado já assentado do portal.
+        marcado_agora = driver.find_element(*seletor_checkbox_iss).is_selected()
+
+        if deve_marcar != marcado_agora:
+            driver.find_element(*seletor_checkbox_iss).click()
+
+        # Confere de novo após uma pequena espera extra: se uma resposta AJAX
+        # ainda mais tardia sobrescrever o clique, corrige e registra a
+        # correção no log de auditoria.
+        estado_pos_clique = _ler_estado_checkbox_apos_espera(driver, *seletor_checkbox_iss, espera=1.0)
+        if estado_pos_clique is not None and estado_pos_clique != deve_marcar:
+            registrar_evento_execucao(
+                f"Checkbox ISS Retido da NF {documento.numero_nf} foi sobrescrito pelo "
+                f"portal logo após o clique (ficou "
+                f"{'marcado' if estado_pos_clique else 'desmarcado'}); corrigindo para "
+                f"{'marcado' if deve_marcar else 'desmarcado'}.",
+                "ISS Fortaleza",
+            )
+            driver.find_element(*seletor_checkbox_iss).click()
+
+        estado_final = driver.find_element(*seletor_checkbox_iss).is_selected()
         if estado_final != deve_marcar:
             registrar_evento_execucao(
                 f"ALERTA: checkbox ISS Retido da NF {documento.numero_nf} ficou "
@@ -2123,20 +2382,13 @@ def executar_fluxo_iss(
             try:
                 preencher_documento_servico(driver, candidato, depuracao=depuracao)
                 
-                # Gravar documento
+                # Gravar documento (resolve sozinho os modais de confirmação que o
+                # portal pode encadear: nota duplicada -> "Não" e desiste da nota;
+                # avisos informativos como "Prestador não inscrito no CPOM" -> "Sim"
+                # e tenta gravar de novo, até um limite de tentativas)
                 print("Gravando documento no portal...")
                 registrar_evento_execucao(f"Gravando NF {candidato.numero_nf}", "ISS Fortaleza")
-                try:
-                    _clicar_por_id(driver, "digitarDocumentoForm:j_id477", timeout=15)
-                except Exception:
-                    el = driver.find_element(By.XPATH, "//*[@id='digitarDocumentoForm:j_id477'] | //input[@value='Gravar' or @value='Gravar Documento']")
-                    driver.execute_script("arguments[0].click();", el)
-
-                # Aguarda feedback do portal: sucesso normal, ou o aviso de nota fiscal
-                # duplicada (mesmo CNPJ do prestador + mesmo número de nota já
-                # escriturados em outra competência) — decisão do operador: quando
-                # esse aviso aparecer, sempre clicar "Não" e seguir para a próxima nota.
-                resultado_gravacao = _aguardar_resultado_da_gravacao(driver, timeout=15)
+                resultado_gravacao = _gravar_documento_com_confirmacoes(driver, candidato.numero_nf, timeout=15)
 
                 if resultado_gravacao == "duplicata":
                     nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"

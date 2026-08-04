@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [2.23.0] - 2026-08-04
+
+### Adicionado
+- **Campo Alíquota preenchido** (`iss_fortaleza_automacao.py`): o campo estava 100% ignorado pela automação, apesar da coluna `ALIQUOTA` já existir na planilha (extraída do XML por `processamento_xml.py`, tag `pAliqAplic`). `DocumentoPortalISS` e `carregar_documentos_xlsx()` agora leem essa coluna. Novo helper `_campo_aliquota_esta_editavel()` detecta se o portal bloqueou o campo para o CNAE selecionado (o portal renderiza um `<span>` em vez de `<input>` quando calcula a alíquota automaticamente) — quando bloqueado, a automação apenas registra o valor da planilha em log e segue; quando editável, apaga o valor atual e digita o da planilha.
+- **Tratamento do erro "CNAE não incide Imposto Sobre Serviço"** (`iss_fortaleza_automacao.py`): esse erro de validação do portal (diferente dos modais de confirmação — é uma mensagem `<rich:messages>` sem botão, que bloqueia a gravação) agora é detectado; a automação troca a Natureza da Operação para "Não Incidência", registra a correção em log e tenta gravar novamente.
+- **Tratamento da confirmação "Prestador não inscrito no CPOM"** (`iss_fortaleza_automacao.py`): generalizado o reconhecimento do modal de confirmação do portal (mesmo componente usado para nota duplicada) — qualquer confirmação que não seja identificada como nota duplicada é tratada como aviso informativo, confirma automaticamente e tenta gravar novamente, cobrindo também eventuais confirmações encadeadas na mesma nota.
+- **Preenchimento rápido de campos de texto** (`iss_fortaleza_automacao.py`): CNPJ, Nome, Logradouro, Bairro, Email, Número da NF e Código CNAE agora são definidos instantaneamente via JavaScript (mesma técnica já usada para a Descrição do Serviço) em vez de digitados caractere por caractere, com verificação automática do valor final e nova tentativa por digitação como reforço caso o valor não seja aceito de primeira (vazio ou diferente do esperado).
+
+### Corrigido
+- **CEP do prestador não preenchido** (`iss_fortaleza_automacao.py`): mesma classe de corrida já corrigida para Natureza da Operação — a seleção de Cidade do Prestador dispara um AJAX do portal sem nenhuma pausa de estabilização antes de o CEP ser digitado, permitindo que uma resposta tardia do AJAX limpasse o campo depois do preenchimento. Adicionada a mesma pausa de 1.5s já usada para UF do Prestador, mais uma conferência e correção automática após uma pequena espera extra.
+- **Corrida entre Natureza da Operação e checkbox ISS Retido** (`iss_fortaleza_automacao.py`): a correção anterior (v2.22.0) para o checkbox ISS Retido não bastava — o portal marca/desmarca esse checkbox sozinho ao mudar a Natureza da Operação (ex.: para "Tributação Fora do Município"), e não havia nenhuma pausa entre a seleção da Natureza e a leitura do checkbox. Adicionada pausa de estabilização de 1.5s após a seleção de Natureza, mais uma conferência e correção automática após o clique, com a divergência registrada em log quando detectada.
+
 ## [2.22.0] - 2026-08-03
 
 ### Adicionado
