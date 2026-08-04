@@ -1878,7 +1878,11 @@ def preencher_documento_servico(
     )
 
     # Número da nota fiscal
-    _definir_campo_rapido(
+    # Usa digitação real (não _definir_campo_rapido): este campo é seguido de perto
+    # por um select (Status NFSE) que dispara reprocessamento AJAX do JSF — sem
+    # foco/clique real no campo, o valor definido via JS pode nunca ser confirmado
+    # pelo lado servidor e acaba sendo limpo quando esse AJAX reprocessa o painel.
+    _digitar_campo(
         driver,
         By.ID,
         "digitarDocumentoForm:numeroDocumentoDigitado",
@@ -1907,6 +1911,21 @@ def preencher_documento_servico(
 
     # Pausa de estabilização para o JSF reprocessar após selecionar o Status
     time.sleep(1.2)
+
+    # Confere se o reprocessamento do JSF não limpou o Número da NF (mesma classe
+    # de corrida já vista para Natureza/ISS Retido e Cidade/CEP nesta sessão)
+    numero_nf_limpo = limpar_numero_para_digitacao(documento.numero_nf)
+    try:
+        valor_pos_status = driver.find_element(By.ID, "digitarDocumentoForm:numeroDocumentoDigitado").get_attribute("value") or ""
+    except NoSuchElementException:
+        valor_pos_status = None
+    if valor_pos_status is not None and _somente_digitos(valor_pos_status) != numero_nf_limpo:
+        registrar_evento_execucao(
+            f"Número da NF foi limpo pelo portal após selecionar Status NFSE "
+            f"(ficou '{valor_pos_status}'); redigitando '{numero_nf_limpo}'.",
+            "ISS Fortaleza",
+        )
+        _digitar_campo(driver, By.ID, "digitarDocumentoForm:numeroDocumentoDigitado", numero_nf_limpo, delay_ms=40)
 
     # Abre o modal de pesquisa de CNAE
     _clicar_por_id(driver, "digitarDocumentoForm:idLinkPesquisarCnae")

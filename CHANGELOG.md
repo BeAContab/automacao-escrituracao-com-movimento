@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [2.23.1] - 2026-08-04
+
+### Corrigido
+- **Número da nota fiscal não preenchido** (`iss_fortaleza_automacao.py`): regressão da v2.23.0 — esse campo tinha sido convertido para preenchimento via JavaScript (`_definir_campo_rapido`), mas é seguido de perto pela seleção de Status NFSE, que dispara reprocessamento AJAX do JSF (já documentado no código com sua própria pausa de estabilização). Sem clique/foco real no campo, o valor definido via JS provavelmente nunca era confirmado no lado servidor, e esse reprocessamento limpava o campo — mesma classe de corrida já corrigida para Natureza/ISS Retido e Cidade/CEP. Revertido para digitação real (`_digitar_campo`) e adicionada conferência/correção automática após a pausa do Status NFSE.
+
 ## [2.23.0] - 2026-08-04
 
 ### Adicionado
