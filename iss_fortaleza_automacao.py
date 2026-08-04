@@ -1869,12 +1869,29 @@ def preencher_documento_servico(
         "ISS Fortaleza",
     )
 
-    # Tipo de documento
+    # Tipo de documento — MEI estabelecido em Fortaleza/CE (a exceção que faz a nota
+    # ser escriturada apesar de ser da própria capital, ver regra em executar_fluxo_iss)
+    # usa "NFS-e Nacional" em vez do "NFS-e de Outro Município" padrão.
+    cidade_prest_doc = normalizar_texto(documento.cidade_prestador).upper()
+    uf_prest_doc = normalizar_texto(documento.uf_prestador).upper()
+    is_fortaleza_ce_doc = (uf_prest_doc == "CE" and "FORTALEZA" in cidade_prest_doc)
+    is_mei_doc = (documento.regime_tributario.upper().strip() == "MEI")
+
+    if is_mei_doc and is_fortaleza_ce_doc:
+        opcoes_tipo_documento = ["NFS-e Nacional", "NFS-e nacional"]
+        registrar_evento_execucao(
+            f"Prestador MEI estabelecido em Fortaleza/CE (NF {documento.numero_nf}): "
+            "Tipo do Documento Digitado definido como 'NFS-e Nacional'.",
+            "ISS Fortaleza",
+        )
+    else:
+        opcoes_tipo_documento = ["NFS-e de Outro Município", "NFS-e de outro município", "707"]
+
     _selecionar_opcao_por_texto(
         driver,
         By.ID,
         "digitarDocumentoForm:tipoDocumentoDigitado",
-        ["NFS-e de Outro Município", "NFS-e de outro município", "707"],
+        opcoes_tipo_documento,
     )
 
     # Número da nota fiscal

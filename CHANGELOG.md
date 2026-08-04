@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [2.24.0] - 2026-08-04
+
+### Adicionado
+- **"NFS-e Nacional" para MEI estabelecido em Fortaleza/CE** (`iss_fortaleza_automacao.py`): quando o prestador é MEI e está em Fortaleza/CE — a exceção que já faz a nota ser escriturada apesar de ser da própria capital (`executar_fluxo_iss()`) — o campo "Tipo do Documento Digitado" agora seleciona "NFS-e Nacional" em vez do "NFS-e de Outro Município" padrão. Qualquer outro caso (prestador não-MEI, ou fora de Fortaleza/CE) continua usando "NFS-e de Outro Município", como sempre. A decisão fica registrada em `log_execucao.txt` quando a exceção se aplica.
+
 ## [2.23.1] - 2026-08-04
 
 ### Corrigido
