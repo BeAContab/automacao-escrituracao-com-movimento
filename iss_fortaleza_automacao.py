@@ -156,6 +156,7 @@ class DocumentoPortalISS:
     aliquota: str = ""
     regime_tributario: str = "OUTROS"
     tipo_cliente_prestador: str = ""
+    id_cnae: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +253,22 @@ def _interpretar_iss_retido(valor: str) -> tuple[bool, bool]:
     if normalizado.startswith("nao") or normalizado == "n":
         return False, True
     return False, False
+
+
+def _aplicar_override_iss_retido_por_id_cnae(deve_marcar: bool, id_cnae: str) -> bool:
+    """Aplica a regra de negócio pela qual o ID_CNAE (código bruto de serviço/
+    tributação extraído do XML, antes da classificação final de CNAE) tem
+    prioridade sobre o valor de ISS_RETIDO já lido da planilha: 1207 sempre
+    marca o checkbox, 1213 sempre desmarca. Qualquer outro ID_CNAE não altera
+    `deve_marcar`.
+    """
+
+    id_cnae_norm = re.sub(r"\D+", "", id_cnae or "")
+    if id_cnae_norm == "1207":
+        return True
+    if id_cnae_norm == "1213":
+        return False
+    return deve_marcar
 
 
 def limpar_cnpj_para_digitacao(cnpj: str) -> str:
@@ -620,6 +637,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 aliquota=aliquota,
                 regime_tributario=str(linha[colunas["REGIME_TRIBUTARIO"]] or "OUTROS") if "REGIME_TRIBUTARIO" in colunas else "OUTROS",
                 tipo_cliente_prestador=str(linha[colunas["TIPO_CLIENTE"]] or "") if "TIPO_CLIENTE" in colunas else "",
+                id_cnae=str(linha[colunas["ID_CNAE"]] or "") if "ID_CNAE" in colunas else "",
             )
         )
     return documentos
@@ -2046,6 +2064,19 @@ def preencher_documento_servico(
         registrar_evento_execucao(
             f"AVISO: valor de ISS_RETIDO '{documento.iss_retido}' não reconhecido para "
             f"a NF {documento.numero_nf}. Tratado como 'Não retido' por padrão.",
+            "ISS Fortaleza",
+        )
+
+    # ID_CNAE (código bruto de serviço/tributação extraído do XML) tem
+    # prioridade sobre o valor de ISS_RETIDO já decidido acima — cobre também
+    # planilhas geradas antes dessa regra existir, ou editadas manualmente.
+    deve_marcar_antes_do_override = deve_marcar
+    deve_marcar = _aplicar_override_iss_retido_por_id_cnae(deve_marcar, documento.id_cnae)
+    if deve_marcar != deve_marcar_antes_do_override:
+        registrar_evento_execucao(
+            f"ID_CNAE {re.sub(r'\\D+', '', documento.id_cnae or '')} na NF {documento.numero_nf}: "
+            f"ISS Retido forçado para '{'Sim' if deve_marcar else 'Não'}' "
+            f"(planilha tinha '{documento.iss_retido}').",
             "ISS Fortaleza",
         )
     try:

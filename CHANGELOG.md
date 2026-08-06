@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [2.25.1] - 2026-08-06
+
+### Adicionado
+- **ISS Retido forçado por ID_CNAE 1207/1213** (`processamento_xml.py`, `iss_fortaleza_automacao.py`): nova regra de negócio baseada no `ID_CNAE` (código bruto de serviço/tributação extraído do XML, antes da classificação final via IA) — `1207` sempre força `ISS_RETIDO = "SIM"`, `1213` sempre força `"NÃO"`, com prioridade sobre a regra já existente de CNAE final (`932989910`/`900190201`). Aplicada tanto na planilha gerada por "Processar XMLs" quanto como override direto no checkbox durante a escrituração, cobrindo também planilhas já geradas antes dessa regra.
+
 ## [2.25.0] - 2026-08-06
 
 ### Adicionado

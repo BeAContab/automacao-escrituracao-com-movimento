@@ -54,6 +54,21 @@ def formatar_monetario(valor_str: str) -> str:
     except ValueError:
         return valor_str
 
+def _aplicar_regra_iss_retido_por_id_cnae(iss_retido_atual: str, id_cnae: str) -> str:
+    """Aplica a regra de negócio pela qual o ID_CNAE (código bruto de serviço/
+    tributação extraído do XML, antes da classificação final de CNAE) tem
+    prioridade sobre o valor de ISS_RETIDO já decidido: 1207 sempre força
+    "SIM", 1213 sempre força "NÃO". Qualquer outro ID_CNAE não altera o valor
+    recebido.
+    """
+    id_cnae_norm = _normalizar_codigo_cnae(id_cnae)
+    if id_cnae_norm == "1207":
+        return "SIM"
+    if id_cnae_norm == "1213":
+        return "NÃO"
+    return iss_retido_atual
+
+
 def obter_texto_tag(parent: ET.Element, tag_name: str, padrao: str = "") -> str:
     """Busca um elemento de forma recursiva ignorando namespaces e retorna seu valor textual."""
     elem = parent.find(f".//{{*}}{tag_name}")
@@ -838,6 +853,11 @@ def processar_pasta_xmls(
         id_cnae_final_norm = _normalizar_codigo_cnae(id_cnae_final)
         if id_cnae_final_norm in {"932989910", "900190201"}:
             dados["iss_retido"] = "SIM"
+
+        # Regra de negócio: ID_CNAE (código bruto de serviço/tributação extraído
+        # diretamente do XML, antes da classificação final de CNAE) tem prioridade
+        # sobre a regra de CNAE final acima quando as duas se aplicam à mesma nota.
+        dados["iss_retido"] = _aplicar_regra_iss_retido_por_id_cnae(dados["iss_retido"], dados["id_cnae"])
 
         # Organiza a linha no formato sequencial da planilha exemplo, sem a coluna PREFEITURA
         linha = [
