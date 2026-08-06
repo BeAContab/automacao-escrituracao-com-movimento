@@ -155,6 +155,7 @@ class DocumentoPortalISS:
     inss: str = ""
     aliquota: str = ""
     regime_tributario: str = "OUTROS"
+    tipo_cliente_prestador: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +269,24 @@ def limpar_cnpj_para_digitacao(cnpj: str) -> str:
 
     texto = (cnpj or "").strip().upper()
     return re.sub(r"[^0-9A-Z]", "", texto)
+
+
+def _eh_cpf_prestador(documento: DocumentoPortalISS) -> bool:
+    """True se o prestador for pessoa física.
+
+    Fonte primária: a coluna TIPO_CLIENTE da planilha (explícita, auditável,
+    gravada por processamento_xml.py para os dois layouts de XML suportados).
+    Fallback: comprimento do CPF/CNPJ (11 dígitos = CPF, 14 = CNPJ, mesmo
+    alfanumérico), usado apenas quando a coluna estiver ausente ou vazia —
+    planilhas geradas antes dessa coluna existir, por exemplo.
+    """
+
+    tipo_norm = normalizar_texto(documento.tipo_cliente_prestador or "").strip()
+    if tipo_norm.startswith("pessoa fisica"):
+        return True
+    if tipo_norm.startswith("pessoa juridica"):
+        return False
+    return len(limpar_cnpj_para_digitacao(documento.cnpj_prestador or "")) == 11
 
 
 def validar_campos_obrigatorios(documento: DocumentoPortalISS) -> list[str]:
@@ -600,6 +619,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 inss=inss,
                 aliquota=aliquota,
                 regime_tributario=str(linha[colunas["REGIME_TRIBUTARIO"]] or "OUTROS") if "REGIME_TRIBUTARIO" in colunas else "OUTROS",
+                tipo_cliente_prestador=str(linha[colunas["TIPO_CLIENTE"]] or "") if "TIPO_CLIENTE" in colunas else "",
             )
         )
     return documentos
@@ -1545,15 +1565,20 @@ def preencher_dados_prestador(
     )
     aguardar_tela_digitar_documento(driver)
 
-    # --- Tipo de Cliente/Fornecedor: sempre "Pessoa Jurídica" ---
+    # --- Tipo de Cliente/Fornecedor: "Pessoa Física" ou "Pessoa Jurídica" conforme o prestador ---
+    eh_cpf = _eh_cpf_prestador(documento)
     _selecionar_opcao_por_texto(
         driver,
         By.ID,
         "digitarDocumentoForm:comboEscolherTipoNaturezaJuridica",
-        ["Pessoa Jurídica", "Pessoa Juridica", "PJ"],
+        ["Pessoa Física", "Pessoa Fisica"] if eh_cpf else ["Pessoa Jurídica", "Pessoa Juridica", "PJ"],
         timeout=10,
     )
-    registrar_evento_execucao("Tipo Natureza Jurídica definido como Pessoa Jurídica", "ISS Fortaleza")
+    registrar_evento_execucao(
+        f"Tipo Natureza Jurídica definido como {'Pessoa Física' if eh_cpf else 'Pessoa Jurídica'} "
+        f"(prestador identificado por {'CPF' if eh_cpf else 'CNPJ'})",
+        "ISS Fortaleza",
+    )
     time.sleep(0.5)
 
     # --- CPF/CNPJ do Prestador ---
@@ -1882,6 +1907,13 @@ def preencher_documento_servico(
         registrar_evento_execucao(
             f"Prestador MEI estabelecido em Fortaleza/CE (NF {documento.numero_nf}): "
             "Tipo do Documento Digitado definido como 'NFS-e Nacional'.",
+            "ISS Fortaleza",
+        )
+    elif _eh_cpf_prestador(documento):
+        opcoes_tipo_documento = ["NFS Avulsa de outro município", "NFS Avulsa de outro municipio"]
+        registrar_evento_execucao(
+            f"Prestador pessoa física (NF {documento.numero_nf}): "
+            "Tipo do Documento Digitado definido como 'NFS Avulsa de outro município'.",
             "ISS Fortaleza",
         )
     else:

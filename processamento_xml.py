@@ -13,6 +13,7 @@ from typing import Any
 
 import openpyxl
 import requests
+from openpyxl.styles import PatternFill
 
 from cnae_final import (
     _classificar_localmente,
@@ -29,6 +30,18 @@ MAPA_IBGE_UF = {
     "31": "MG", "32": "ES", "33": "RJ", "35": "SP",
     "41": "PR", "42": "SC", "43": "RS",
     "50": "MS", "51": "MT", "52": "GO", "53": "DF"
+}
+
+# Colunas cujo preenchimento é exigido pela automação de escrituração no portal
+# ISS Fortaleza (campos_obrigatorios/validar_campos_obrigatorios em
+# iss_fortaleza_automacao.py) — destacadas visualmente no cabeçalho da planilha
+# gerada. Mantido em sincronia manualmente entre os dois módulos.
+COLUNAS_OBRIGATORIAS_AUTOMACAO = {
+    "CNPJ_PRESTADOR", "NUMERO_NF", "DATA_EMISSAO", "ID_CNAE_FINAL",
+    "DESCRICAO_SERVICO", "UF_LOCAL_PRESTACAO", "CIDADE_LOCAL_PRESTACAO",
+    "NATUREZA_OPERACAO", "ISS_RETIDO", "VALOR_SERVICO",
+    "NOME_PRESTADOR", "UF_PRESTADOR", "CIDADE_PRESTADOR", "CEP_PRESTADOR",
+    "LOGRADOURO_PRESTADOR", "BAIRRO_PRESTADOR", "TIPO_CLIENTE",
 }
 
 def formatar_monetario(valor_str: str) -> str:
@@ -137,20 +150,60 @@ def resolver_cnae_tess_ai(
         
     return _classificar_localmente(desc_cnae, descricao_servico, id_cnae, oficiais)
 
-def extrair_dados_xml(caminho_xml: Path) -> dict[str, Any] | None:
-    """Realiza o parse de um XML de NFS-e e retorna um dicionário mapeado com os campos fiscais."""
+def _detectar_layout_xml(root: ET.Element) -> str:
+    """Identifica o layout do XML de NFS-e pela tag raiz de identificação da nota.
+
+    Nomes de tag XML são case-sensitive, então não há ambiguidade entre os dois
+    formatos suportados: 'InfNfse' (maiúsculo) é o padrão ABRASF NFS-e v2.02
+    usado pelo Portal Da Paraíba; 'infNFSe' (minúsculo) é o padrão da NFS-e
+    Nacional/DFe usado pelo Portal Nacional.
+    """
+    if root.find(".//{*}InfNfse") is not None:
+        return "paraiba"
+    if root.find(".//{*}infNFSe") is not None:
+        return "nacional"
+    return "desconhecido"
+
+
+def extrair_dados_xml(caminho_xml: Path) -> tuple[dict[str, Any] | None, str]:
+    """Ponto de entrada único do parse de XML de NFS-e: identifica automaticamente
+    o layout (Portal Nacional ou Portal Da Paraíba) e delega para o extrator
+    correspondente.
+
+    Retorna (dados, motivo): motivo é "" em caso de sucesso, ou uma mensagem
+    curta explicando por que a nota foi descartada (usada apenas para log).
+    """
     try:
         tree = ET.parse(caminho_xml)
         root = tree.getroot()
     except Exception as e:
         print(f"Erro ao parsear arquivo XML {caminho_xml.name}: {e}", flush=True)
-        return None
-        
+        return None, "erro ao interpretar o XML"
+
+    layout = _detectar_layout_xml(root)
+    if layout == "paraiba":
+        if root.find(".//{*}NfseCancelamento") is not None:
+            return None, "nota cancelada"
+        dados = _extrair_dados_xml_paraiba(root, caminho_xml)
+    elif layout == "nacional":
+        dados = _extrair_dados_xml_nacional(root, caminho_xml)
+    else:
+        dados = None
+
+    if dados is None:
+        return None, "não é uma NFS-e válida"
+    return dados, ""
+
+
+def _extrair_dados_xml_nacional(root: ET.Element, caminho_xml: Path) -> dict[str, Any] | None:
+    """Extrai os campos fiscais de um XML no layout do Portal Nacional (NFS-e
+    Nacional/DFe, tag infNFSe minúscula)."""
+
     # Garante que é um XML de nota fiscal válido (deve conter a tag infNFSe ou similar)
     infNFSe = root.find(".//{*}infNFSe")
     if infNFSe is None:
         return None
-        
+
     # 1. Informações básicas da nota
     numero_nf = obter_texto_tag(root, "nNFSe")
     
@@ -338,6 +391,9 @@ def extrair_dados_xml(caminho_xml: Path) -> dict[str, Any] | None:
         "arquivo_xml": caminho_xml.name,
         "prefeitura": prefeitura,
         "cnpj_prestador": cnpj_prestador,
+        # Este layout só procura a tag CNPJ (nunca CPF) em emit/prest, então o
+        # prestador é sempre pessoa jurídica.
+        "tipo_cliente_prestador": "Pessoa Jurídica",
         "nome_prestador": nome_prestador,
         "uf_prestador": uf_prestador,
         "cidade_prestador": xLocEmi or cidade_local_prestacao,
@@ -368,6 +424,262 @@ def extrair_dados_xml(caminho_xml: Path) -> dict[str, Any] | None:
         "aliquota": aliquota,
         "regime_tributario": regime_tributario,
     }
+
+
+_CACHE_MUNICIPIOS_IBGE: dict[str, str] | None = None
+
+
+def _carregar_municipios_ibge() -> dict[str, str]:
+    """Carrega (com cache em memória) o mapeamento código IBGE -> nome do
+    município a partir de ibge_municipios.json, necessário porque o layout do
+    Portal Da Paraíba só informa o código IBGE (7 dígitos), nunca o nome da
+    cidade por extenso."""
+    global _CACHE_MUNICIPIOS_IBGE
+    if _CACHE_MUNICIPIOS_IBGE is not None:
+        return _CACHE_MUNICIPIOS_IBGE
+
+    caminho = Path("ibge_municipios.json")
+    if not caminho.exists():
+        import sys
+        if hasattr(sys, "_MEIPASS"):
+            caminho = Path(sys._MEIPASS) / "ibge_municipios.json"
+        else:
+            caminho = Path(__file__).parent / "ibge_municipios.json"
+
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            _CACHE_MUNICIPIOS_IBGE = json.load(f)
+    except Exception as e:
+        print(f"Aviso: não foi possível carregar ibge_municipios.json ({e}).", flush=True)
+        _CACHE_MUNICIPIOS_IBGE = {}
+    return _CACHE_MUNICIPIOS_IBGE
+
+
+def _nome_municipio_ibge(codigo: str) -> str:
+    """Resolve um código IBGE de 7 dígitos para o nome do município, ou retorna
+    o próprio código se não for encontrado na tabela."""
+    codigo = (codigo or "").strip()
+    if not codigo:
+        return ""
+    return _carregar_municipios_ibge().get(codigo, codigo)
+
+
+def _extrair_dados_xml_paraiba(root: ET.Element, caminho_xml: Path) -> dict[str, Any] | None:
+    """Extrai os campos fiscais de um XML no layout do Portal Da Paraíba
+    (padrão ABRASF NFS-e v2.02, tag InfNfse maiúscula)."""
+
+    infNfse = root.find(".//{*}InfNfse")
+    if infNfse is None:
+        return None
+
+    # 1. Informações básicas da nota
+    numero_nf = obter_texto_tag(infNfse, "Numero")
+
+    # 2. Data de emissão (formata para DD/MM/AAAA)
+    data_br = ""
+    data_emissao_raw = obter_texto_tag(infNfse, "DataEmissao")
+    if data_emissao_raw:
+        try:
+            data_iso = data_emissao_raw.split("T")[0]
+            dt = datetime.strptime(data_iso, "%Y-%m-%d")
+            data_br = dt.strftime("%d/%m/%Y")
+        except Exception:
+            data_br = data_emissao_raw
+
+    # 3. Prefeitura emissora (OrgaoGerador é sempre a prefeitura que gerou a nota)
+    orgao_gerador = root.find(".//{*}OrgaoGerador")
+    codigo_municipio_orgao = obter_texto_tag(orgao_gerador, "CodigoMunicipio") if orgao_gerador is not None else ""
+    nome_municipio_orgao = _nome_municipio_ibge(codigo_municipio_orgao)
+    prefeitura = f"PREFEITURA MUNICIPAL DE {nome_municipio_orgao.upper()}" if nome_municipio_orgao else ""
+
+    # 4. Dados do Prestador (emitente) — CpfCnpj contém Cpf OU Cnpj, nunca os dois
+    cnpj_prestador = ""
+    tipo_cliente_prestador = "Pessoa Jurídica"
+    nome_prestador = ""
+    logradouro_prestador = ""
+    numero_prestador = ""
+    bairro_prestador = ""
+    uf_prestador = ""
+    cidade_prestador = ""
+    cep_prestador = ""
+    email_prestador = ""
+
+    prestador = root.find(".//{*}PrestadorServico")
+    if prestador is not None:
+        nome_prestador = obter_texto_tag(prestador, "RazaoSocial")
+
+        cpf_cnpj = prestador.find(".//{*}IdentificacaoPrestador/{*}CpfCnpj")
+        if cpf_cnpj is not None:
+            cpf_elem = cpf_cnpj.find("{*}Cpf")
+            cnpj_elem = cpf_cnpj.find("{*}Cnpj")
+            if cpf_elem is not None and cpf_elem.text:
+                cnpj_prestador = cpf_elem.text.strip()
+                tipo_cliente_prestador = "Pessoa Física"
+            elif cnpj_elem is not None and cnpj_elem.text:
+                cnpj_prestador = cnpj_elem.text.strip()
+
+        endereco_prestador = prestador.find("{*}Endereco")
+        if endereco_prestador is not None:
+            logradouro_prestador = obter_texto_tag(endereco_prestador, "Endereco")
+            numero_prestador = obter_texto_tag(endereco_prestador, "Numero")
+            bairro_prestador = obter_texto_tag(endereco_prestador, "Bairro")
+            uf_prestador = obter_texto_tag(endereco_prestador, "Uf")
+            cep_prestador = obter_texto_tag(endereco_prestador, "Cep")
+            codigo_municipio_prestador = obter_texto_tag(endereco_prestador, "CodigoMunicipio")
+            cidade_prestador = _nome_municipio_ibge(codigo_municipio_prestador)
+
+        contato_prestador = prestador.find("{*}Contato")
+        if contato_prestador is not None:
+            email_prestador = obter_texto_tag(contato_prestador, "Email")
+
+    # 5. Dados do Serviço e Local de Prestação
+    servico = root.find(".//{*}InfDeclaracaoPrestacaoServico/{*}Servico")
+
+    id_cnae = ""
+    descricao_servico = ""
+    cidade_local_prestacao = ""
+    uf_local_prestacao = ""
+    iss_retido = "NÃO"
+
+    if servico is not None:
+        # CodigoCnae é o código CNAE de fato quando presente; ItemListaServico é
+        # o código da lista de serviços (taxonomia do ISS), usado como fallback.
+        id_cnae = obter_texto_tag(servico, "CodigoCnae")
+        if not id_cnae:
+            id_cnae = obter_texto_tag(servico, "ItemListaServico")
+
+        discriminacao = obter_texto_tag(servico, "Discriminacao")
+        if discriminacao:
+            # Artefato de serialização observado nas amostras: a sequência
+            # literal de 2 caracteres "\s\n" aparece no lugar de espaço/quebra
+            # de linha real.
+            discriminacao = discriminacao.replace("\\s\\n", " ")
+            discriminacao = " ".join(discriminacao.split())
+        descricao_servico = discriminacao
+
+        codigo_incidencia = obter_texto_tag(servico, "MunicipioIncidencia")
+        if not codigo_incidencia:
+            codigo_incidencia = obter_texto_tag(servico, "CodigoMunicipio")
+        if codigo_incidencia:
+            cidade_local_prestacao = _nome_municipio_ibge(codigo_incidencia)
+            if len(codigo_incidencia) >= 2:
+                uf_local_prestacao = MAPA_IBGE_UF.get(codigo_incidencia[:2], "")
+
+        # IssRetido no padrão ABRASF: 1=Sim, 2=Não — polaridade INVERTIDA em
+        # relação ao tpRetISSQN do layout Nacional (2=Sim, 1=Não). Não
+        # reaproveitar a mesma comparação usada lá.
+        iss_retido_raw = obter_texto_tag(servico, "IssRetido")
+        iss_retido = "SIM" if iss_retido_raw == "1" else "NÃO"
+
+    if not cidade_local_prestacao:
+        cidade_local_prestacao = cidade_prestador
+    if not uf_local_prestacao:
+        uf_local_prestacao = uf_prestador
+
+    # Natureza de operação: mesma regra do layout Nacional
+    cidade_norm = _normalizar_texto(cidade_local_prestacao or "")
+    uf_norm = (uf_local_prestacao or "").strip().upper()
+    if "fortaleza" in cidade_norm and uf_norm == "CE":
+        natureza_operacao = "Tributação no Município"
+    else:
+        natureza_operacao = "Tributação Fora do Município"
+
+    # 6. Valores da nota
+    valor_servico_raw = ""
+    aliquota_raw = ""
+    valores_servico = servico.find("{*}Valores") if servico is not None else None
+    if valores_servico is not None:
+        valor_servico_raw = obter_texto_tag(valores_servico, "ValorServicos")
+
+    valores_nfse = infNfse.find("{*}ValoresNfse")
+    if valores_nfse is not None:
+        aliquota_raw = obter_texto_tag(valores_nfse, "Aliquota")
+
+    valor_servico = formatar_monetario(valor_servico_raw) if valor_servico_raw else "0,00"
+    aliquota = formatar_monetario(aliquota_raw) if aliquota_raw else "0,00"
+
+    # 7. Tributos federais e deduções — nenhuma das amostras estudadas populava
+    # essas tags; mapeadas na convenção oficial ABRASF para compatibilidade
+    # futura, com "0,00" como padrão seguro na ausência.
+    valor_deducoes = "0,00"
+    descontos_incondicionados = "0,00"
+    descontos_condicionados = "0,00"
+    outras_retencoes = "0,00"
+    ir = "0,00"
+    inss = "0,00"
+    pis_nao_retido = "0,00"
+    cofins_nao_retido = "0,00"
+    csrf = "0,00"
+
+    if valores_servico is not None:
+        vDed = obter_texto_tag(valores_servico, "ValorDeducoes")
+        if vDed:
+            valor_deducoes = formatar_monetario(vDed)
+
+        vDescIncond = obter_texto_tag(valores_servico, "DescontoIncondicionado")
+        if vDescIncond:
+            descontos_incondicionados = formatar_monetario(vDescIncond)
+
+        vDescCond = obter_texto_tag(valores_servico, "DescontoCondicionado")
+        if vDescCond:
+            descontos_condicionados = formatar_monetario(vDescCond)
+
+        vIr = obter_texto_tag(valores_servico, "ValorIr")
+        if vIr:
+            ir = formatar_monetario(vIr)
+
+        vInss = obter_texto_tag(valores_servico, "ValorInss")
+        if vInss:
+            inss = formatar_monetario(vInss)
+
+        vPis = obter_texto_tag(valores_servico, "ValorPis")
+        vCofins = obter_texto_tag(valores_servico, "ValorCofins")
+        vCsll = obter_texto_tag(valores_servico, "ValorCsll")
+        pis_nao_retido = formatar_monetario(vPis) if vPis else "0,00"
+        cofins_nao_retido = formatar_monetario(vCofins) if vCofins else "0,00"
+        csrf = formatar_monetario(vCsll) if vCsll else "0,00"
+
+    # 8. Regime tributário — RegimeEspecialTributacao == "5" é o código oficial
+    # ABRASF para MEI; qualquer outro valor (inclusive ausente) é "OUTROS".
+    regime_especial = obter_texto_tag(root, "RegimeEspecialTributacao")
+    regime_tributario = "MEI" if regime_especial == "5" else "OUTROS"
+
+    return {
+        "arquivo_xml": caminho_xml.name,
+        "prefeitura": prefeitura,
+        "cnpj_prestador": cnpj_prestador,
+        "tipo_cliente_prestador": tipo_cliente_prestador,
+        "nome_prestador": nome_prestador,
+        "uf_prestador": uf_prestador,
+        "cidade_prestador": cidade_prestador,
+        "cep_prestador": cep_prestador,
+        "logradouro_prestador": logradouro_prestador,
+        "numero_prestador": numero_prestador,
+        "bairro_prestador": bairro_prestador,
+        "email_prestador": email_prestador,
+        "numero_nf": numero_nf,
+        "data_emissao": data_br,
+        "id_cnae": id_cnae,
+        "desc_cnae": "",
+        "descricao_servico": descricao_servico,
+        "uf_local_prestacao": uf_local_prestacao,
+        "cidade_local_prestacao": cidade_local_prestacao,
+        "natureza_operacao": natureza_operacao,
+        "iss_retido": iss_retido,
+        "valor_servico": valor_servico,
+        "valor_deducoes": valor_deducoes,
+        "descontos_incondicionados": descontos_incondicionados,
+        "descontos_condicionados": descontos_condicionados,
+        "outras_retencoes": outras_retencoes,
+        "ir": ir,
+        "pis_nao_retido": pis_nao_retido,
+        "cofins_nao_retido": cofins_nao_retido,
+        "csrf": csrf,
+        "inss": inss,
+        "aliquota": aliquota,
+        "regime_tributario": regime_tributario,
+    }
+
 
 def processar_pasta_xmls(
     pasta_origem: str,
@@ -446,13 +758,26 @@ def processar_pasta_xmls(
         if col_b_val == "PREFEITURA":
             ws.delete_cols(2)
 
-    # Adiciona o cabeçalho REGIME_TRIBUTARIO no final da linha 1, somente se ainda não existir (FALHA-02)
+    # Adiciona os cabeçalhos REGIME_TRIBUTARIO e TIPO_CLIENTE no final da linha 1,
+    # somente se ainda não existirem (FALHA-02)
     cabecalhos_existentes = [
         str(ws.cell(row=1, column=c).value or "").strip().upper()
         for c in range(1, ws.max_column + 1)
     ]
-    if "REGIME_TRIBUTARIO" not in cabecalhos_existentes:
-        ws.cell(row=1, column=ws.max_column + 1).value = "REGIME_TRIBUTARIO"
+    for cabecalho_novo in ("REGIME_TRIBUTARIO", "TIPO_CLIENTE"):
+        if cabecalho_novo not in cabecalhos_existentes:
+            ws.cell(row=1, column=ws.max_column + 1).value = cabecalho_novo
+            cabecalhos_existentes.append(cabecalho_novo)
+
+    # Destaca visualmente, com cor de fundo diferente, as colunas de cabeçalho
+    # exigidas pela automação de escrituração (campos_obrigatorios/
+    # validar_campos_obrigatorios em iss_fortaleza_automacao.py — mantido em
+    # sincronia manualmente; processamento_xml.py não importa esse módulo de
+    # propósito, para não puxar a dependência do Selenium só para colorir
+    # cabeçalho).
+    for celula in ws[1]:
+        if str(celula.value or "").strip().upper() in COLUNAS_OBRIGATORIAS_AUTOMACAO:
+            celula.fill = PatternFill("solid", fgColor="FFC000")
 
     # Garante a limpeza de possíveis linhas remanescentes abaixo do cabeçalho
     if ws.max_row > 1:
@@ -470,11 +795,11 @@ def processar_pasta_xmls(
         if callback_progresso:
             callback_progresso(pct, f"Processando XML {idx} de {total}")
 
-        # Extração de campos estruturados do XML
-        dados = extrair_dados_xml(xml_file)
+        # Extração de campos estruturados do XML (layout detectado automaticamente)
+        dados, motivo_descarte = extrair_dados_xml(xml_file)
         if dados is None:
             ignoradas += 1
-            log(f"[{idx}/{total}] Ignorado: {xml_file.name} (não é uma NFS-e válida)")
+            log(f"[{idx}/{total}] Ignorado: {xml_file.name} ({motivo_descarte})")
             continue
 
         log(f"[{idx}/{total}] Processando NFS-e {dados['numero_nf']} do prestador {dados['nome_prestador']}")
@@ -549,6 +874,7 @@ def processar_pasta_xmls(
             dados["id_cnae_final"],
             dados["desc_cnae_final"],
             dados["regime_tributario"],
+            dados["tipo_cliente_prestador"],
         ]
 
         ws.append(linha)

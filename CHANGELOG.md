@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [2.25.0] - 2026-08-06
+
+### Adicionado
+- **Suporte ao layout XML do Portal Da Paraíba em "Processar XMLs"** (`processamento_xml.py`): além do layout do Portal Nacional (já suportado), o processamento agora reconhece automaticamente, arquivo por arquivo, XMLs no padrão ABRASF NFS-e v2.02 (`CompNfse/Nfse/InfNfse`) usado pelo Portal Da Paraíba — sem exigir nenhuma seleção manual de layout. Notas canceladas no portal (`<NfseCancelamento>`) são ignoradas e logadas com esse motivo específico, em vez de entrarem na planilha. Cidades são resolvidas a partir do código IBGE do município (novo arquivo `ibge_municipios.json`, bundlado no instalador), já que esse layout só informa o código, não o nome da cidade.
+- **Nova coluna TIPO_CLIENTE na planilha exportada** (`processamento_xml.py`): grava explicitamente "Pessoa Física" ou "Pessoa Jurídica" com base no prestador de cada nota (o layout do Paraíba pode identificar o prestador por CPF, além de CNPJ). As colunas cujo preenchimento a automação de escrituração exige agora ficam destacadas com cor de fundo diferente no cabeçalho da planilha gerada, facilitando identificar de relance o que não pode ficar vazio.
+- **Prestador pessoa física na automação do ISS Fortaleza** (`iss_fortaleza_automacao.py`): quando o prestador é identificado como CPF (via a nova coluna TIPO_CLIENTE, com um comprimento de CPF/CNPJ como fallback para planilhas antigas), o campo "Tipo de Cliente/Fornecedor" passa a ser definido como "Pessoa Física" (antes, sempre fixo em "Pessoa Jurídica") e "Tipo do Documento Digitado" como "NFS Avulsa de outro município" — em vez do "NFS-e de Outro Município" usado para prestador CNPJ.
+
 ## [2.24.0] - 2026-08-04
 
 ### Adicionado

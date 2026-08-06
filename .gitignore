@@ -42,5 +42,15 @@ installer_output/
 EXEMPLOS/*
 !EXEMPLOS/planilha exemplo.xlsx
 
+# XMLs de amostra reais do Portal Da Paraiba usados para desenvolver o parser
+# (mesma razao do EXEMPLOS/ acima - PII/sigilo de clientes reais). Os testes
+# que dependem dessa pasta pulam automaticamente quando ela nao existir.
+Layout Portal Da Paraiba/
+
+# Dado de referencia (mapeamento codigo IBGE -> nome de municipio), mesma
+# convencao ja usada para cnae_oficial.xlsx: nao versionado, precisa estar
+# presente localmente para build.py empacotar no instalador.
+ibge_municipios.json
+
 # Saída gerada pelo agente (grafo de conhecimento do codebase)
 graphify-out/

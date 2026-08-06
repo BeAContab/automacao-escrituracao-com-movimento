@@ -80,6 +80,7 @@ def main():
             "--name=automacao-iss-fortaleza",
             "--add-data=gui;gui",
             "--add-data=cnae_oficial.xlsx;.",
+            "--add-data=ibge_municipios.json;.",
             "--add-data=EXEMPLOS/planilha exemplo.xlsx;EXEMPLOS",
             "--hidden-import=selenium",
             "--hidden-import=selenium.webdriver",
