@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [2.25.2] - 2026-08-07
+
+### Adicionado
+- **Coluna TIPO_TRIBUTACAO e detecção de MEI pelo nome do prestador** (`processamento_xml.py`): nova coluna na planilha gerada por "Processar XMLs", com valor padrão "Normal". No layout do Portal Da Paraíba, quando a Razão Social do prestador segue o padrão auto-gerado de MEI ("XX.XXX.XXX NOME COMPLETO" — raiz do CNPJ formatada seguida do nome), o valor sai como "Simples Nacional MEI". Sempre que isso ocorre, `ISS_RETIDO` é forçado para "Não", com prioridade sobre a regra de `ID_CNAE` (1207/1213) já existente. A coluna entra no destaque visual das colunas obrigatórias para a automação.
+- **Campo "Tipo de Tributação" na automação do ISS Fortaleza** (`iss_fortaleza_automacao.py`): novo campo do portal (`Normal`/`Simples Nacional ME-EPP`/`Simples Nacional MEI`) preenchido automaticamente com o valor da planilha — mas só quando o prestador não é de Fortaleza/CE, já que esse campo não existe na tela nesse caso. O checkbox ISS Retido também passa a ser forçado para desmarcado quando o Tipo de Tributação for Simples Nacional MEI, com prioridade sobre o override de ID_CNAE.
+
 ## [2.25.1] - 2026-08-06
 
 ### Adicionado

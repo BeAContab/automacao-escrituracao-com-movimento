@@ -157,6 +157,7 @@ class DocumentoPortalISS:
     regime_tributario: str = "OUTROS"
     tipo_cliente_prestador: str = ""
     id_cnae: str = ""
+    tipo_tributacao: str = "Normal"
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +270,25 @@ def _aplicar_override_iss_retido_por_id_cnae(deve_marcar: bool, id_cnae: str) ->
     if id_cnae_norm == "1213":
         return False
     return deve_marcar
+
+
+def _aplicar_override_iss_retido_por_tipo_tributacao(deve_marcar: bool, tipo_tributacao: str) -> bool:
+    """Simples Nacional MEI sempre desmarca o checkbox ISS Retido — tem
+    prioridade sobre o override de ID_CNAE (1207/1213), então deve ser
+    aplicado depois dele.
+    """
+
+    if normalizar_texto(tipo_tributacao or "").strip() == "simples nacional mei":
+        return False
+    return deve_marcar
+
+
+def _eh_prestador_fortaleza_ce(documento: "DocumentoPortalISS") -> bool:
+    """True se o prestador estiver estabelecido em Fortaleza/CE."""
+
+    cidade_norm = normalizar_texto(documento.cidade_prestador).upper()
+    uf_norm = normalizar_texto(documento.uf_prestador).upper()
+    return uf_norm == "CE" and "FORTALEZA" in cidade_norm
 
 
 def limpar_cnpj_para_digitacao(cnpj: str) -> str:
@@ -638,6 +658,7 @@ def carregar_documentos_xlsx(caminho_xlsx: Path) -> list[DocumentoPortalISS]:
                 regime_tributario=str(linha[colunas["REGIME_TRIBUTARIO"]] or "OUTROS") if "REGIME_TRIBUTARIO" in colunas else "OUTROS",
                 tipo_cliente_prestador=str(linha[colunas["TIPO_CLIENTE"]] or "") if "TIPO_CLIENTE" in colunas else "",
                 id_cnae=str(linha[colunas["ID_CNAE"]] or "") if "ID_CNAE" in colunas else "",
+                tipo_tributacao=str(linha[colunas["TIPO_TRIBUTACAO"]] or "Normal") if "TIPO_TRIBUTACAO" in colunas else "Normal",
             )
         )
     return documentos
@@ -1656,6 +1677,21 @@ def preencher_dados_prestador(
         # AJAX, sem que nada perceba.
         time.sleep(1.5)
 
+    # --- Tipo de Tributação (só existe na tela quando o prestador não é de
+    # Fortaleza/CE — para prestador de Fortaleza/CE o campo nem aparece no DOM) ---
+    if not _eh_prestador_fortaleza_ce(documento):
+        _selecionar_opcao_por_texto(
+            driver,
+            By.ID,
+            "digitarDocumentoForm:tipoTributacaoPrestadorExternoId",
+            [documento.tipo_tributacao],
+            timeout=10,
+        )
+        registrar_evento_execucao(
+            f"Tipo de Tributação definido como '{documento.tipo_tributacao}'.",
+            "ISS Fortaleza",
+        )
+
     # --- CEP ---
     cep = re.sub(r"\D+", "", documento.cep_prestador or "")
     if cep:
@@ -1915,9 +1951,7 @@ def preencher_documento_servico(
     # Tipo de documento — MEI estabelecido em Fortaleza/CE (a exceção que faz a nota
     # ser escriturada apesar de ser da própria capital, ver regra em executar_fluxo_iss)
     # usa "NFS-e Nacional" em vez do "NFS-e de Outro Município" padrão.
-    cidade_prest_doc = normalizar_texto(documento.cidade_prestador).upper()
-    uf_prest_doc = normalizar_texto(documento.uf_prestador).upper()
-    is_fortaleza_ce_doc = (uf_prest_doc == "CE" and "FORTALEZA" in cidade_prest_doc)
+    is_fortaleza_ce_doc = _eh_prestador_fortaleza_ce(documento)
     is_mei_doc = (documento.regime_tributario.upper().strip() == "MEI")
 
     if is_mei_doc and is_fortaleza_ce_doc:
@@ -2072,11 +2106,14 @@ def preencher_documento_servico(
     # planilhas geradas antes dessa regra existir, ou editadas manualmente.
     deve_marcar_antes_do_override = deve_marcar
     deve_marcar = _aplicar_override_iss_retido_por_id_cnae(deve_marcar, documento.id_cnae)
+    # Simples Nacional MEI tem prioridade máxima — aplicado por último, pode
+    # sobrescrever até o override de ID_CNAE acima.
+    deve_marcar = _aplicar_override_iss_retido_por_tipo_tributacao(deve_marcar, documento.tipo_tributacao)
     if deve_marcar != deve_marcar_antes_do_override:
         registrar_evento_execucao(
-            f"ID_CNAE {re.sub(r'\\D+', '', documento.id_cnae or '')} na NF {documento.numero_nf}: "
-            f"ISS Retido forçado para '{'Sim' if deve_marcar else 'Não'}' "
-            f"(planilha tinha '{documento.iss_retido}').",
+            f"ID_CNAE {re.sub(r'\\D+', '', documento.id_cnae or '')} / Tipo de Tributação "
+            f"'{documento.tipo_tributacao}' na NF {documento.numero_nf}: ISS Retido forçado "
+            f"para '{'Sim' if deve_marcar else 'Não'}' (planilha tinha '{documento.iss_retido}').",
             "ISS Fortaleza",
         )
     try:

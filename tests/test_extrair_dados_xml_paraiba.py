@@ -29,7 +29,7 @@ _XML_NACIONAL_SINTETICO = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 
-@unittest.skipUnless(PASTA_AMOSTRAS.exists(), "Pasta de amostras 'Layout Portal Da Paraiba' não encontrada")
+@unittest.skipUnless(AMOSTRA_CPF.exists(), "Amostra CPF de 'Layout Portal Da Paraiba' não encontrada")
 class TestDetectarLayoutXml(unittest.TestCase):
     def test_amostra_paraiba_detectada_como_paraiba(self):
         root = ET.parse(AMOSTRA_CPF).getroot()
@@ -44,7 +44,7 @@ class TestDetectarLayoutXml(unittest.TestCase):
         self.assertEqual(_detectar_layout_xml(root), "desconhecido")
 
 
-@unittest.skipUnless(PASTA_AMOSTRAS.exists(), "Pasta de amostras 'Layout Portal Da Paraiba' não encontrada")
+@unittest.skipUnless(AMOSTRA_CPF.exists(), "Amostra CPF de 'Layout Portal Da Paraiba' não encontrada")
 class TestExtrairDadosXmlParaibaPrestadorCpf(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -94,7 +94,7 @@ class TestExtrairDadosXmlParaibaPrestadorCpf(unittest.TestCase):
         self.assertIn("SERVIÇOS DE PRODUÇÃO MUSICAL", self.dados["descricao_servico"])
 
 
-@unittest.skipUnless(PASTA_AMOSTRAS.exists(), "Pasta de amostras 'Layout Portal Da Paraiba' não encontrada")
+@unittest.skipUnless(AMOSTRA_CNPJ.exists(), "Amostra CNPJ de 'Layout Portal Da Paraiba' não encontrada")
 class TestExtrairDadosXmlParaibaPrestadorCnpj(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -116,7 +116,7 @@ class TestExtrairDadosXmlParaibaPrestadorCnpj(unittest.TestCase):
         self.assertEqual(self.dados["regime_tributario"], "OUTROS")
 
 
-@unittest.skipUnless(PASTA_AMOSTRAS.exists(), "Pasta de amostras 'Layout Portal Da Paraiba' não encontrada")
+@unittest.skipUnless(AMOSTRA_CANCELADA.exists(), "Amostra de nota cancelada de 'Layout Portal Da Paraiba' não encontrada")
 class TestExtrairDadosXmlNotaCancelada(unittest.TestCase):
     def test_nota_cancelada_e_ignorada_com_motivo_especifico(self):
         dados, motivo = extrair_dados_xml(AMOSTRA_CANCELADA)

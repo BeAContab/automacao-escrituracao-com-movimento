@@ -41,7 +41,7 @@ COLUNAS_OBRIGATORIAS_AUTOMACAO = {
     "DESCRICAO_SERVICO", "UF_LOCAL_PRESTACAO", "CIDADE_LOCAL_PRESTACAO",
     "NATUREZA_OPERACAO", "ISS_RETIDO", "VALOR_SERVICO",
     "NOME_PRESTADOR", "UF_PRESTADOR", "CIDADE_PRESTADOR", "CEP_PRESTADOR",
-    "LOGRADOURO_PRESTADOR", "BAIRRO_PRESTADOR", "TIPO_CLIENTE",
+    "LOGRADOURO_PRESTADOR", "BAIRRO_PRESTADOR", "TIPO_CLIENTE", "TIPO_TRIBUTACAO",
 }
 
 def formatar_monetario(valor_str: str) -> str:
@@ -67,6 +67,17 @@ def _aplicar_regra_iss_retido_por_id_cnae(iss_retido_atual: str, id_cnae: str) -
     if id_cnae_norm == "1213":
         return "NÃO"
     return iss_retido_atual
+
+
+_PADRAO_NOME_MEI_PARAIBA = re.compile(r"^\d{2}\.\d{3}\.\d{3}\s")
+
+
+def _eh_nome_prestador_padrao_mei(nome_prestador: str) -> bool:
+    """True se a Razão Social seguir o padrão de MEI auto-gerado pelo Portal
+    Da Paraíba: raiz do CNPJ (8 dígitos, formatada 'XX.XXX.XXX') seguida do
+    nome completo — ex. '40.386.363 JOSE CARLOS GOMES DA SILVA'.
+    """
+    return bool(_PADRAO_NOME_MEI_PARAIBA.match((nome_prestador or "").strip()))
 
 
 def obter_texto_tag(parent: ET.Element, tag_name: str, padrao: str = "") -> str:
@@ -409,6 +420,8 @@ def _extrair_dados_xml_nacional(root: ET.Element, caminho_xml: Path) -> dict[str
         # Este layout só procura a tag CNPJ (nunca CPF) em emit/prest, então o
         # prestador é sempre pessoa jurídica.
         "tipo_cliente_prestador": "Pessoa Jurídica",
+        # Este layout não tem o padrão de nome MEI do Portal Da Paraíba.
+        "tipo_tributacao": "Normal",
         "nome_prestador": nome_prestador,
         "uf_prestador": uf_prestador,
         "cidade_prestador": xLocEmi or cidade_local_prestacao,
@@ -519,9 +532,13 @@ def _extrair_dados_xml_paraiba(root: ET.Element, caminho_xml: Path) -> dict[str,
     cep_prestador = ""
     email_prestador = ""
 
+    tipo_tributacao = "Normal"
+
     prestador = root.find(".//{*}PrestadorServico")
     if prestador is not None:
         nome_prestador = obter_texto_tag(prestador, "RazaoSocial")
+        if _eh_nome_prestador_padrao_mei(nome_prestador):
+            tipo_tributacao = "Simples Nacional MEI"
 
         cpf_cnpj = prestador.find(".//{*}IdentificacaoPrestador/{*}CpfCnpj")
         if cpf_cnpj is not None:
@@ -664,6 +681,7 @@ def _extrair_dados_xml_paraiba(root: ET.Element, caminho_xml: Path) -> dict[str,
         "prefeitura": prefeitura,
         "cnpj_prestador": cnpj_prestador,
         "tipo_cliente_prestador": tipo_cliente_prestador,
+        "tipo_tributacao": tipo_tributacao,
         "nome_prestador": nome_prestador,
         "uf_prestador": uf_prestador,
         "cidade_prestador": cidade_prestador,
@@ -779,7 +797,7 @@ def processar_pasta_xmls(
         str(ws.cell(row=1, column=c).value or "").strip().upper()
         for c in range(1, ws.max_column + 1)
     ]
-    for cabecalho_novo in ("REGIME_TRIBUTARIO", "TIPO_CLIENTE"):
+    for cabecalho_novo in ("REGIME_TRIBUTARIO", "TIPO_CLIENTE", "TIPO_TRIBUTACAO"):
         if cabecalho_novo not in cabecalhos_existentes:
             ws.cell(row=1, column=ws.max_column + 1).value = cabecalho_novo
             cabecalhos_existentes.append(cabecalho_novo)
@@ -859,6 +877,11 @@ def processar_pasta_xmls(
         # sobre a regra de CNAE final acima quando as duas se aplicam à mesma nota.
         dados["iss_retido"] = _aplicar_regra_iss_retido_por_id_cnae(dados["iss_retido"], dados["id_cnae"])
 
+        # Regra de negócio: Simples Nacional MEI tem prioridade máxima — sempre
+        # "NÃO", mesmo sobre a regra de ID_CNAE acima.
+        if dados["tipo_tributacao"] == "Simples Nacional MEI":
+            dados["iss_retido"] = "NÃO"
+
         # Organiza a linha no formato sequencial da planilha exemplo, sem a coluna PREFEITURA
         linha = [
             dados["arquivo_xml"],
@@ -895,6 +918,7 @@ def processar_pasta_xmls(
             dados["desc_cnae_final"],
             dados["regime_tributario"],
             dados["tipo_cliente_prestador"],
+            dados["tipo_tributacao"],
         ]
 
         ws.append(linha)

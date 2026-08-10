@@ -1,7 +1,33 @@
 import unittest
 
-from iss_fortaleza_automacao import _aplicar_override_iss_retido_por_id_cnae, _interpretar_iss_retido
-from processamento_xml import _aplicar_regra_iss_retido_por_id_cnae
+from iss_fortaleza_automacao import (
+    DocumentoPortalISS,
+    _aplicar_override_iss_retido_por_id_cnae,
+    _aplicar_override_iss_retido_por_tipo_tributacao,
+    _eh_prestador_fortaleza_ce,
+    _interpretar_iss_retido,
+)
+from processamento_xml import _aplicar_regra_iss_retido_por_id_cnae, _eh_nome_prestador_padrao_mei
+
+
+def _documento(uf_prestador="", cidade_prestador=""):
+    """Cria um DocumentoPortalISS mínimo só com os campos relevantes para
+    _eh_prestador_fortaleza_ce."""
+    return DocumentoPortalISS(
+        arquivo_pdf="nota.xml",
+        cnpj_prestador="12345678000199",
+        numero_nf="1",
+        id_cnae_final="0101",
+        data_emissao="01/01/2026",
+        descricao_servico="Serviço teste",
+        uf_local_prestacao="CE",
+        cidade_local_prestacao="FORTALEZA",
+        natureza_operacao="Tributação no Município",
+        iss_retido="Não",
+        valor_servico="100,00",
+        uf_prestador=uf_prestador,
+        cidade_prestador=cidade_prestador,
+    )
 
 
 class TestInterpretarIssRetido(unittest.TestCase):
@@ -59,6 +85,54 @@ class TestRegraIssRetidoPorIdCnaeProcessamento(unittest.TestCase):
     def test_outro_id_cnae_preserva_valor_recebido(self):
         self.assertEqual(_aplicar_regra_iss_retido_por_id_cnae("SIM", "0107"), "SIM")
         self.assertEqual(_aplicar_regra_iss_retido_por_id_cnae("NÃO", "0107"), "NÃO")
+
+
+class TestOverrideIssRetidoPorTipoTributacao(unittest.TestCase):
+    """Override de Simples Nacional MEI — prioridade máxima, aplicado depois
+    do override de ID_CNAE."""
+
+    def test_simples_nacional_mei_forca_desmarcar(self):
+        self.assertFalse(_aplicar_override_iss_retido_por_tipo_tributacao(True, "Simples Nacional MEI"))
+
+    def test_normal_nao_altera_o_valor(self):
+        self.assertTrue(_aplicar_override_iss_retido_por_tipo_tributacao(True, "Normal"))
+        self.assertFalse(_aplicar_override_iss_retido_por_tipo_tributacao(False, "Normal"))
+
+    def test_simples_nacional_me_epp_nao_altera_o_valor(self):
+        self.assertTrue(_aplicar_override_iss_retido_por_tipo_tributacao(True, "Simples Nacional ME-EPP"))
+
+    def test_prioridade_sobre_id_cnae_1207(self):
+        # ID_CNAE 1207 forçaria "marcado", mas MEI vence por ser aplicado depois.
+        deve_marcar = _aplicar_override_iss_retido_por_id_cnae(False, "1207")
+        deve_marcar = _aplicar_override_iss_retido_por_tipo_tributacao(deve_marcar, "Simples Nacional MEI")
+        self.assertFalse(deve_marcar)
+
+
+class TestEhPrestadorFortalezaCe(unittest.TestCase):
+    def test_fortaleza_ce_e_reconhecido(self):
+        self.assertTrue(_eh_prestador_fortaleza_ce(_documento(uf_prestador="CE", cidade_prestador="FORTALEZA")))
+
+    def test_outra_cidade_no_ce_nao_e_fortaleza(self):
+        self.assertFalse(_eh_prestador_fortaleza_ce(_documento(uf_prestador="CE", cidade_prestador="SOBRAL")))
+
+    def test_fortaleza_em_outra_uf_nao_conta(self):
+        self.assertFalse(_eh_prestador_fortaleza_ce(_documento(uf_prestador="PB", cidade_prestador="CAMPINA GRANDE")))
+
+
+class TestEhNomePrestadorPadraoMei(unittest.TestCase):
+    def test_padrao_mei_reconhecido(self):
+        self.assertTrue(_eh_nome_prestador_padrao_mei("40.386.363 JOSE CARLOS GOMES DA SILVA"))
+        self.assertTrue(_eh_nome_prestador_padrao_mei("36.592.831 JOSE ANDREWY DA SILVA MELO"))
+
+    def test_nome_comum_nao_bate(self):
+        self.assertFalse(_eh_nome_prestador_padrao_mei("JOSE CARLOS GOMES DA SILVA"))
+
+    def test_razao_social_ltda_nao_bate(self):
+        self.assertFalse(_eh_nome_prestador_padrao_mei("X1 LIKE PRODUCOES E EVENTOS LTDA"))
+
+    def test_vazio_nao_bate(self):
+        self.assertFalse(_eh_nome_prestador_padrao_mei(""))
+        self.assertFalse(_eh_nome_prestador_padrao_mei(None))
 
 
 if __name__ == "__main__":
