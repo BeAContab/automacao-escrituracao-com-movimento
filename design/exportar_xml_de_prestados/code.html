@@ -1,0 +1,311 @@
+<!DOCTYPE html><html class="light" lang="pt-BR" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Exportar XML de Prestados - Automações ISS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600&amp;family=Plus+Jakarta+Sans:wght@600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container": "#e5f0f2",
+                        "secondary-fixed-dim": "#aecbd8",
+                        "outline-variant": "#d5c4b1",
+                        "secondary-container": "#c7e4f2",
+                        "inverse-primary": "#fdba5d",
+                        "primary-fixed-dim": "#fdba5d",
+                        "on-secondary-fixed": "#001f28",
+                        "on-error-container": "#93000a",
+                        "surface-dim": "#d1dcde",
+                        "on-tertiary-fixed-variant": "#314b53",
+                        "on-tertiary-container": "#2f4952",
+                        "primary": "#845400",
+                        "inverse-surface": "#283234",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#2f4a55",
+                        "inverse-on-surface": "#e8f3f5",
+                        "surface-container-highest": "#d9e4e6",
+                        "secondary": "#47626e",
+                        "on-background": "#131d1f",
+                        "primary-container": "#e8a74c",
+                        "on-secondary": "#ffffff",
+                        "secondary-fixed": "#cae7f4",
+                        "surface-container-high": "#dfeaec",
+                        "surface-tint": "#845400",
+                        "surface": "#f0fbfd",
+                        "on-primary": "#ffffff",
+                        "on-surface-variant": "#514537",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#ebf6f8",
+                        "tertiary-fixed": "#cbe7f2",
+                        "on-primary-fixed-variant": "#643f00",
+                        "on-primary-container": "#623e00",
+                        "on-tertiary-fixed": "#021f27",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#d9e4e6",
+                        "surface-bright": "#f0fbfd",
+                        "on-primary-fixed": "#2a1800",
+                        "on-surface": "#131d1f",
+                        "outline": "#837565",
+                        "tertiary-fixed-dim": "#afcbd5",
+                        "tertiary": "#48626b",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-container": "#9db8c2",
+                        "on-error": "#ffffff",
+                        "background": "#f0fbfd",
+                        "on-secondary-container": "#4b6772",
+                        "primary-fixed": "#ffddb5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "xl": "40px",
+                        "gutter": "20px",
+                        "md": "16px",
+                        "base": "4px",
+                        "margin": "32px",
+                        "xs": "4px",
+                        "sm": "8px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "headline-sm": ["Plus Jakarta Sans"],
+                        "body-sm": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        /* Tonal Layering & Elevation */
+        .card-level-1 { background-color: #FFFFFF; border: 1px solid #B5C0C2; box-shadow: 0px 4px 12px rgba(23, 43, 49, 0.05); }
+        .input-border { border: 1px solid #B5C0C2; }
+        .input-border:focus-within { border-color: theme('colors.secondary'); box-shadow: 0 0 0 2px rgba(71, 98, 110, 0.1); outline: none; }
+    </style>
+</head>
+<body class="font-body-md text-body-md antialiased min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full bg-secondary dark:bg-on-tertiary-fixed fixed left-0 top-0 w-[280px] border-r border-outline-variant shadow-sm z-20">
+<div class="p-lg flex flex-col">
+<div class="p-lg flex items-center gap-md"><img alt="Automações ISS Logo" class="h-10 w-10 object-contain rounded bg-white p-1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBteGtB-0fTxp6wTfYfl6C2OxaPz0abvFuGXjuhkZlUY6zzKikMf9Cas-BnjEJnLqyNFoNL3D6LLx_ENzTkbtnLs16xdWjhQ7BIHTSMbgGcN31LiroLOKTsJOB8JqHruAeOjbmMNUe1NqJ31Zp2ZDQYBuD5E2BPBH0EEsP2RqRqtqpJ4rXajwvPLZlaf0p7bbzINGAzNBpV5J13U9e_Q-vkBLHZysaQUpSGxQP1m9F6r9Qc70QVOofYwoUnRtJ83He8gA"><div><h1 class="font-headline-md text-headline-md font-bold text-white">Automações ISS</h1><p class="font-body-sm text-body-sm text-secondary-fixed-dim">Professional Fiscal Automation</p></div></div>
+
+</div>
+<div class="flex-1 flex flex-col gap-sm px-sm">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80 rounded-lg mx-xs" href="#">
+<span class="material-symbols-outlined" data-icon="data_object">data_object</span>
+<span class="font-label-md text-label-md">Processar XMLs</span>
+</a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80 rounded-lg mx-xs" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-label-md text-label-md">Automação: Escrituração</span>
+</a>
+<a class="flex items-center gap-md px-lg py-sm border-l-4 border-primary-container bg-on-secondary-fixed-variant text-white transition-colors cursor-pointer active:opacity-80 rounded-r-lg mx-xs" href="#">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+<span class="font-label-md text-label-md">Exportar XML de Prestados</span>
+</a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80 rounded-lg mx-xs" href="#">
+<span class="material-symbols-outlined" data-icon="cloud_download">cloud_download</span>
+<span class="font-label-md text-label-md">Captura Escrituração</span>
+</a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80 rounded-lg mx-xs" href="#">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+<span class="font-label-md text-label-md">Encerramento ISS</span>
+</a>
+</div>
+<div class="p-lg mt-auto flex flex-col gap-md">
+<button class="w-full py-sm px-md rounded border border-secondary-fixed-dim text-white font-label-md text-label-md hover:bg-on-secondary-fixed-variant transition-colors flex items-center justify-center gap-sm">
+<span class="material-symbols-outlined text-[18px]">key</span>
+                API Keys
+             </button>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80 rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Configurações</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col min-w-0 md:ml-[280px]">
+<!-- TopAppBar -->
+<header class="sticky top-0 w-full bg-surface dark:bg-surface-dim border-b border-outline-variant z-10 flex justify-between items-center px-margin py-md">
+<div>
+<span class="font-headline-sm text-headline-sm text-primary font-bold hidden md:block">Exportar XML de Prestados</span>
+<span class="font-headline-sm text-headline-sm text-primary font-bold md:hidden">Automações ISS</span>
+</div>
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-sm rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</div>
+</header>
+<!-- Main Area -->
+<main class="flex-1 p-margin overflow-y-auto">
+<div class="mb-lg">
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Exportar XML de Prestados</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Gere e exporte lotes de arquivos XML de serviços prestados.</p>
+</div>
+<div class="card-level-1 rounded-lg flex flex-col mb-lg overflow-hidden">
+<!-- Filters Section -->
+<div class="p-lg border-b border-surface-variant bg-surface-container-lowest">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary">filter_list</span>
+                        Filtros de Exportação
+                    </h3>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<!-- Período -->
+<div class="flex flex-col gap-base">
+<label class="font-label-md text-label-md text-on-surface-variant">Período (Início/Fim)</label>
+<div class="flex gap-sm">
+<div class="flex-1 flex items-center px-sm py-xs rounded input-border bg-white group">
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[18px] mr-xs">calendar_today</span>
+<input class="w-full bg-transparent border-none p-0 text-body-md text-on-surface focus:ring-0 placeholder-secondary-fixed-dim" placeholder="DD/MM/AAAA" type="text">
+</div>
+<span class="flex items-center text-on-surface-variant">-</span>
+<div class="flex-1 flex items-center px-sm py-xs rounded input-border bg-white group">
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[18px] mr-xs">calendar_today</span>
+<input class="w-full bg-transparent border-none p-0 text-body-md text-on-surface focus:ring-0 placeholder-secondary-fixed-dim" placeholder="DD/MM/AAAA" type="text">
+</div>
+</div>
+</div>
+<!-- Status -->
+<div class="flex flex-col gap-base">
+<label class="font-label-md text-label-md text-on-surface-variant">Status da Nota</label>
+<div class="flex items-center px-sm py-xs rounded input-border bg-white">
+<select class="w-full bg-transparent border-none p-0 text-body-md text-on-surface focus:ring-0 appearance-none">
+<option value="">Todos os Status</option>
+<option value="ready">Pronto para Exportação</option>
+<option value="pending">Pendente de Validação</option>
+</select>
+<span class="material-symbols-outlined text-secondary-fixed-dim pointer-events-none">arrow_drop_down</span>
+</div>
+</div>
+<!-- Cliente/CNPJ -->
+<div class="flex flex-col gap-base">
+<label class="font-label-md text-label-md text-on-surface-variant">Cliente / CNPJ</label>
+<div class="flex items-center px-sm py-xs rounded input-border bg-white">
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[18px] mr-xs">search</span>
+<input class="w-full bg-transparent border-none p-0 text-body-md text-on-surface focus:ring-0 placeholder-secondary-fixed-dim" placeholder="Buscar por nome ou CNPJ" type="text">
+</div>
+</div>
+</div>
+</div>
+<!-- Data Table Section -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-surface-variant">
+<th class="p-sm w-12 text-center font-label-md text-label-md text-on-surface-variant">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox">
+</th>
+<th class="p-sm font-label-md text-label-md text-on-surface-variant">Nº Nota</th>
+<th class="p-sm font-label-md text-label-md text-on-surface-variant">Cliente</th>
+<th class="p-sm font-label-md text-label-md text-on-surface-variant">CNPJ</th>
+<th class="p-sm font-label-md text-label-md text-on-surface-variant">Data Emissão</th>
+<th class="p-sm font-label-md text-label-md text-on-surface-variant text-right">Valor (R$)</th>
+<th class="p-sm font-label-md text-label-md text-on-surface-variant">Status</th>
+</tr>
+</thead>
+<tbody class="text-body-sm">
+<tr class="border-b border-surface-variant hover:bg-surface-container transition-colors group h-10">
+<td class="p-sm text-center">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox">
+</td>
+<td class="p-sm font-body-md text-on-surface">NFS-2024-001</td>
+<td class="p-sm text-on-surface truncate max-w-[150px]">Tech Solutions Ltda</td>
+<td class="p-sm text-on-surface-variant">12.345.678/0001-90</td>
+<td class="p-sm text-on-surface-variant">10/10/2024</td>
+<td class="p-sm text-on-surface font-body-md text-right">5.430,00</td>
+<td class="p-sm">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-[#E6F4EA] text-[#137333] font-label-md text-[10px]">
+                                        Pronto
+                                    </span>
+</td>
+</tr>
+<tr class="border-b border-surface-variant hover:bg-surface-container transition-colors group h-10">
+<td class="p-sm text-center">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox">
+</td>
+<td class="p-sm font-body-md text-on-surface">NFS-2024-002</td>
+<td class="p-sm text-on-surface truncate max-w-[150px]">Consultoria Alpha SA</td>
+<td class="p-sm text-on-surface-variant">98.765.432/0001-10</td>
+<td class="p-sm text-on-surface-variant">11/10/2024</td>
+<td class="p-sm text-on-surface font-body-md text-right">12.000,50</td>
+<td class="p-sm">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-[#E6F4EA] text-[#137333] font-label-md text-[10px]">
+                                        Pronto
+                                    </span>
+</td>
+</tr>
+<tr class="border-b border-surface-variant hover:bg-surface-container transition-colors group h-10">
+<td class="p-sm text-center">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox">
+</td>
+<td class="p-sm font-body-md text-on-surface">NFS-2024-003</td>
+<td class="p-sm text-on-surface truncate max-w-[150px]">Beta Comércio</td>
+<td class="p-sm text-on-surface-variant">45.678.901/0001-23</td>
+<td class="p-sm text-on-surface-variant">12/10/2024</td>
+<td class="p-sm text-on-surface font-body-md text-right">850,00</td>
+<td class="p-sm">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FFF3E0] text-[#E65100] font-label-md text-[10px]">
+                                        Pendente
+                                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Actions Footer -->
+<div class="p-md bg-surface-container-lowest border-t border-surface-variant flex justify-between items-center">
+<span class="text-body-sm text-on-surface-variant">2 notas selecionadas</span>
+<div class="flex gap-md">
+<button class="px-lg py-sm rounded border border-secondary text-secondary font-label-md text-label-md hover:bg-surface-container transition-colors">
+                            Baixar CSV
+                        </button>
+<button class="px-lg py-sm rounded bg-primary-container text-white font-label-md text-label-md hover:bg-inverse-primary transition-colors shadow-sm flex items-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">file_download</span>
+                            Gerar Lote de Exportação
+                        </button>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="w-full py-base bg-secondary dark:bg-on-tertiary-fixed border-t border-outline-variant flex justify-center items-center">
+<div class="flex flex-col items-center gap-xs">
+<span class="font-label-md text-label-md text-white">Automações ISS © 2024</span>
+<div class="flex gap-md font-body-sm text-body-sm">
+<a class="text-secondary-fixed-dim hover:text-primary-container transition-colors" href="#">Termos de Uso</a>
+<a class="text-secondary-fixed-dim hover:text-primary-container transition-colors" href="#">Privacidade</a>
+</div>
+</div>
+</footer>
+</div>
+
+
+</body></html>

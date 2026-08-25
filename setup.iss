@@ -3,15 +3,17 @@
 
 [Setup]
 ; AppId único para identificar esta aplicação no Windows (gerado para controle de atualização/desinstalação)
+; Mantido igual à versão anterior de propósito: garante que instalações existentes de
+; "Automação ISS Fortaleza" sejam atualizadas in-place, mesmo com o nome/pasta mudando.
 AppId={{54DA395C-DA64-4ABE-938A-2E5061AE3821}
-AppName=Automação ISS Fortaleza
-AppVersion=2.25.2
+AppName=Automações ISS
+AppVersion=2.26.0
 AppPublisher=Barreira & Associados
-DefaultDirName={autopf}\Automação ISS Fortaleza
+DefaultDirName={autopf}\Automações ISS
 DisableProgramGroupPage=yes
 ; Local e nome do instalador gerado
 OutputDir=installer_output
-OutputBaseFilename=Setup_Automacao_ISS_Fortaleza_v2.25.2
+OutputBaseFilename=Setup_Automacoes_ISS_v2.26.0
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -32,11 +34,11 @@ Source: "dist\automacao-iss-fortaleza\*"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Atalho no Menu Iniciar
-Name: "{autoprograms}\Automação ISS Fortaleza"; Filename: "{app}\automacao-iss-fortaleza.exe"
+Name: "{autoprograms}\Automações ISS"; Filename: "{app}\automacao-iss-fortaleza.exe"
 ; Atalho na Área de Trabalho (se marcado a task desktopicon)
-Name: "{autodesktop}\Automação ISS Fortaleza"; Filename: "{app}\automacao-iss-fortaleza.exe"; Tasks: desktopicon
+Name: "{autodesktop}\Automações ISS"; Filename: "{app}\automacao-iss-fortaleza.exe"; Tasks: desktopicon
 
 [Run]
 ; Permite inicializar o programa imediatamente após a conclusão da instalação
-Filename: "{app}\automacao-iss-fortaleza.exe"; Description: "{cm:LaunchProgram,Automação ISS Fortaleza}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\automacao-iss-fortaleza.exe"; Description: "{cm:LaunchProgram,Automações ISS}"; Flags: nowait postinstall skipifsilent
 

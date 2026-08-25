@@ -1,0 +1,337 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Automação: Escrituração - Automações ISS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;family=Hanken+Grotesk:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#021f27",
+                      "on-secondary-fixed": "#001f28",
+                      "surface-container-high": "#dfeaec",
+                      "surface-bright": "#f0fbfd",
+                      "error-container": "#ffdad6",
+                      "on-primary-fixed": "#2a1800",
+                      "secondary-fixed": "#cae7f4",
+                      "secondary-container": "#c7e4f2",
+                      "on-tertiary": "#ffffff",
+                      "surface-dim": "#d1dcde",
+                      "inverse-primary": "#fdba5d",
+                      "background": "#f0fbfd",
+                      "surface-container-lowest": "#ffffff",
+                      "primary": "#845400",
+                      "on-tertiary-container": "#2f4952",
+                      "tertiary-fixed": "#cbe7f2",
+                      "surface-tint": "#845400",
+                      "surface-variant": "#d9e4e6",
+                      "tertiary-fixed-dim": "#afcbd5",
+                      "on-surface-variant": "#514537",
+                      "on-secondary": "#ffffff",
+                      "tertiary-container": "#9db8c2",
+                      "surface-container-highest": "#d9e4e6",
+                      "secondary-fixed-dim": "#aecbd8",
+                      "on-primary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#314b53",
+                      "primary-container": "#e8a74c",
+                      "primary-fixed-dim": "#fdba5d",
+                      "outline": "#837565",
+                      "on-surface": "#131d1f",
+                      "inverse-surface": "#283234",
+                      "error": "#ba1a1a",
+                      "surface-container": "#e5f0f2",
+                      "secondary": "#47626e",
+                      "inverse-on-surface": "#e8f3f5",
+                      "on-secondary-container": "#4b6772",
+                      "on-background": "#131d1f",
+                      "tertiary": "#48626b",
+                      "on-error-container": "#93000a",
+                      "on-primary-fixed-variant": "#643f00",
+                      "surface-container-low": "#ebf6f8",
+                      "on-error": "#ffffff",
+                      "on-primary-container": "#623e00",
+                      "outline-variant": "#d5c4b1",
+                      "on-secondary-fixed-variant": "#2f4a55",
+                      "surface": "#f0fbfd",
+                      "primary-fixed": "#ffddb5"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xl": "40px",
+                      "lg": "24px",
+                      "sm": "8px",
+                      "gutter": "20px",
+                      "xs": "4px",
+                      "md": "16px",
+                      "base": "4px",
+                      "margin": "32px"
+              },
+              "fontFamily": {
+                      "headline-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-sm": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg-mobile": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-sm": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "label-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-md": [
+                              "Plus Jakarta Sans"
+                      ]
+              },
+              "fontSize": {
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-md": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined[data-weight="fill"] {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md text-body-md antialiased min-h-screen flex flex-col">
+<!-- SideNavBar -->
+<nav class="hidden md:flex fixed left-0 top-0 h-full w-[280px] bg-secondary dark:bg-on-tertiary-fixed border-r border-outline-variant shadow-sm flex-col z-20">
+<div class="p-lg flex items-center gap-md">
+<img alt="Automações ISS Logo" class="h-10 w-10 object-contain rounded bg-white p-1" data-alt="A clean, modern corporate logo featuring an abstract geometric monogram for an accounting software firm. It uses sharp lines and a color palette of deep petrol blue and golden orange on a stark white background. The style is minimalist and highly professional, reflecting trust and efficiency." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWkGI0TJRn6v1H-KRCgeQ05TgnHDK8L-wM_aHhsFoZBxgk3UnDJInBJMNZjBQJrJCbUw7zd1-80yCALi1mO2ur8jMeKXfD__G80BORmu_I_hodCnLJ22ZabIqzD7Bflvv-smGYsQ004_PoqzBxEQdlSF1oviyiQr6-vn--i_kYeQRx8j5-bMI31INpve18MwfwIGqLC8DOSHULPDCp_DI0uPHdaaPIY21BlOZGll47-67FRBVgb9za443GJw3gd9ZYDg">
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-white">Automações ISS</h1>
+<p class="font-body-sm text-body-sm text-secondary-fixed-dim">Professional Fiscal Automation</p>
+</div>
+</div>
+<ul class="flex flex-col flex-grow py-md gap-sm">
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="data_object">data_object</span>
+<span class="font-label-md text-label-md">Processar XMLs</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm border-l-4 border-primary-container bg-on-secondary-fixed-variant text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note" data-weight="fill">edit_note</span>
+<span class="font-label-md text-label-md">Automação: Escrituração</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+<span class="font-label-md text-label-md">Exportar XML de Prestados</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="cloud_download">cloud_download</span>
+<span class="font-label-md text-label-md">Captura Escrituração</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+<span class="font-label-md text-label-md">Encerramento ISS</span>
+</a>
+</li>
+</ul>
+<div class="p-lg mt-auto flex flex-col gap-sm">
+<button class="w-full bg-on-tertiary-fixed-variant text-white py-sm px-md rounded-lg font-label-md text-label-md hover:bg-on-tertiary-fixed transition-colors text-center border border-outline-variant/30">
+                API Keys
+            </button>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Configurações</span>
+</a>
+</div>
+</nav>
+<div class="flex-grow flex flex-col md:ml-[280px]">
+<!-- TopAppBar -->
+<header class="sticky top-0 w-full bg-surface dark:bg-surface-dim border-b border-outline-variant flex justify-between items-center px-margin py-md z-10">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold">Automação: Escrituração</h2>
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-sm rounded-full">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow p-margin bg-surface-container-lowest">
+<div class="max-w-7xl mx-auto">
+<div class="mb-lg">
+<h3 class="font-headline-md text-headline-md text-on-surface font-bold mb-xs">Nova Execução de Escrituração</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Configure os parâmetros e inicie o processo automatizado de escrituração fiscal no sistema municipal.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-lg">
+<!-- Left Column: Form -->
+<div class="lg:col-span-1 bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm">
+<h4 class="font-headline-sm text-headline-sm font-semibold mb-md pb-xs border-b border-surface-container-highest">Parâmetros</h4>
+<form class="flex flex-col gap-lg">
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface font-semibold">Planilha Base</label>
+<div class="border border-outline-variant rounded-lg p-md flex flex-col items-center justify-center gap-sm bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer border-dashed">
+<span class="material-symbols-outlined text-on-surface-variant">upload_file</span>
+<span class="font-label-md text-label-md text-primary font-semibold">Selecionar Planilha .XLSX</span>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface font-semibold">Competência</label>
+<div class="grid grid-cols-2 gap-sm">
+<select class="border border-outline-variant rounded-lg px-md py-sm bg-surface-container-lowest text-on-surface font-body-md text-body-md focus:border-on-tertiary-container focus:ring-1 focus:ring-on-tertiary-container outline-none">
+<option>Mês</option>
+<option>01 - Janeiro</option>
+<option>02 - Fevereiro</option>
+<option>03 - Março</option>
+<option>04 - Abril</option>
+<option>05 - Maio</option>
+<option>06 - Junho</option>
+<option>07 - Julho</option>
+<option>08 - Agosto</option>
+<option>09 - Setembro</option>
+<option>10 - Outubro</option>
+<option>11 - Novembro</option>
+<option>12 - Dezembro</option>
+</select>
+<select class="border border-outline-variant rounded-lg px-md py-sm bg-surface-container-lowest text-on-surface font-body-md text-body-md focus:border-on-tertiary-container focus:ring-1 focus:ring-on-tertiary-container outline-none">
+<option>Ano</option>
+<option>2024</option>
+<option>2023</option>
+</select>
+</div>
+</div>
+<button class="w-full bg-primary-container text-white font-label-md text-label-md font-bold py-md px-lg rounded-lg hover:bg-primary transition-colors flex justify-center items-center gap-sm mt-md" type="button">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+                                Iniciar Automação
+                            </button>
+</form>
+</div>
+<!-- Right Column: Activity -->
+<div class="lg:col-span-2 flex flex-col gap-lg">
+<!-- Progress Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm">
+<div class="flex justify-between items-center mb-md">
+<h4 class="font-headline-sm text-headline-sm font-semibold">Status da Operação</h4>
+<span class="bg-surface-container-high text-on-surface-variant px-sm py-xs rounded-full font-label-md text-[10px] uppercase tracking-wider">Aguardando Início</span>
+</div>
+<div class="w-full bg-surface-container-highest rounded-full h-2.5 mb-2 overflow-hidden">
+<div class="bg-primary-container h-2.5 rounded-full" style="width: 0%"></div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-right">0% Concluído</p>
+</div>
+<!-- Terminal Log -->
+<div class="bg-inverse-surface rounded-lg p-lg flex-grow min-h-[300px] shadow-sm flex flex-col font-mono text-[13px] leading-relaxed overflow-hidden">
+<div class="flex items-center gap-2 mb-md pb-sm border-b border-on-surface/20">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">terminal</span>
+<h4 class="text-on-surface-variant font-semibold">Log de Execução</h4>
+</div>
+<div class="flex-grow overflow-y-auto">
+<p class="text-secondary-fixed-dim">&gt;&nbsp;Sistema pronto para iniciar processo de escrituração...</p>
+<p class="text-secondary-fixed-dim">&gt;&nbsp;Aguardando seleção de planilha e competência.</p>
+<!-- Example active log lines (hidden initially) -->
+<!-- <p class="text-white">>&nbsp;Lendo arquivo plano_contas_base.xlsx...</p> -->
+<!-- <p class="text-green-400">>&nbsp;✓ Arquivo lido com sucesso. 142 registros encontrados.</p> -->
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Footer -->
+<footer class="w-full py-base bg-secondary dark:bg-on-tertiary-fixed border-t border-outline-variant flex justify-center items-center md:ml-[280px] z-10">
+<div class="flex flex-col items-center gap-xs">
+<span class="font-label-md text-label-md text-white font-bold tracking-wider">BARREIRA &amp; ASSOCIADOS</span>
+<span class="font-body-sm text-body-sm text-secondary-fixed-dim">ASSESSORIA CONTÁBIL</span>
+<div class="flex gap-md mt-sm">
+<a class="font-body-sm text-body-sm text-white underline hover:text-primary-container transition-colors" href="#">Termos de Uso</a>
+<a class="font-body-sm text-body-sm text-white underline hover:text-primary-container transition-colors" href="#">Privacidade</a>
+<span class="font-body-sm text-body-sm text-secondary-fixed-dim ml-md">Automações ISS © 2024</span>
+</div>
+</div>
+</footer>
+
+
+</body></html>

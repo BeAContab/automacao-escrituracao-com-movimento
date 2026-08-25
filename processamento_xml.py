@@ -745,20 +745,20 @@ def processar_pasta_xmls(
 
     caminho_origem = Path(pasta_origem)
     if not caminho_origem.exists() or not caminho_origem.is_dir():
-        log(f"Pasta de origem inválida: {pasta_origem}", True)
+        log(f"Não encontrei a pasta '{pasta_origem}' — verifique se o caminho está certo.", True)
         raise FileNotFoundError(f"Pasta de origem {pasta_origem} não encontrada.")
 
     # Localiza arquivos XML: usa a lista explícita se fornecida, senão escaneia
     # a pasta recursivamente (comportamento padrão, inalterado).
     arquivos_xml = list(arquivos_xml_forcados) if arquivos_xml_forcados is not None else list(caminho_origem.rglob("*.xml"))
     if not arquivos_xml:
-        log("Nenhum arquivo XML encontrado na pasta selecionada.", True)
+        log("Não encontrei nenhum arquivo XML na pasta selecionada.", True)
         # Exibe estado de erro na barra de progresso, não "Concluído!" (FALHA-05)
         if callback_progresso:
             callback_progresso(0, "Erro: nenhum XML encontrado.")
         raise FileNotFoundError("Nenhum arquivo XML encontrado para processamento.")
 
-    log(f"Total de XMLs localizados para análise: {len(arquivos_xml)}")
+    log(f"Encontrei {len(arquivos_xml)} arquivo(s) XML nessa pasta. Vou começar a analisar um por um.")
 
     # Define o arquivo XLSX resultante no diretório de origem selecionado
     caminho_destino = caminho_origem / "notas_xml_processadas.xlsx"
@@ -775,10 +775,10 @@ def processar_pasta_xmls(
             path_modelo = Path(__file__).parent / modelo_planilha
 
     if not path_modelo.exists():
-        log(f"Planilha de exemplo modelo não encontrada em {modelo_planilha}.", True)
+        log(f"Não encontrei o modelo de planilha em '{modelo_planilha}' — preciso dele para montar a planilha final.", True)
         raise FileNotFoundError(f"Modelo {modelo_planilha} ausente.")
 
-    log(f"Copiando modelo de estrutura para o destino: {caminho_destino.name}")
+    log(f"Preparando a planilha de destino a partir do modelo: {caminho_destino.name}")
     shutil.copy(path_modelo, caminho_destino)
 
     # Abre a planilha de destino usando openpyxl
@@ -832,10 +832,10 @@ def processar_pasta_xmls(
         dados, motivo_descarte = extrair_dados_xml(xml_file)
         if dados is None:
             ignoradas += 1
-            log(f"[{idx}/{total}] Ignorado: {xml_file.name} ({motivo_descarte})")
+            log(f"[{idx}/{total}] Pulando o arquivo {xml_file.name}: {motivo_descarte}")
             continue
 
-        log(f"[{idx}/{total}] Processando NFS-e {dados['numero_nf']} do prestador {dados['nome_prestador']}")
+        log(f"[{idx}/{total}] Lendo a NFS-e nº {dados['numero_nf']}, do prestador {dados['nome_prestador']}...")
 
         # Classificação CNAE final com IA do Tess (com cache local por prestador + serviço)
         id_cnae_final = ""
@@ -848,7 +848,7 @@ def processar_pasta_xmls(
         
         if chave_cache in cache_cnae:
             id_cnae_final, desc_cnae_final = cache_cnae[chave_cache]
-            log(f"[{idx}/{total}] Reutilizando classificação de CNAE do cache local para o prestador {dados['nome_prestador']}")
+            log(f"[{idx}/{total}] Já classifiquei o CNAE desse prestador antes ({dados['nome_prestador']}) — vou reaproveitar o resultado, sem chamar a IA de novo.")
         else:
             try:
                 id_cnae_final, desc_cnae_final = resolver_cnae_tess_ai(
@@ -862,7 +862,7 @@ def processar_pasta_xmls(
                 if id_cnae_final and desc_cnae_final:
                     cache_cnae[chave_cache] = (id_cnae_final, desc_cnae_final)
             except Exception as err:
-                log(f"Erro na IA do Tess ao classificar CNAE para a nota {dados['numero_nf']}: {err}", True)
+                log(f"A IA do Tess não conseguiu classificar o CNAE da nota {dados['numero_nf']}: {err}", True)
 
         dados["id_cnae_final"] = id_cnae_final
         dados["desc_cnae_final"] = desc_cnae_final
@@ -928,9 +928,9 @@ def processar_pasta_xmls(
         if checkpoint_a_cada > 0 and processadas % checkpoint_a_cada == 0:
             try:
                 wb.save(caminho_destino)
-                log(f"Checkpoint: planilha salva com {processadas} nota(s) até agora.")
+                log(f"Salvei um checkpoint da planilha com {processadas} nota(s) processada(s) até agora, por segurança.")
             except Exception as e_ckpt:
-                log(f"Aviso: falha ao salvar checkpoint ({e_ckpt}).", True)
+                log(f"Não consegui salvar o checkpoint de segurança agora, mas vou continuar processando ({e_ckpt}).", True)
 
     wb.save(caminho_destino)
     wb.close()
@@ -978,7 +978,7 @@ def processar_pasta_xmls_auto(
 
     caminho_origem = Path(pasta_origem)
     if not caminho_origem.exists() or not caminho_origem.is_dir():
-        log(f"Pasta de origem inválida: {pasta_origem}", True)
+        log(f"Não encontrei a pasta '{pasta_origem}' — verifique se o caminho está certo.", True)
         raise FileNotFoundError(f"Pasta de origem {pasta_origem} não encontrada.")
 
     xmls_diretos = list(caminho_origem.glob("*.xml"))  # não recursivo, só a pasta selecionada
@@ -998,7 +998,7 @@ def processar_pasta_xmls_auto(
     # apenas a esses arquivos via arquivos_xml_forcados — NÃO usa rglob aqui, para
     # não puxar também o conteúdo das subpastas (que são tratadas à parte abaixo).
     if xmls_diretos:
-        log(f"Processando {len(xmls_diretos)} XML(s) diretamente na pasta selecionada.")
+        log(f"Encontrei {len(xmls_diretos)} XML(s) direto na pasta selecionada — vou processar todos.")
         resultado = processar_pasta_xmls(
             pasta_origem=pasta_origem,
             tess_key=tess_key,
@@ -1011,7 +1011,7 @@ def processar_pasta_xmls_auto(
             arquivos_xml_forcados=xmls_diretos,
         )
         resultados.append(resultado)
-        log(f"Planilha da pasta selecionada concluída: {resultado}")
+        log(f"Terminei essa pasta! Planilha gerada em: {resultado}")
 
     # Lote 2+: cada subpasta imediata com XML é um lote independente
     total_sub = len(subpastas)
@@ -1021,10 +1021,10 @@ def processar_pasta_xmls_auto(
         # real reaproveita o rglob interno de processar_pasta_xmls.
         if not list(subpasta.rglob("*.xml")):
             subpastas_vazias.append(subpasta.name)
-            log(f"Subpasta '{subpasta.name}' ignorada: nenhum XML encontrado.", True)
+            log(f"A subpasta '{subpasta.name}' não tem nenhum XML — vou pular para a próxima.", True)
             continue
 
-        log(f"Processando subpasta {idx} de {total_sub}: {subpasta.name}")
+        log(f"Entrando na subpasta {idx} de {total_sub}: '{subpasta.name}'...")
 
         def callback_progresso_sub(pct, status, _nome=subpasta.name, _idx=idx, _total=total_sub):
             if callback_progresso:
@@ -1041,7 +1041,7 @@ def processar_pasta_xmls_auto(
             checkpoint_a_cada=checkpoint_a_cada,
         )
         resultados.append(resultado)
-        log(f"Subpasta '{subpasta.name}' concluída. Planilha: {resultado}")
+        log(f"Terminei a subpasta '{subpasta.name}'! Planilha gerada em: {resultado}")
 
     if not resultados:
         msg = (

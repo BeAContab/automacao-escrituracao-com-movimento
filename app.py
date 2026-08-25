@@ -3,17 +3,26 @@ import sys
 import json
 import threading
 from pathlib import Path
+from datetime import date, datetime
 import traceback
 
 import webview
 
 import re
 
+from pydantic import SecretStr
+from loguru import logger
+
 # Importar lógicas do projeto
 from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia, AutomacaoCanceladaError
 from exportador_xml_prestados import executar_exportacao_xml_prestados
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
 from processamento_xml import processar_pasta_xmls_auto
+from core.captura_escrituracao_com_movimento.procedures import baixar_certificado_escrituracao_empresas_iss
+from core.captura_escrituracao_com_movimento.classes import ThreadStoppedException as CapturaThreadStoppedException
+from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
+from core.encerramento_iss_sem_movimento.iss.credenciais import CredenciaisISSFortaleza
+from core.encerramento_iss_sem_movimento.utils.classes import UserStoppedThreadException
 
 class GUIStdoutWrapper:
     def __init__(self, original_stdout, api):
@@ -31,6 +40,12 @@ class GUIStdoutWrapper:
                 if stripped:
                     try:
                         self.api._gui_log_callback(stripped)
+                    except Exception:
+                        pass
+                    # Persiste também em disco, na pasta configurada via configurar_pastas_logs()
+                    # (a pasta da planilha selecionada pelo usuário para esta automação).
+                    try:
+                        registrar_evento_execucao(stripped, "Automação: Escrituração")
                     except Exception:
                         pass
 
@@ -51,7 +66,19 @@ class BeAContabAPI:
         # O Lock garante atomicidade na verificação e alteração da flag (FALHA-03)
         self._automacao_em_execucao = False
         self._lock_automacao = threading.Lock()
-        
+
+        # Flag/lock/evento próprios da aba "Captura Escrituração (Com Movimento)" — não
+        # reaproveita os da automação de Escrituração pois são robôs independentes que
+        # abrem sessões de navegador separadas.
+        self._captura_movimento_em_execucao = False
+        self._lock_captura_movimento = threading.Lock()
+        self._cancelar_captura_movimento_event = threading.Event()
+
+        # Idem para a aba "Encerramento ISS (Sem Movimento)"
+        self._encerramento_sem_movimento_em_execucao = False
+        self._lock_encerramento_sem_movimento = threading.Lock()
+        self._cancelar_encerramento_sem_movimento_event = threading.Event()
+
         # Carrega chaves salvas para as variáveis de ambiente na inicialização
         try:
             chaves = self.obter_chaves_salvas()
@@ -61,6 +88,43 @@ class BeAContabAPI:
                 os.environ["TESS_AGENT_ID"] = chaves["tess_agent_id"]
         except Exception as e:
             print(f"Erro ao carregar chaves na inicialização: {e}")
+
+    def _abrir_arquivo_log(self, pasta_saida):
+        """Cria (se necessário) uma subpasta "log" dentro da pasta que o usuário informou
+        para esta execução e retorna o caminho de um arquivo de log novo.
+
+        Se a pasta for inválida ou não houver permissão de escrita, retorna None —
+        o log continua aparecendo normalmente na tela, só não é salvo em disco.
+        """
+        try:
+            pasta_log = Path(pasta_saida) / "log"
+            pasta_log.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            return pasta_log / f"log_execucao_{timestamp}.txt"
+        except Exception:
+            return None
+
+    def _criar_log_gui(self, nome_funcao_js: str, caminho_log):
+        """Monta um callback de log que manda a mensagem para o terminal da GUI
+        e, se `caminho_log` foi resolvido com sucesso, também grava a mesma linha
+        no arquivo de log dentro da pasta de saída informada pelo usuário.
+        """
+        def log_gui(msg: str, is_error: bool = False) -> None:
+            try:
+                mensagem_js = json.dumps(msg)
+                erro_js = "true" if is_error else "false"
+                self.window.evaluate_js(f"window.{nome_funcao_js}({mensagem_js}, {erro_js})")
+            except Exception:
+                pass
+            if caminho_log:
+                try:
+                    with caminho_log.open("a", encoding="utf-8") as arquivo:
+                        hora = datetime.now().strftime("%H:%M:%S")
+                        prefixo = "[ERRO] " if is_error else ""
+                        arquivo.write(f"[{hora}] {prefixo}{msg}\n")
+                except Exception:
+                    pass
+        return log_gui
 
     def pausar_automacao(self):
         self._pausa_automacao_event.clear()
@@ -381,13 +445,10 @@ class BeAContabAPI:
 
     def _processar_xmls(self, pasta_origem: str, tess_key: str = "", tess_agent_id: str = ""):
         """Thread que executa o processamento de XMLs."""
-        def log_gui(msg: str, is_error: bool = False) -> None:
-            try:
-                mensagem_js = json.dumps(msg)
-                erro_js = "true" if is_error else "false"
-                self.window.evaluate_js(f"window.log_xml({mensagem_js}, {erro_js})")
-            except Exception:
-                pass
+        # A pasta de origem também recebe a planilha gerada, então é a pasta de
+        # saída natural desta função para fins de log.
+        caminho_log = self._abrir_arquivo_log(pasta_origem)
+        log_gui = self._criar_log_gui("log_xml", caminho_log)
 
         def callback_progresso(porcentagem: int, status: str) -> None:
             try:
@@ -436,13 +497,8 @@ class BeAContabAPI:
 
     def _executar_exportacao_xml(self, pasta_destino: str, competencia_str: str):
         """Thread que executa a exportação de XMLs de Serviços Prestados."""
-        def log_gui(msg: str, is_error: bool = False) -> None:
-            try:
-                mensagem_js = json.dumps(msg)
-                erro_js = "true" if is_error else "false"
-                self.window.evaluate_js(f"window.log_exportar({mensagem_js}, {erro_js})")
-            except Exception:
-                pass
+        caminho_log = self._abrir_arquivo_log(pasta_destino)
+        log_gui = self._criar_log_gui("log_exportar", caminho_log)
 
         def callback_progresso(pct: int, status: str) -> None:
             try:
@@ -469,7 +525,6 @@ class BeAContabAPI:
             pass
 
         try:
-            log_gui(f"Iniciando exportação de XMLs - Competência: {competencia_str}")
             executar_exportacao_xml_prestados(
                 pasta_destino=pasta_destino,
                 competencia_str=competencia_str,
@@ -501,6 +556,138 @@ class BeAContabAPI:
             print(f"Erro ao confirmar login de exportação: {e}")
             return False
 
+    def iniciar_captura_com_movimento_gui(self, planilha_path, saida_dir, competencia_str, encerramento_str,
+                                           chrome_path, url_portal, cpf, senha):
+        """Dispara a captura de escrituração (empresas com movimento) em uma thread separada."""
+        with self._lock_captura_movimento:
+            if self._captura_movimento_em_execucao:
+                self.window.evaluate_js("window.log_captura('Erro: a captura já está em andamento!', true)")
+                return
+            self._captura_movimento_em_execucao = True
+
+        self._cancelar_captura_movimento_event.clear()
+        threading.Thread(
+            target=self._processar_captura_com_movimento,
+            args=(planilha_path, saida_dir, competencia_str, encerramento_str, chrome_path, url_portal, cpf, senha),
+            daemon=True
+        ).start()
+
+    def cancelar_captura_com_movimento(self):
+        self._cancelar_captura_movimento_event.set()
+
+    def _processar_captura_com_movimento(self, planilha_path, saida_dir, competencia_str, encerramento_str,
+                                          chrome_path, url_portal, cpf, senha):
+        caminho_log = self._abrir_arquivo_log(saida_dir)
+        log_gui = self._criar_log_gui("log_captura", caminho_log)
+
+        def sink_loguru(mensagem):
+            registro = mensagem.record
+            log_gui(registro["message"], registro["level"].name in ("ERROR", "CRITICAL"))
+
+        # A função da automação espera um callback SEM argumentos que deve *lançar* uma
+        # exceção para sinalizar cancelamento (padrão diferente do usado nas automações
+        # já existentes no app, que checam um bool) — por isso o adaptador abaixo.
+        def check_thread_stopped_cb():
+            if self._cancelar_captura_movimento_event.is_set():
+                raise CapturaThreadStoppedException()
+
+        sink_id = logger.add(sink_loguru, level="INFO", enqueue=True)
+        try:
+            mes_str, ano_str = competencia_str.split("/")
+            competencia = date(int(ano_str), int(mes_str), 1)
+            encerramento = date.fromisoformat(encerramento_str)
+
+            baixar_certificado_escrituracao_empresas_iss(
+                url_iss_fortaleza=url_portal,
+                cpf_iss_fortaleza=SecretStr(cpf),
+                senha_iss_fortaleza=SecretStr(senha),
+                competencia=competencia,
+                encerramento=encerramento,
+                caminho_planilha_fiscal=Path(planilha_path),
+                caminho_webdriver=Path(chrome_path),
+                diretorio_saida=Path(saida_dir),
+                check_thread_stopped_cb=check_thread_stopped_cb,
+            )
+            log_gui("Captura de escrituração concluída.")
+        except CapturaThreadStoppedException:
+            log_gui("Captura cancelada pelo operador.", True)
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO CAPTURA] {tb}")
+            log_gui(f"Erro crítico na captura: {e}", True)
+        finally:
+            logger.remove(sink_id)
+            with self._lock_captura_movimento:
+                self._captura_movimento_em_execucao = False
+
+    def iniciar_encerramento_sem_movimento_gui(self, planilha_path, saida_dir, competencia_str,
+                                                chrome_path, url_portal, cpf, senha):
+        """Dispara o encerramento ISS (empresas sem movimento) em uma thread separada."""
+        with self._lock_encerramento_sem_movimento:
+            if self._encerramento_sem_movimento_em_execucao:
+                self.window.evaluate_js("window.log_encerramento('Erro: o encerramento já está em andamento!', true)")
+                return
+            self._encerramento_sem_movimento_em_execucao = True
+
+        self._cancelar_encerramento_sem_movimento_event.clear()
+        threading.Thread(
+            target=self._processar_encerramento_sem_movimento,
+            args=(planilha_path, saida_dir, competencia_str, chrome_path, url_portal, cpf, senha),
+            daemon=True
+        ).start()
+
+    def cancelar_encerramento_sem_movimento(self):
+        self._cancelar_encerramento_sem_movimento_event.set()
+
+    def _processar_encerramento_sem_movimento(self, planilha_path, saida_dir, competencia_str,
+                                               chrome_path, url_portal, cpf, senha):
+        caminho_log = self._abrir_arquivo_log(saida_dir)
+        log_gui = self._criar_log_gui("log_encerramento", caminho_log)
+
+        def sink_loguru(mensagem):
+            registro = mensagem.record
+            log_gui(registro["message"], registro["level"].name in ("ERROR", "CRITICAL"))
+
+        # Mesmo adaptador de cancelamento usado na Captura Escrituração (ver comentário lá).
+        def check_thread_stopped_cb():
+            if self._cancelar_encerramento_sem_movimento_event.is_set():
+                raise UserStoppedThreadException()
+
+        sink_id = logger.add(sink_loguru, level="INFO", enqueue=True)
+        try:
+            mes_str, ano_str = competencia_str.split("/")
+            competencia = date(int(ano_str), int(mes_str), 1)
+            caminho_template = Path(obter_caminho_recurso("core/templates/template_relatorio_execucao.xlsx"))
+
+            controlador = ControladorEncerramentoISS(
+                caminho_planilha=Path(planilha_path),
+                caminho_saida=Path(saida_dir),
+                caminho_webdriver=Path(chrome_path),
+                url_iss_fortaleza=url_portal,
+                credenciais=CredenciaisISSFortaleza(cpf=SecretStr(cpf), senha=SecretStr(senha)),
+                competencia=competencia,
+                caminho_template_relatorio=caminho_template,
+                check_thread_stopped_callback=check_thread_stopped_cb,
+            )
+            resultado = controlador.executar_processo()
+
+            resumo = json.dumps({
+                "processadas": len(resultado.processadas),
+                "encerradas": len(resultado.encerradas),
+                "problemas": len(resultado.problemas),
+                "report_path": str(resultado.report_path) if resultado.report_path else None,
+            })
+            self.window.evaluate_js(f"window.mostrar_resumo_encerramento({resumo})")
+            log_gui("Encerramento ISS concluído.")
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO ENCERRAMENTO] {tb}")
+            log_gui(f"Erro crítico no encerramento: {e}", True)
+        finally:
+            logger.remove(sink_id)
+            with self._lock_encerramento_sem_movimento:
+                self._encerramento_sem_movimento_em_execucao = False
+
 def obter_caminho_recurso(caminho_relativo: str) -> str:
     """Retorna o caminho absoluto do recurso, funcionando no desenvolvimento ou no executável empacotado."""
     if hasattr(sys, '_MEIPASS'):
@@ -512,7 +699,7 @@ if __name__ == '__main__':
     # A interface gráfica fica em gui/index.html
     html_path = obter_caminho_recurso("gui/index.html")
     
-    window = webview.create_window('Automação: ISS Fortaleza', html_path, width=1280, height=800)
+    window = webview.create_window('Automações ISS', html_path, width=1280, height=800)
     api = BeAContabAPI(window)
     
     # Redireciona stdout e stderr para capturar prints do robô em tempo real na GUI
@@ -534,6 +721,13 @@ if __name__ == '__main__':
         api.processar_xmls_gui,
         api.iniciar_exportacao_xml_gui,
         api.confirmar_login_exportacao,
+        api.iniciar_captura_com_movimento_gui,
+        api.cancelar_captura_com_movimento,
+        api.iniciar_encerramento_sem_movimento_gui,
+        api.cancelar_encerramento_sem_movimento,
     )
     
-    webview.start(debug=False)
+    # Ícone da janela/barra de tarefas — sem isso, o Windows usa o ícone padrão do
+    # interpretador Python em vez da logo da Barreira & Associados.
+    caminho_icone = obter_caminho_recurso("design/app_icon.ico")
+    webview.start(debug=False, icon=caminho_icone)

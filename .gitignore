@@ -42,6 +42,20 @@ installer_output/
 EXEMPLOS/*
 !EXEMPLOS/planilha exemplo.xlsx
 
+# Mesmo motivo do EXEMPLOS acima: template estrutural necessario para o
+# relatorio de execucao da Funcao 5 (Encerramento ISS), precisa ficar versionado
+# mesmo com a regra generica "*.xlsx" acima.
+!core/templates/template_relatorio_execucao.xlsx
+
+# Pasta de teste/diagnostico do usuario com logs e XMLs reais de execucoes (PII/sigilo)
+teste_de_funcoes/
+
+# Projetos "fusion/*" sao repositorios git completos por conta propria (cada um
+# com seu .git e um deles com uma .venv de ~95MB). Mantidos no disco como
+# referencia historica da portagem para core/, mas fora do controle de versao
+# deste repositorio para nao criar repositorios git embutidos.
+fusion/
+
 # XMLs de amostra reais do Portal Da Paraiba usados para desenvolver o parser
 # (mesma razao do EXEMPLOS/ acima - PII/sigilo de clientes reais). Os testes
 # que dependem dessa pasta pulam automaticamente quando ela nao existir.

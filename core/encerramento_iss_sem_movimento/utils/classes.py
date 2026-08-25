@@ -1,0 +1,2 @@
+class UserStoppedThreadException(Exception):
+    pass

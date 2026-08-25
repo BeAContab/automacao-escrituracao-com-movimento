@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [2.26.0] - 2026-08-25
+
+### Adicionado
+- **Redesign completo da interface** (`gui/index.html`, `gui/js/*.js`, `app.py`): nova identidade visual com a paleta da logo (laranja `#E8A74C` + petróleo `#3B5661`/`#47626E`), baseada em mockups gerados no Stitch (`design/`). Header com logo embutida em base64 (corrige corrupção causada pelo servidor HTTP interno do pywebview, que bloqueava o caminho relativo `../design/logo.png`), rodapé com o nome da empresa, e menu lateral com as 5 funções do sistema. Ícone do app corrigido em `app.py`/`build.py` (`design/app_icon.ico`) — antes mostrava o ícone padrão do interpretador Python na janela e na barra de tarefas. JS extraído do HTML monolítico para arquivos por aba (`gui/js/`).
+- **Função 4 — Captura Escrituração (Com Movimento)** (`core/captura_escrituracao_com_movimento/`): portada de `fusion/captura-escrituracao-iss-com-movimento/` (GUI customtkinter original descartada, mantida só a lógica). Baixa certificados de escrituração ISS de empresas encerradas com movimento numa data específica, com login automático via CPF/senha. Integrada como 4ª aba do app.
+- **Função 5 — Encerramento ISS (Sem Movimento)** (`core/encerramento_iss_sem_movimento/`): portada de `fusion/encerramento-iss-sem-movimento/` (GUI Flet original descartada). Encerra a escrituração de empresas sem movimento/inativas, baixa certificado em PDF e gera relatório consolidado. Integrada como 5ª aba, com card de resumo (processadas/encerradas/problemas) e botão para abrir o relatório.
+- **Logs narrativos e persistentes por função** (`app.py`, `iss_fortaleza_automacao.py`, `exportador_xml_prestados.py`, `processamento_xml.py`, `core/*/procedures.py`, `core/*/encerramento_iss.py`): mensagens de log reescritas em estilo narrativo (primeira pessoa, explicando o que o robô está fazendo) em vez de mensagens técnicas soltas. Todas as 5 funções agora salvam automaticamente um arquivo de log em `log/` dentro da pasta de saída informada pelo usuário (antes só a Automação: Escrituração salvava em disco).
+- Badges "Em Testes" no menu e no cabeçalho das funções ainda em validação (Automação: Escrituração, Captura Escrituração, Encerramento ISS).
+- `manual_sistema.html` reescrito com a nova identidade visual, cobrindo as 5 funções (antes cobria só 3).
+
+### Corrigido
+- **Link "Consultar NFS-e" quebrado** (`exportador_xml_prestados.py`): o portal alterou a estrutura do 4º atalho da home (ícone de lupa adicionado antes do texto), invertendo a relação `<a>`/`<h4>` e quebrando o XPath posicional antigo (`div[4]/a/h4`). A automação de Exportar XML de Prestados travava ~60s sem erro visível nesse ponto. Corrigido para buscar por texto do link (`h4[normalize-space()='Consultar NFS-e']/a`) em vez de posição — validado ao vivo contra o portal real.
+- **Navegação de década no calendário de competência** (`exportador_xml_prestados.py`): os botões "◀"/"▶" de navegação de década ficam numa tabela irmã (`...Editor`), não dentro do container do calendário (`...competencia`) como o seletor assumia — a navegação para anos fora de 2022–2031 nunca funcionava. Corrigido o escopo do seletor; validado ao vivo (navegação de 2022–2031 para 2012–2021 confirmada).
+- Terminologia ambígua nos logs de exportação ("lote" confundia contagem de páginas com contagem de notas) trocada por "arquivo XML", deixando claro que um arquivo reúne notas de várias páginas.
+- `core/templates/template_relatorio_execucao.xlsx` (usado pela Função 5) estava sendo silenciosamente ignorado pela regra genérica `*.xlsx` do `.gitignore`, o que quebraria a geração de relatório em qualquer clone novo do repositório.
+
 ## [2.25.2] - 2026-08-07
 
 ### Adicionado

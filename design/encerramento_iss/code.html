@@ -1,0 +1,380 @@
+<!DOCTYPE html><html lang="pt-BR" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Encerramento ISS - Automações ISS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600&amp;family=Plus+Jakarta+Sans:wght@600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container": "#e5f0f2",
+                      "secondary-fixed-dim": "#aecbd8",
+                      "outline-variant": "#d5c4b1",
+                      "secondary-container": "#c7e4f2",
+                      "inverse-primary": "#fdba5d",
+                      "primary-fixed-dim": "#fdba5d",
+                      "on-secondary-fixed": "#001f28",
+                      "on-error-container": "#93000a",
+                      "surface-dim": "#d1dcde",
+                      "on-tertiary-fixed-variant": "#314b53",
+                      "on-tertiary-container": "#2f4952",
+                      "primary": "#845400",
+                      "inverse-surface": "#283234",
+                      "error-container": "#ffdad6",
+                      "on-secondary-fixed-variant": "#2f4a55",
+                      "inverse-on-surface": "#e8f3f5",
+                      "surface-container-highest": "#d9e4e6",
+                      "secondary": "#47626e",
+                      "on-background": "#131d1f",
+                      "primary-container": "#e8a74c",
+                      "on-secondary": "#ffffff",
+                      "secondary-fixed": "#cae7f4",
+                      "surface-container-high": "#dfeaec",
+                      "surface-tint": "#845400",
+                      "surface": "#f0fbfd",
+                      "on-primary": "#ffffff",
+                      "on-surface-variant": "#514537",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-low": "#ebf6f8",
+                      "tertiary-fixed": "#cbe7f2",
+                      "on-primary-fixed-variant": "#643f00",
+                      "on-primary-container": "#623e00",
+                      "on-tertiary-fixed": "#021f27",
+                      "error": "#ba1a1a",
+                      "surface-variant": "#d9e4e6",
+                      "surface-bright": "#f0fbfd",
+                      "on-primary-fixed": "#2a1800",
+                      "on-surface": "#131d1f",
+                      "outline": "#837565",
+                      "tertiary-fixed-dim": "#afcbd5",
+                      "tertiary": "#48626b",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-container": "#9db8c2",
+                      "on-error": "#ffffff",
+                      "background": "#f0fbfd",
+                      "on-secondary-container": "#4b6772",
+                      "primary-fixed": "#ffddb5"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "lg": "24px",
+                      "xl": "40px",
+                      "gutter": "20px",
+                      "md": "16px",
+                      "base": "4px",
+                      "margin": "32px",
+                      "xs": "4px",
+                      "sm": "8px"
+              },
+              "fontFamily": {
+                      "label-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-md": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg-mobile": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-sm": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-sm": [
+                              "Hanken Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "label-md": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: #f0fbfd;
+            color: #131d1f;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .filled-icon {
+             font-variation-settings: 'FILL' 1;
+        }
+        .elevation-1 {
+            box-shadow: 0px 4px 12px rgba(23, 43, 49, 0.05);
+        }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row min-h-screen bg-background text-on-background font-body-md">
+<!-- SideNavBar (Hidden on Mobile, Visible on Desktop) -->
+<nav class="hidden md:flex flex-col h-full fixed left-0 top-0 w-[280px] bg-secondary border-r border-outline-variant shadow-sm z-20">
+<div class="px-margin py-lg border-b border-outline-variant/30"><div class="flex flex-col gap-sm"><div class="flex items-center gap-md"><img alt="Automações ISS Logo" class="h-10 w-10 object-contain rounded bg-white p-1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAS4ZnVYsGA6SxzIhfWyG8J4DfG1M8tj1s5PzcXQBxQwz682Ug_fK-bkdU2aRWiPYct3Wg4XVh1lIreqap_4ubxbTO_joiu-arwskcTufO8sloLT3jMTzw5zW63R3ziEG9r864radXJJ3gpQf83AvbLhRHzfXX5JZPJ8MGs31iFM3JNGi2VRU55dDpIJCSPdU3AS1DBDN0bIYKvTa0bt5rV4pWfRRet_i0pf-m_4eeg9gO1qQICvzzqoSsksjqDrBhWgA"><div><h1 class="font-headline-md text-headline-md font-bold text-white">Automações ISS</h1><p class="font-body-sm text-body-sm text-secondary-fixed-dim">Professional Fiscal Automation</p></div></div></div></div>
+<div class="flex-1 py-md overflow-y-auto">
+<ul class="flex flex-col space-y-sm">
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="data_object">data_object</span>
+<span class="font-label-md text-label-md">Processar XMLs</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-label-md text-label-md">Automação: Escrituração</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+<span class="font-label-md text-label-md">Exportar XML de Prestados</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="cloud_download">cloud_download</span>
+<span class="font-label-md text-label-md">Captura Escrituração</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-lg py-sm border-l-4 border-primary-container bg-on-secondary-fixed-variant text-white cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined filled-icon" data-icon="check_circle">check_circle</span>
+<span class="font-label-md text-label-md">Encerramento ISS</span>
+</a>
+</li>
+</ul>
+</div>
+<div class="p-lg border-t border-outline-variant/30">
+<button class="w-full py-sm bg-transparent border border-secondary-fixed-dim text-white rounded-DEFAULT font-label-md text-label-md hover:bg-on-secondary-fixed-variant transition-colors mb-md">API Keys</button>
+<ul>
+<li class="">
+<a class="flex items-center gap-md px-sm py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Configurações</span>
+</a>
+</li>
+</ul>
+</div>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col md:ml-[280px] min-h-screen">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center px-margin py-md bg-surface border-b border-outline-variant sticky top-0 w-full z-10 h-20">
+<div class="flex items-center gap-md">
+<button class="md:hidden text-on-surface hover:bg-surface-container-high transition-colors p-sm rounded-DEFAULT active:scale-95">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<span class="font-headline-sm text-headline-sm text-on-surface">Automações ISS</span>
+</div>
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors p-sm rounded-full active:scale-95 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 p-margin md:p-margin bg-background overflow-y-auto">
+<div class="max-w-4xl mx-auto space-y-lg">
+<!-- Page Header -->
+<div class="mb-xl">
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background mb-sm">Encerramento ISS (Sem Movimento)</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Processo simplificado para encerramento de competências sem movimentação fiscal.</p>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-lg">
+<!-- Pre-requisites Checklist Card -->
+<div class="bg-white rounded-lg border border-[#B5C0C2] elevation-1 p-lg col-span-1">
+<div class="border-b border-[#B5C0C2] pb-sm mb-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary">checklist</span>
+<h3 class="font-headline-sm text-headline-sm text-on-background">Pré-requisitos</h3>
+</div>
+<ul class="space-y-sm">
+<li class="flex items-start gap-sm">
+<span class="material-symbols-outlined text-tertiary-container mt-xs text-[18px]">check_circle</span>
+<span class="font-body-md text-body-md text-on-surface-variant">Nenhuma NFe emitida no período.</span>
+</li>
+<li class="flex items-start gap-sm">
+<span class="material-symbols-outlined text-tertiary-container mt-xs text-[18px]">check_circle</span>
+<span class="font-body-md text-body-md text-on-surface-variant">Nenhum serviço tomado registrado.</span>
+</li>
+<li class="flex items-start gap-sm">
+<span class="material-symbols-outlined text-tertiary-container mt-xs text-[18px]">check_circle</span>
+<span class="font-body-md text-body-md text-on-surface-variant">Certificado digital válido configurado.</span>
+</li>
+</ul>
+</div>
+<!-- Main Action Card -->
+<div class="bg-white rounded-lg border border-[#B5C0C2] elevation-1 p-lg col-span-1 md:col-span-2 flex flex-col justify-between">
+<div>
+<div class="border-b border-[#B5C0C2] pb-sm mb-md">
+<h3 class="font-headline-sm text-headline-sm text-on-background">Nova Declaração</h3>
+</div>
+<div class="mb-lg">
+<label class="block font-label-md text-label-md text-on-surface-variant mb-xs" for="competencia">Competência</label>
+<select class="w-full bg-white border border-[#B5C0C2] rounded-DEFAULT p-sm font-body-md text-on-background focus:outline-none focus:border-secondary focus:ring-2 focus:ring-secondary/10 transition-shadow" id="competencia">
+<option>Outubro / 2023</option>
+<option>Setembro / 2023</option>
+<option>Agosto / 2023</option>
+</select>
+</div>
+<div class="bg-surface-container-low border border-inverse-primary/30 rounded-DEFAULT p-md flex gap-md items-start mb-lg">
+<span class="material-symbols-outlined text-primary-container mt-xs">warning</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+<strong>Atenção:</strong> Este processo enviará a declaração de ausência de movimento para o portal da prefeitura. Esta ação não pode ser desfeita automaticamente.
+                                </p>
+</div>
+</div>
+<div class="flex justify-end">
+<button class="bg-primary-container hover:bg-inverse-primary text-white font-label-md text-label-md py-sm px-lg rounded-DEFAULT transition-colors elevation-1 active:opacity-90 flex items-center gap-sm">
+<span class="material-symbols-outlined text-[18px]">send</span>
+                                Realizar Encerramento
+                            </button>
+</div>
+</div>
+</div>
+<!-- History Table -->
+<div class="bg-white rounded-lg border border-[#B5C0C2] elevation-1 mt-xl">
+<div class="p-lg border-b border-[#B5C0C2] flex justify-between items-center bg-surface/50 rounded-t-lg">
+<h3 class="font-headline-sm text-headline-sm text-on-background">Histórico de Encerramentos</h3>
+<button class="text-secondary hover:bg-surface-container transition-colors p-xs rounded-DEFAULT">
+<span class="material-symbols-outlined">filter_list</span>
+</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left font-body-sm text-body-sm">
+<thead class="text-on-surface-variant border-b border-[#B5C0C2] bg-surface/20">
+<tr>
+<th class="px-md py-sm font-semibold">Competência</th>
+<th class="px-md py-sm font-semibold">Data Envio</th>
+<th class="px-md py-sm font-semibold">Recibo Prefeitura</th>
+<th class="px-md py-sm font-semibold text-right">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr class="border-b border-[#B5C0C2]/50 hover:bg-surface-container/30 transition-colors h-[40px]">
+<td class="px-md py-xs text-on-background">Setembro / 2023</td>
+<td class="px-md py-xs text-on-surface-variant">05/10/2023 14:22</td>
+<td class="px-md py-xs font-mono text-on-surface-variant">REC-2023-09-88492</td>
+<td class="px-md py-xs text-right">
+<span class="inline-flex items-center gap-xs px-sm py-xs rounded-full bg-surface-container-highest text-secondary text-[10px] font-semibold tracking-wider">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> CONCLUÍDO
+                                        </span>
+</td>
+</tr>
+<tr class="border-b border-[#B5C0C2]/50 hover:bg-surface-container/30 transition-colors h-[40px]">
+<td class="px-md py-xs text-on-background">Agosto / 2023</td>
+<td class="px-md py-xs text-on-surface-variant">06/09/2023 09:15</td>
+<td class="px-md py-xs font-mono text-on-surface-variant">REC-2023-08-11234</td>
+<td class="px-md py-xs text-right">
+<span class="inline-flex items-center gap-xs px-sm py-xs rounded-full bg-surface-container-highest text-secondary text-[10px] font-semibold tracking-wider">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> CONCLUÍDO
+                                        </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container/30 transition-colors h-[40px]">
+<td class="px-md py-xs text-on-background">Julho / 2023</td>
+<td class="px-md py-xs text-on-surface-variant">04/08/2023 16:45</td>
+<td class="px-md py-xs font-mono text-on-surface-variant">REC-2023-07-55691</td>
+<td class="px-md py-xs text-right">
+<span class="inline-flex items-center gap-xs px-sm py-xs rounded-full bg-surface-container-highest text-secondary text-[10px] font-semibold tracking-wider">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> CONCLUÍDO
+                                        </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="w-full py-base bg-secondary border-t border-outline-variant flex justify-center items-center mt-auto">
+<div class="flex flex-col md:flex-row items-center gap-md">
+<span class="font-label-md text-label-md text-white">Automações ISS © 2024</span>
+<div class="flex gap-md">
+<a class="font-body-sm text-body-sm text-secondary-fixed-dim hover:text-primary-container transition-colors" href="#">Termos de Uso</a>
+<a class="font-body-sm text-body-sm text-secondary-fixed-dim hover:text-primary-container transition-colors" href="#">Privacidade</a>
+</div>
+</div>
+</footer>
+</div>
+
+
+</body></html>

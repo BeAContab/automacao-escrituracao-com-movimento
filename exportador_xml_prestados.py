@@ -18,7 +18,10 @@ from iss_fortaleza_automacao import (
 from tratamento_erros import registrar_evento_execucao
 
 # Seletores XPath para a tela de Consulta de NFS-e
-XPATH_LINK_CONSULTAR_NFSE    = "//*[@id='homeForm:divHotLinks']/div[4]/a/h4"
+# Busca por texto do link em vez de posição (div[4]/a/h4) — o portal alterou a estrutura
+# do 4º atalho da home (adicionou um ícone antes do texto), quebrando o seletor posicional
+# antigo, que esperava o <h4> dentro do <a> quando hoje é o contrário (<a> dentro do <h4>).
+XPATH_LINK_CONSULTAR_NFSE    = "//*[@id='homeForm:divHotLinks']//h4[normalize-space()='Consultar NFS-e']/a"
 XPATH_ABA_COMPETENCIA        = "//*[@id='consultarnfseForm:competencia_prestador_tab_lbl']"
 XPATH_BTN_CONSULTAR          = "//*[@id='consultarnfseForm:j_id237']"
 XPATH_BTN_SELECIONAR_PAGINA  = "//*[@id='consultarnfseForm:j_id324']"
@@ -126,8 +129,11 @@ def _selecionar_competencia_consulta(driver, mes: int, ano: int) -> None:
         # Define a direção de navegação entre décadas
         menor = min(anos_visiveis)
         sinal = "<" if ano < menor else ">"
+        # Os botões "<"/">" de navegação de década ficam numa tabela IRMÃ
+        # (id="...Editor"), não dentro de BASE_ID_COMPETENCIA — por isso o
+        # seletor busca no container "...Editor", não no container do calendário em si.
         botoes = driver.find_elements(
-            By.CSS_SELECTOR, f"[id='{BASE_ID_COMPETENCIA}'] .rich-calendar-editor-btn"
+            By.CSS_SELECTOR, f"[id='{BASE_ID_COMPETENCIA}Editor'] .rich-calendar-editor-btn"
         )
         clicou = False
         for btn in botoes:
@@ -187,8 +193,8 @@ def executar_exportacao_xml_prestados(
     competencia = interpretar_competencia(competencia_str)
     pasta = Path(pasta_destino)
 
-    log(f"Iniciando exportação de XMLs para competência {competencia.mes:02d}/{competencia.ano}...")
-    log(f"Pasta de destino dos downloads: {pasta}")
+    log(f"Vou exportar os XMLs de serviços prestados da competência {competencia.mes:02d}/{competencia.ano}.")
+    log(f"Os arquivos baixados vão para: {pasta}")
     progresso(5, "Abrindo navegador...")
 
     driver = abrir_navegador_visivel(pasta_downloads=pasta)
@@ -196,38 +202,38 @@ def executar_exportacao_xml_prestados(
     try:
         # Aguarda login manual do operador por arquivo de flag
         if caminho_confirmacao_login:
-            log("Aguardando login manual no portal. Confirme na interface após fazer o login...")
+            log("Abri o portal no Chrome — faça o login manualmente e depois confirme aqui na tela.")
             # Usa o parâmetro timeout_login no lugar do valor hardcoded de 300s (FALHA-06)
             prazo_login = time.monotonic() + timeout_login
             while not caminho_confirmacao_login.exists():
                 if time.monotonic() > prazo_login:
                     raise TimeoutError(f"Tempo limite de login ({timeout_login}s) esgotado.")
                 time.sleep(1.0)
-            log("Login confirmado pelo operador. Iniciando navegação...")
+            log("Login confirmado! Vou começar a navegar pelo portal agora.")
 
         progresso(10, "Acessando tela de Consulta de NFS-e...")
 
         # Passo 1: Clicar em "Consultar NFS-e"
-        log("Clicando em 'Consultar NFS-e'...")
+        log("Abrindo a tela de consulta de NFS-e...")
         WebDriverWait(driver, 60).until(
             EC.element_to_be_clickable((By.XPATH, XPATH_LINK_CONSULTAR_NFSE))
         ).click()
         time.sleep(2.0)
 
         # Passo 2: Clicar na aba "Competência/Tomador"
-        log("Selecionando aba 'Competência/Tomador'...")
+        log("Selecionando a aba de Competência/Tomador...")
         WebDriverWait(driver, 30).until(
             EC.element_to_be_clickable((By.XPATH, XPATH_ABA_COMPETENCIA))
         ).click()
         time.sleep(1.5)
 
         # Passo 3: Selecionar mês/ano no calendário com a função dedicada a esta tela
-        log(f"Selecionando competência {competencia.mes:02d}/{competencia.ano}...")
+        log(f"Preenchendo a competência {competencia.mes:02d}/{competencia.ano} no filtro de busca...")
         _selecionar_competencia_consulta(driver, competencia.mes, competencia.ano)
         progresso(20, "Competência selecionada. Consultando notas...")
 
         # Passo 4: Clicar em "Consultar"
-        log("Clicando em 'Consultar'...")
+        log("Consultando as notas fiscais dessa competência...")
         WebDriverWait(driver, 30).until(
             EC.element_to_be_clickable((By.XPATH, XPATH_BTN_CONSULTAR))
         ).click()
@@ -250,14 +256,14 @@ def executar_exportacao_xml_prestados(
                 btn_selecionar.click()
                 time.sleep(1.5)
             except TimeoutException:
-                log("Botão de seleção de página não encontrado. Encerrando loop.", is_error=True)
+                log("Não encontrei mais páginas com notas para selecionar — parece que já processei tudo. Encerrando por aqui.", is_error=True)
                 break
 
             lote_atual += 1
 
             # Exporta se atingiu o lote máximo ANTES de mudar de página
             if lote_atual >= MAX_PAGINAS_POR_LOTE:
-                log(f"Exportando lote de {lote_atual} página(s)...")
+                log(f"Pedindo ao portal para gerar um arquivo XML com as notas destas {lote_atual} página(s) selecionadas...")
                 progresso(min(30 + (total_exportados * 5), 90), f"Exportando lote ({total_exportados + 1})...")
 
                 try:
@@ -267,13 +273,13 @@ def executar_exportacao_xml_prestados(
                     btn_exportar.click()
                     time.sleep(2.0)
 
-                    log("Aguardando conclusão do download...")
+                    log("Aguardando o portal terminar de gerar o arquivo para download...")
                     _aguardar_downloads_concluirem(pasta)
                     total_exportados += 1
-                    log(f"Download do lote {total_exportados} concluído com sucesso!")
+                    log(f"Arquivo XML nº {total_exportados} baixado com sucesso!")
 
                 except TimeoutException:
-                    log("Botão de exportação não encontrado ou não clicável.", is_error=True)
+                    log("Não consegui clicar no botão de exportação — ele não apareceu ou não estava clicável.", is_error=True)
 
                 lote_atual = 0
 
@@ -282,7 +288,7 @@ def executar_exportacao_xml_prestados(
                 # Se não conseguiu avançar, é porque era a última página.
                 # Exporta o saldo remanescente, se houver
                 if lote_atual > 0:
-                    log(f"Exportando últimas {lote_atual} página(s)...")
+                    log(f"Chegamos ao fim: pedindo ao portal para gerar o arquivo XML com as notas das {lote_atual} última(s) página(s)...")
                     progresso(min(30 + (total_exportados * 5), 90), f"Exportando lote final ({total_exportados + 1})...")
                     
                     try:
@@ -292,14 +298,14 @@ def executar_exportacao_xml_prestados(
                         btn_exportar.click()
                         time.sleep(2.0)
 
-                        log("Aguardando conclusão do download final...")
+                        log("Aguardando o portal terminar de gerar o último arquivo...")
                         _aguardar_downloads_concluirem(pasta)
                         total_exportados += 1
-                        log(f"Download do lote final {total_exportados} concluído com sucesso!")
+                        log(f"Último arquivo baixado! No total, {total_exportados} arquivo(s) XML gerado(s), reunindo as notas de todas as páginas consultadas.")
                     except TimeoutException:
                         log("Botão de exportação não encontrado ou não clicável.", is_error=True)
 
-                log("Todas as páginas foram processadas. Exportação concluída!")
+                log("Percorri todas as páginas — a exportação terminou!")
                 break
 
             pagina_atual += 1
@@ -308,11 +314,11 @@ def executar_exportacao_xml_prestados(
             f"Exportação de XMLs concluída: {total_exportados} lote(s) exportados para {pasta}.",
             "ISS Fortaleza",
         )
-        log(f"Exportação finalizada! {total_exportados} lote(s) de XML exportados para: {pasta}")
+        log(f"Tudo pronto! {total_exportados} arquivo(s) XML gerado(s) (com as notas de todas as páginas) salvos em: {pasta}")
         progresso(100, "Exportação concluída!")
 
     except Exception as e:
-        log(f"Erro crítico durante a exportação de XMLs: {e}", is_error=True)
+        log(f"Algo deu errado no meio da exportação e eu não consegui continuar: {e}", is_error=True)
         raise
     finally:
         # Encerra o navegador somente se o parâmetro fechar_navegador_ao_fim for True.
