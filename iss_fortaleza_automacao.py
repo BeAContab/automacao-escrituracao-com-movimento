@@ -531,7 +531,7 @@ def solicitar_competencia() -> CompetenciaTrabalho:
                 raise ValueError("O ano deve conter exatamente 4 dígitos.")
             return construir_competencia(mes, int(ano_texto))
         except ValueError as exc:
-            print(f"Entrada inválida: {exc}")
+            print(f"Não entendi essa competência que você digitou: {exc}")
             print()
 
 
@@ -552,7 +552,7 @@ def solicitar_nova_competencia_para_repetir(
         try:
             return interpretar_competencia(texto)
         except ValueError as exc:
-            print(f"Competência inválida: {exc}")
+            print(f"Essa competência não é válida: {exc}")
             print()
 
 
@@ -711,7 +711,7 @@ def _inicializar_driver(opcoes: Options) -> WebDriver:
         # Isso evita problemas com downloads de drivers bloqueados por proxy/firewall ou falhas de SSL.
         driver = webdriver.Chrome(options=opcoes)
     except Exception as e_native:
-        print(f"Aviso: não foi possível iniciar o Chrome de forma nativa ({e_native}). Tentando com webdriver-manager...")
+        print(f"Não consegui abrir o Chrome do jeito normal ({e_native}) — vou tentar de novo usando o webdriver-manager...")
         try:
             # Fallback para o webdriver-manager convencional
             servico = Service(ChromeDriverManager().install())
@@ -1265,8 +1265,8 @@ def _selecionar_opcao_por_texto(
 def aguardar_login_manual(driver: WebDriver) -> None:
     """Mostra a instrução e aguarda o usuário concluir o login manual no terminal."""
 
-    print("O navegador foi aberto no portal da ISS de Fortaleza.")
-    print("Faça o login manualmente e, quando terminar, volte aqui e pressione Enter.")
+    print("Abri o navegador no portal da ISS de Fortaleza.")
+    print("Faça o login manualmente e, quando terminar, volte aqui e pressione Enter para eu continuar.")
     input("Pressione Enter somente após o login estar concluído...")
     time.sleep(1)
 
@@ -1278,9 +1278,9 @@ def aguardar_login_manual_por_arquivo(driver: WebDriver, caminho_confirmacao: Pa
     if caminho_confirmacao.exists():
         caminho_confirmacao.unlink()
 
-    print("O navegador foi aberto no portal da ISS de Fortaleza.")
-    print("Faça o login manualmente e, ao terminar, crie o arquivo de confirmação para continuar.")
-    print(f"Arquivo de confirmação esperado: {caminho_confirmacao.resolve()}")
+    print("Abri o navegador no portal da ISS de Fortaleza.")
+    print("Faça o login manualmente e, ao terminar, confirme na interface para eu continuar.")
+    print(f"Estou aguardando a confirmação em: {caminho_confirmacao.resolve()}")
 
     while not caminho_confirmacao.exists():
         _verificar_cancelamento()
@@ -1327,7 +1327,7 @@ def _abrir_editor_calendario(driver: WebDriver, base_id: str, rotulo: str) -> No
         # Pequena pausa para garantir a renderização visual do calendário popup
         time.sleep(0.5)
     except Exception as e:
-        print(f"Aviso ao abrir popup do calendário para {rotulo}: {e}")
+        print(f"Tive um problema ao abrir o calendário de {rotulo}, mas vou tentar seguir em frente: {e}")
 
     # O botão de edição fica no cabeçalho do calendário.
     # Atenção: o base_id contém ':' (ex: 'manterEscrituracaoForm:dataInicial'),
@@ -2302,7 +2302,7 @@ def executar_fluxo_iss(
             aguardar_login_manual(driver)
         registrar_evento_execucao("Login manual confirmado pelo usuário", "ISS Fortaleza")
 
-        print("Login confirmado. Aguardando o menu do portal ficar disponível...")
+        print("Login confirmado! Aguardando o menu do portal carregar...")
         try:
             WebDriverWait(driver, 120).until(
                 EC.presence_of_element_located(
@@ -2313,7 +2313,7 @@ def executar_fluxo_iss(
             registrar_evento_execucao(
                 "Timeout ao aguardar menu Escrituração visível", "ISS Fortaleza"
             )
-            print("AVISO: Timeout ao aguardar menu Escrituração. Prosseguindo mesmo assim...")
+            print("O menu de Escrituração demorou mais que o esperado para aparecer, mas vou tentar continuar mesmo assim...")
         _pausar_para_depuracao(
             driver,
             depuracao,
@@ -2321,7 +2321,7 @@ def executar_fluxo_iss(
         )
 
         # Navega para Escrituração > Manter Escrituração
-        print("Acessando Escrituração > Manter Escrituração...")
+        print("Entrando em Escrituração > Manter Escrituração...")
         try:
             # Busca o menu Escrituração pelo texto para ser resiliente a mudanças na ordem dos menus
             el_menu = WebDriverWait(driver, 10).until(
@@ -2351,7 +2351,7 @@ def executar_fluxo_iss(
         selecionar_competencia_na_tela_richfaces(driver, competencia)
 
         # Aciona a consulta da competência
-        print("Consultando a competência selecionada...")
+        print("Consultando no portal a competência que você escolheu...")
         _clicar_por_id(driver, "manterEscrituracaoForm:btnConsultar")
         registrar_evento_execucao("Botão Consultar acionado", "ISS Fortaleza")
 
@@ -2385,14 +2385,14 @@ def executar_fluxo_iss(
             registrar_evento_execucao("Botão Consultar acionado", "ISS Fortaleza")
 
         # Abre o formulário de escrituração
-        print("Abrindo a rotina de escrituração...")
+        print("Abrindo a tela de escrituração dessa competência...")
         _clicar_por_id(driver, "manterEscrituracaoForm:dataTable:0:linkEscriturar")
         registrar_evento_execucao("Botão Escriturar acionado", "ISS Fortaleza")
         aguardar_tela_escrituracao_fiscal(driver)
         registrar_evento_execucao("Tela Escrituração Fiscal aberta", "ISS Fortaleza")
 
         # Clica na aba Serviços Tomados
-        print("Selecionando a aba Serviços Tomados...")
+        print("Indo para a aba de Serviços Tomados...")
         clicar_aba_servicos_tomados(driver)
         registrar_evento_execucao("Aba Serviços Tomados acionada", "ISS Fortaleza")
 
@@ -2400,7 +2400,7 @@ def executar_fluxo_iss(
         WebDriverWait(driver, 120).until(
             EC.visibility_of_element_located((By.ID, "servico_tomado_form:seamj_id849"))
         )
-        print("Abrindo Digitar Documento...")
+        print("Abrindo a tela para digitar um novo documento...")
         _clicar_por_id(driver, "servico_tomado_form:seamj_id849")
         registrar_evento_execucao("Tela Digitar Documento aberta", "ISS Fortaleza")
         aguardar_tela_digitar_documento(driver)
@@ -2453,7 +2453,7 @@ def executar_fluxo_iss(
                     f"IGNORADO: Prestador estabelecido em Fortaleza/CE (não MEI)"
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
-                print(f"Linha {indice}/{len(documentos)} ignorada: Prestador de Fortaleza/CE e não é MEI.")
+                print(f"Pulando a nota {indice}/{len(documentos)}: o prestador é de Fortaleza/CE mas não é MEI, então essa nota não entra na escrituração.")
                 
                 # Grava no log de Fortaleza/CE
                 caminho_fortaleza = pasta_log / "log_prefeitura_fortaleza.txt"
@@ -2465,7 +2465,7 @@ def executar_fluxo_iss(
                     with open(caminho_fortaleza, "a", encoding="utf-8") as f:
                         f.write(f"[{timestamp}] {candidato.arquivo_pdf} - CNPJ: {candidato.cnpj_prestador} - NF: {candidato.numero_nf} - Cidade: {candidato.cidade_prestador}\n")
                 except Exception as exc_fort:
-                    print(f"Erro ao registrar log de Fortaleza: {exc_fort}")
+                    print(f"Não consegui registrar no log essa nota ignorada de Fortaleza/CE: {exc_fort}")
                 continue
 
             # Valida se há alguma informação obrigatória vazia/ausente na planilha antes de prosseguir
@@ -2478,7 +2478,7 @@ def executar_fluxo_iss(
                     f"IGNORADO: {motivo}"
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
-                print(f"Linha {indice}/{len(documentos)} ignorada. Motivo: {motivo}")
+                print(f"Pulando a nota {indice}/{len(documentos)}. Motivo: {motivo}")
                 
                 # Grava no log exclusivo de notas incompletas
                 caminho_incompletas = pasta_log / "log_notas_incompletas.txt"
@@ -2491,7 +2491,7 @@ def executar_fluxo_iss(
                         f.write(f"[{timestamp}] PDF: {candidato.arquivo_pdf} | CNPJ: {candidato.cnpj_prestador} | NF: {candidato.numero_nf}\n")
                         f.write(f"  -> Ausente(s): {', '.join(campos_ausentes)}\n\n")
                 except Exception as exc_inc:
-                    print(f"Erro ao registrar log de notas incompletas: {exc_inc}")
+                    print(f"Não consegui registrar no log essa nota incompleta: {exc_inc}")
                 continue
 
 
@@ -2512,7 +2512,7 @@ def executar_fluxo_iss(
                     f"ERRO ao preencher dados do prestador: {exc_prestador}"
                 )
                 registrar_log_funcao2(caminho_log, mensagem_log)
-                print(f"Erro ao preencher dados do prestador {candidato.cnpj_prestador}: {exc_prestador}; avançando.")
+                print(f"Tive um problema ao preencher os dados do prestador {candidato.cnpj_prestador}: {exc_prestador}. Vou seguir para a próxima nota.")
                 continue
 
             try:
@@ -2522,13 +2522,13 @@ def executar_fluxo_iss(
                 # portal pode encadear: nota duplicada -> "Não" e desiste da nota;
                 # avisos informativos como "Prestador não inscrito no CPOM" -> "Sim"
                 # e tenta gravar de novo, até um limite de tentativas)
-                print("Gravando documento no portal...")
+                print("Salvando esse documento no portal...")
                 registrar_evento_execucao(f"Gravando NF {candidato.numero_nf}", "ISS Fortaleza")
                 resultado_gravacao = _gravar_documento_com_confirmacoes(driver, candidato.numero_nf, timeout=15)
 
                 if resultado_gravacao == "duplicata":
                     nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
-                    print(f"Linha {indice}/{len(documentos)} ignorada: portal indicou nota fiscal já escriturada (mesmo CNPJ e número de nota).")
+                    print(f"Pulando a nota {indice}/{len(documentos)}: o portal já tinha essa nota escriturada (mesmo CNPJ e número).")
 
                     mensagem_log = (
                         f"ARQUIVO_PDF={candidato.arquivo_pdf} | "
@@ -2548,7 +2548,7 @@ def executar_fluxo_iss(
                         with open(caminho_duplicadas, "a", encoding="utf-8") as f:
                             f.write(f"[{timestamp}] {nf_info}\n")
                     except Exception as exc_dup:
-                        print(f"Erro ao registrar log de notas duplicadas: {exc_dup}")
+                        print(f"Não consegui registrar no log essa nota duplicada: {exc_dup}")
                 else:
                     registrar_evento_execucao(f"Sucesso na gravação da NF {candidato.numero_nf}", "ISS Fortaleza")
                     nf_info = f"{candidato.arquivo_pdf} - {candidato.cnpj_prestador} - {candidato.numero_nf}"
@@ -2563,13 +2563,13 @@ def executar_fluxo_iss(
                         with open(caminho_sucesso, "a", encoding="utf-8") as f:
                             f.write(f"- {nf_info}\n")
                     except Exception as exc_suc:
-                        print(f"Erro ao salvar log de sucesso em tempo real: {exc_suc}")
+                        print(f"A nota foi gravada, mas não consegui atualizar o log em tempo real: {exc_suc}")
 
             except Exception as exc:
                 if isinstance(exc, AutomacaoCanceladaError):
                     raise
                 registrar_evento_execucao(f"Falha ao processar NF {candidato.numero_nf}: {exc}", "ISS Fortaleza")
-                print(f"Erro ao processar NF {candidato.numero_nf}: {exc}")
+                print(f"Deu um erro ao processar a nota {candidato.numero_nf}: {exc}")
                 registrar_log_funcao2(caminho_log, f"ERRO ao processar {candidato.arquivo_pdf}: {exc}")
 
             finally:
@@ -2580,19 +2580,19 @@ def executar_fluxo_iss(
                 except Exception as exc:
                     if isinstance(exc, AutomacaoCanceladaError):
                         raise
-                    print(f"Não foi possível clicar em 'Novo documento': {exc}. Realizando reset preventivo de tela.")
+                    print(f"Não consegui clicar em 'Novo documento': {exc}. Vou resetar a tela por precaução antes de continuar.")
                     try:
                         resetar_tela_para_digitar_documento(driver, competencia)
                     except Exception as exc_reset:
-                        print(f"Falha crítica no reset de tela: {exc_reset}. O fluxo pode falhar na próxima iteração.")
+                        print(f"O reset de tela também falhou: {exc_reset}. A próxima nota pode não processar corretamente.")
 
         print()
-        print("Gravação de documentos em lote concluída.")
+        print("Terminei de gravar todas as notas desse lote.")
         if not executando_em_gui:
-            print("Revise a tela no navegador e, se quiser encerrar, volte ao terminal.")
+            print("Dê uma conferida na tela do navegador — se quiser encerrar, volte ao terminal.")
             input("Pressione Enter para encerrar esta sessão automatizada e manter a tela aberta...")
         else:
-            print("Execução da GUI concluída. O navegador permanecerá aberto.")
+            print("Terminei a execução! Vou deixar o navegador aberto para você conferir o resultado.")
 
     except AutomacaoCanceladaError:
         cancelado_pelo_usuario = True
@@ -2793,7 +2793,7 @@ def executar_extracao_portal_iss(destino_xlsx: Path = Path("iss_extracao.xlsx"))
         aguardar_login_manual(driver)
 
         print()
-        print("Quando estiver na tela exata da qual deseja extrair os dados, volte ao terminal.")
+        print("Navegue até a tela exata de onde você quer extrair os dados e, quando estiver pronto, volte ao terminal.")
         input("Pressione Enter para capturar a página atual...")
 
         time.sleep(1)
@@ -2804,7 +2804,7 @@ def executar_extracao_portal_iss(destino_xlsx: Path = Path("iss_extracao.xlsx"))
             "ISS Fortaleza",
         )
 
-        print(f"Extração concluída com sucesso: {destino_xlsx.resolve()}")
+        print(f"Extração concluída! Salvei os dados em: {destino_xlsx.resolve()}")
         input("Pressione Enter para encerrar esta sessão automatizada e fechar o navegador...")
     finally:
         try:

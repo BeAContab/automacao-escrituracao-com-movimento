@@ -1,0 +1,307 @@
+<!DOCTYPE html><html lang="pt-BR" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Processar XMLs - Automações ISS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600&amp;family=Plus+Jakarta+Sans:wght@600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container": "#e5f0f2",
+                      "secondary-fixed-dim": "#aecbd8",
+                      "outline-variant": "#d5c4b1",
+                      "secondary-container": "#c7e4f2",
+                      "inverse-primary": "#fdba5d",
+                      "primary-fixed-dim": "#fdba5d",
+                      "on-secondary-fixed": "#001f28",
+                      "on-error-container": "#93000a",
+                      "surface-dim": "#d1dcde",
+                      "on-tertiary-fixed-variant": "#314b53",
+                      "on-tertiary-container": "#2f4952",
+                      "primary": "#845400",
+                      "inverse-surface": "#283234",
+                      "error-container": "#ffdad6",
+                      "on-secondary-fixed-variant": "#2f4a55",
+                      "inverse-on-surface": "#e8f3f5",
+                      "surface-container-highest": "#d9e4e6",
+                      "secondary": "#47626e",
+                      "on-background": "#131d1f",
+                      "primary-container": "#e8a74c",
+                      "on-secondary": "#ffffff",
+                      "secondary-fixed": "#cae7f4",
+                      "surface-container-high": "#dfeaec",
+                      "surface-tint": "#845400",
+                      "surface": "#f0fbfd",
+                      "on-primary": "#ffffff",
+                      "on-surface-variant": "#514537",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-low": "#ebf6f8",
+                      "tertiary-fixed": "#cbe7f2",
+                      "on-primary-fixed-variant": "#643f00",
+                      "on-primary-container": "#623e00",
+                      "on-tertiary-fixed": "#021f27",
+                      "error": "#ba1a1a",
+                      "surface-variant": "#d9e4e6",
+                      "surface-bright": "#f0fbfd",
+                      "on-primary-fixed": "#2a1800",
+                      "on-surface": "#131d1f",
+                      "outline": "#837565",
+                      "tertiary-fixed-dim": "#afcbd5",
+                      "tertiary": "#48626b",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-container": "#9db8c2",
+                      "on-error": "#ffffff",
+                      "background": "#f0fbfd",
+                      "on-secondary-container": "#4b6772",
+                      "primary-fixed": "#ffddb5"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "lg": "24px",
+                      "xl": "40px",
+                      "gutter": "20px",
+                      "md": "16px",
+                      "base": "4px",
+                      "margin": "32px",
+                      "xs": "4px",
+                      "sm": "8px"
+              },
+              "fontFamily": {
+                      "label-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-md": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg-mobile": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-sm": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-sm": [
+                              "Hanken Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "label-md": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-sm": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="bg-secondary dark:bg-on-tertiary-fixed fixed left-0 top-0 h-full w-[280px] border-r border-outline-variant shadow-sm flex flex-col z-20 hidden md:flex">
+<div class="px-lg py-margin border-b border-outline-variant/20"><div class="flex items-center gap-sm"><div class="flex-shrink-0"><img alt="Barreira &amp; Associados Logo" class="h-10 w-10 object-contain rounded bg-white p-1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCph7vQHNSoid30e9JCmRil_iwuOR0PT2jk6ZuzBfsxDXYWABirTPWctt8s1Wk8Va-GfiiSOYjT6oEmXVGg2Z6JBPi-NpKb8Vh5t_pWITla9FvBRLuFQjcgu67CUX1WG4KRsmH4AXLSXH1_bT8SOnXPB8FKirpg2ZiSb4t2FqL2jHniVkJaI2Ewa-rdcb37AffofAlSCgsMXp4PjQgRG4knRgZQY-gCWoQn23cHVaHvRmVqNp0OYSe9zi4IR-2ak16tdw"></div><div><h1 class="font-headline-md text-headline-md font-bold text-white leading-none">Automações ISS</h1><p class="font-label-md text-label-md text-secondary-fixed-dim mt-xs">Barreira &amp; Associados - Assessoria Contábil</p></div></div></div>
+<div class="flex-1 py-lg flex flex-col gap-xs overflow-y-auto">
+<!-- Active Tab -->
+<a class="flex items-center gap-md px-lg py-sm border-l-4 border-primary-container bg-on-secondary-fixed-variant text-white cursor-pointer active:opacity-80" href="#"><span class="material-symbols-outlined font-headline-sm text-headline-sm">data_object</span><span class="font-body-md text-body-md">Processar XMLs</span></a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#"><span class="material-symbols-outlined font-headline-sm text-headline-sm">edit_note</span><span class="font-body-md text-body-md">Automação: Escrituração</span></a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#"><span class="material-symbols-outlined font-headline-sm text-headline-sm">ios_share</span><span class="font-body-md text-body-md">Exportar XML de Prestados</span></a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#"><span class="material-symbols-outlined font-headline-sm text-headline-sm">cloud_download</span><span class="font-body-md text-body-md">Captura Escrituração</span></a>
+<a class="flex items-center gap-md px-lg py-sm text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white transition-colors cursor-pointer active:opacity-80" href="#"><span class="material-symbols-outlined font-headline-sm text-headline-sm">check_circle</span><span class="font-body-md text-body-md">Encerramento ISS</span></a>
+</div>
+<div class="p-lg border-t border-outline-variant/20 mt-auto">
+<button class="w-full bg-surface-container/10 text-white border border-surface-container/20 rounded-lg py-sm font-label-md text-label-md hover:bg-surface-container/20 transition-colors mb-md">
+                API Keys
+            </button>
+<a class="flex items-center gap-md text-secondary-fixed-dim hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined font-headline-sm text-headline-sm">settings</span>
+<span class="font-label-md text-label-md">Configurações</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col ml-0 md:ml-[280px] min-h-screen">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim sticky top-0 w-full z-10">
+<div class="flex justify-between items-center px-margin py-md">
+<div class="font-headline-sm text-headline-sm text-on-surface">Automações ISS</div>
+<div class="hidden">Search</div>
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-xs rounded-full">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 p-margin bg-background">
+<div class="mb-lg">
+<h2 class="font-headline-lg text-headline-lg text-on-surface">Processar XMLs</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant mt-xs">Faça o upload e processamento de arquivos XML de notas fiscais.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Left Column: Form -->
+<div class="lg:col-span-5 flex flex-col gap-md">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm h-full flex flex-col">
+<div class="flex-1">
+<!-- Dropzone -->
+<div class="border-2 border-dashed border-outline-variant rounded-lg p-xl flex flex-col items-center justify-center text-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer group mb-lg h-[240px]">
+<div class="w-16 h-16 rounded-full bg-secondary-container flex items-center justify-center mb-md group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-secondary font-headline-lg text-headline-lg">upload_file</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-xs">Selecionar Arquivos XML</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Arraste os arquivos para cá ou clique para procurar</p>
+</div>
+<!-- Toggle -->
+<label class="flex items-center gap-sm cursor-pointer mb-lg p-sm bg-surface-container-lowest border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="relative">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</div>
+<span class="font-label-md text-label-md text-on-surface">Validar Assinatura Digital</span>
+</label>
+</div>
+<!-- CTA -->
+<button class="w-full bg-primary-container text-white font-label-md text-label-md py-md rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-sm mt-auto shadow-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                            Iniciar Processamento
+                        </button>
+</div>
+</div>
+<!-- Right Column: Results -->
+<div class="lg:col-span-7 flex flex-col gap-md">
+<!-- Summary Cards -->
+<div class="grid grid-cols-3 gap-sm">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md shadow-sm">
+<p class="font-label-md text-label-md text-on-surface-variant mb-xs">Total de Arquivos</p>
+<div class="font-headline-lg text-headline-lg text-on-surface flex items-baseline gap-xs">
+                                0
+                            </div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md shadow-sm border-b-4 border-b-[#4caf50]">
+<p class="font-label-md text-label-md text-on-surface-variant mb-xs">Válidos</p>
+<div class="font-headline-lg text-headline-lg text-on-surface flex items-baseline gap-xs">
+                                0
+                            </div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md shadow-sm border-b-4 border-b-error">
+<p class="font-label-md text-label-md text-on-surface-variant mb-xs">Com Erro</p>
+<div class="font-headline-lg text-headline-lg text-on-surface flex items-baseline gap-xs">
+                                0
+                            </div>
+</div>
+</div>
+<!-- Table Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm overflow-hidden flex-1 flex flex-col">
+<div class="px-md py-sm border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Arquivos Processados</h3>
+<button class="text-secondary font-label-md text-label-md hover:underline">Limpar Lista</button>
+</div>
+<div class="flex-1 overflow-x-auto min-h-[300px] flex flex-col">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-container-lowest">
+<th class="py-sm px-md font-label-md text-label-md text-on-surface-variant font-semibold">Nome do Arquivo</th>
+<th class="py-sm px-md font-label-md text-label-md text-on-surface-variant font-semibold">Status</th>
+<th class="py-sm px-md font-label-md text-label-md text-on-surface-variant font-semibold text-right">Tamanho</th>
+</tr>
+</thead>
+<tbody>
+<!-- Empty State placeholder -->
+<tr>
+<td class="py-xl text-center text-on-surface-variant" colspan="3">
+<div class="flex flex-col items-center justify-center">
+<span class="material-symbols-outlined text-surface-variant text-4xl mb-sm">inventory_2</span>
+<p class="font-body-md text-body-md">Nenhum arquivo processado ainda.</p>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-secondary dark:bg-on-tertiary-fixed w-full py-base border-t border-outline-variant mt-auto">
+<div class="flex justify-center items-center gap-md">
+<span class="font-label-md text-label-md text-white">Automações ISS © 2024</span>
+<span class="text-secondary-fixed-dim">|</span>
+<a class="font-body-sm text-body-sm text-secondary-fixed-dim hover:text-primary-container transition-colors" href="#">Termos de Uso</a>
+<a class="font-body-sm text-body-sm text-secondary-fixed-dim hover:text-primary-container transition-colors" href="#">Privacidade</a>
+</div>
+</footer>
+</div>
+
+
+</body></html>

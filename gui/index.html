@@ -1,926 +1,718 @@
 <!DOCTYPE html>
-<html class="dark" lang="pt-BR">
+<html lang="pt-BR">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>Automação: ISS Fortaleza</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Outfit:wght@600;700;900&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Automações ISS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
             "colors": {
-              "background": "#10131a",
-              "surface": "#10131a",
-              "surface-container-low": "#191b23",
-              "surface-container-highest": "#32353c",
-              "on-background": "#e1e2ec",
-              "on-surface": "#e1e2ec",
-              "on-surface-variant": "#c2c6d6",
-              "primary": "#adc6ff",
-              "on-primary": "#002e6a",
-              "secondary": "#4cd7f6",
-              "on-secondary": "#003640",
-              "secondary-container": "#03b5d3",
-              "on-secondary-container": "#00424e",
-              "tertiary": "#ffb786",
-              "error": "#ffb4ab",
-              "error-container": "#93000a",
+                "surface-container": "#e5f0f2",
+                "secondary-fixed-dim": "#aecbd8",
+                "outline-variant": "#d5c4b1",
+                "secondary-container": "#c7e4f2",
+                "inverse-primary": "#fdba5d",
+                "primary-fixed-dim": "#fdba5d",
+                "on-secondary-fixed": "#001f28",
+                "on-error-container": "#93000a",
+                "surface-dim": "#d1dcde",
+                "on-tertiary-fixed-variant": "#314b53",
+                "on-tertiary-container": "#2f4952",
+                "primary": "#845400",
+                "inverse-surface": "#283234",
+                "error-container": "#ffdad6",
+                "on-secondary-fixed-variant": "#2f4a55",
+                "inverse-on-surface": "#e8f3f5",
+                "surface-container-highest": "#d9e4e6",
+                "secondary": "#47626e",
+                "on-background": "#131d1f",
+                "primary-container": "#e8a74c",
+                "on-secondary": "#ffffff",
+                "secondary-fixed": "#cae7f4",
+                "surface-container-high": "#dfeaec",
+                "surface-tint": "#845400",
+                "surface": "#f0fbfd",
+                "on-primary": "#ffffff",
+                "on-surface-variant": "#514537",
+                "on-tertiary": "#ffffff",
+                "surface-container-low": "#ebf6f8",
+                "tertiary-fixed": "#cbe7f2",
+                "on-primary-fixed-variant": "#643f00",
+                "on-primary-container": "#623e00",
+                "on-tertiary-fixed": "#021f27",
+                "error": "#ba1a1a",
+                "surface-variant": "#d9e4e6",
+                "surface-bright": "#f0fbfd",
+                "on-primary-fixed": "#2a1800",
+                "on-surface": "#131d1f",
+                "outline": "#837565",
+                "tertiary-fixed-dim": "#afcbd5",
+                "tertiary": "#48626b",
+                "surface-container-lowest": "#ffffff",
+                "tertiary-container": "#9db8c2",
+                "on-error": "#ffffff",
+                "background": "#f0fbfd",
+                "on-secondary-container": "#4b6772",
+                "primary-fixed": "#ffddb5"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+            },
+            "spacing": {
+                "lg": "24px",
+                "xl": "40px",
+                "gutter": "20px",
+                "md": "16px",
+                "base": "4px",
+                "margin": "32px",
+                "xs": "4px",
+                "sm": "8px"
             },
             "fontFamily": {
-              "headline-xl": ["Outfit"],
-              "headline-lg": ["Outfit"],
-              "headline-lg-mobile": ["Outfit"],
-              "body-md": ["Inter"],
-              "body-sm": ["Inter"],
-              "mono-console": ["JetBrains Mono"],
+                "label-md": ["Hanken Grotesk"],
+                "body-lg": ["Hanken Grotesk"],
+                "headline-md": ["Plus Jakarta Sans"],
+                "body-md": ["Hanken Grotesk"],
+                "headline-lg-mobile": ["Plus Jakarta Sans"],
+                "headline-lg": ["Plus Jakarta Sans"],
+                "headline-sm": ["Plus Jakarta Sans"],
+                "body-sm": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+                "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
             }
-          }
         }
-      }
-    </script>
-    <style>
-        .glass-card, .glass-panel {
-            background: rgba(255, 255, 255, 0.04);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .glass-card:hover {
-            background: rgba(255, 255, 255, 0.06);
-            border-color: rgba(255, 255, 255, 0.15);
-            transform: translateY(-2px);
-        }
-        .neon-pulse { animation: pulse-cyan 2s infinite; }
-        @keyframes pulse-cyan {
-            0% { box-shadow: 0 0 0 0 rgba(76, 215, 246, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(76, 215, 246, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(76, 215, 246, 0); }
-        }
-        .progress-pulse {
-            position: relative; overflow: hidden;
-        }
-        .progress-pulse::after {
-            content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            animation: progress-slide 1.5s infinite;
-        }
-        @keyframes progress-slide { 100% { left: 100%; } }
-        .custom-scrollbar::-webkit-scrollbar, .terminal-scroll::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-        .custom-scrollbar::-webkit-scrollbar-thumb, .terminal-scroll::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1); border-radius: 10px;
-        }
-        .neon-glow-cyan { box-shadow: 0 0 15px rgba(6, 182, 212, 0.4); }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        .blink { animation: blink 1s infinite; }
-        .hidden { display: none !important; }
-    </style>
+    }
+}
+</script>
+<style>
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .filled-icon { font-variation-settings: 'FILL' 1; }
+    .elevation-1 { box-shadow: 0px 4px 12px rgba(23, 43, 49, 0.05); }
+    .elevation-2 { box-shadow: 0px 8px 24px rgba(23, 43, 49, 0.12); }
+    .input-border { border: 1px solid #B5C0C2; }
+    .input-border:focus-within { border-color: #47626e; box-shadow: 0 0 0 2px rgba(71, 98, 110, 0.1); outline: none; }
+    .log-terminal {
+        background-color: #172B31;
+        font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+    }
+    .terminal-scroll::-webkit-scrollbar { width: 6px; }
+    .terminal-scroll::-webkit-scrollbar-track { background: transparent; }
+    .terminal-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .blink { animation: blink 1.4s infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
 </head>
-<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden selection:bg-secondary/30">
+<body class="bg-background text-on-background font-body-md text-body-md antialiased min-h-screen flex">
 
 <!-- Sidebar -->
-<aside class="w-[280px] h-screen fixed left-0 top-0 bg-surface-container-low/50 backdrop-blur-xl border-r border-white/10 shadow-xl flex flex-col p-6 z-50 justify-between">
-    <div>
-        <div class="flex items-center gap-3 mb-10">
+<nav class="hidden md:flex flex-col h-full bg-secondary fixed left-0 top-0 w-[280px] border-r border-outline-variant shadow-sm z-20">
+    <div class="px-lg py-lg border-b border-outline-variant/20">
+        <div class="flex items-center gap-md">
+            <img alt="Barreira &amp; Associados" class="h-14 w-14 object-contain rounded bg-white p-1 flex-shrink-0" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAH0CAYAAADL1t+KAADSnUlEQVR4XuxdBYBc1dW+z8dW4+5CPFhwp0IFWigSvKXuLTUqFChSoPyFutAWD05LadHi7hBCQtxlfUef/995s5Nskk2y2Z1k3sye2w6zmXly73fvvO8eF4IbI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjAAjwAgwAowAI8AIMAKMACPACDACjECFIPDibedGK2QofXoYcp8ePQ++aAhce91vjy7axfhCjAAjsNcQeP++z09ub287fa/dkG+0xxBgQt9j0PatC0di0eP+cONNl93499sjfWvkPFpGoHwRWHLn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AAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQ+MIE/g/zHlMBFv6KIAAAAABJRU5ErkJggg=="/>
             <div>
-                <h1 class="font-headline-lg text-[20px] font-bold text-primary leading-tight">Automação: ISS Fortaleza</h1>
-                <p class="text-xs text-on-surface-variant font-medium tracking-widest uppercase">Fiscal Automation</p>
+                <h1 class="font-headline-md text-headline-md font-bold text-white leading-none">Automações ISS</h1>
+                <p class="font-label-md text-label-md text-secondary-fixed-dim mt-xs">Barreira &amp; Associados - Assessoria Contábil</p>
             </div>
         </div>
-        
-        <nav class="space-y-2">
-            <a id="btn-aba-xml" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-secondary font-bold border-r-2 border-secondary bg-white/5 transition-colors">
-                <span class="material-symbols-outlined">description</span>
-                <span>Processar XMLs</span>
-            </a>
-            <a id="btn-aba-automacao" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
-                <span class="material-symbols-outlined">robot_2</span>
-                <span>Automação: Escrituração</span>
-            </a>
-            <a id="btn-aba-exportar" href="#" class="aba-btn flex items-center gap-3 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-white/5 transition-colors">
-                <span class="material-symbols-outlined">file_download</span>
-                <span>Exportar XML de Prestados</span>
-            </a>
-        </nav>
     </div>
 
-    <!-- Configuração do Tess AI no rodapé da Sidebar -->
-    <div class="pt-6 border-t border-white/10 space-y-4">
-        <h4 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
-            <span class="material-symbols-outlined text-[16px] text-secondary">settings</span>
+    <div class="flex-1 py-md flex flex-col gap-xs overflow-y-auto px-sm">
+        <a id="btn-aba-xml" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">data_object</span>
+            <span class="font-label-md text-label-md flex-1">Processar XMLs</span>
+        </a>
+        <a id="btn-aba-automacao" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">edit_note</span>
+            <span class="font-label-md text-label-md flex-1">Automação: Escrituração</span>
+            <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+        </a>
+        <a id="btn-aba-exportar" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">ios_share</span>
+            <span class="font-label-md text-label-md flex-1">Exportar XML de Prestados</span>
+        </a>
+        <a id="btn-aba-captura-movimento" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">cloud_download</span>
+            <span class="font-label-md text-label-md flex-1">Captura Escrituração</span>
+            <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+        </a>
+        <a id="btn-aba-encerramento-sem-movimento" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">check_circle</span>
+            <span class="font-label-md text-label-md flex-1">Encerramento ISS</span>
+            <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+        </a>
+    </div>
+
+    <!-- Configuração do Tess AI -->
+    <div class="p-lg border-t border-outline-variant/20">
+        <h4 class="font-label-md text-label-md text-secondary-fixed-dim flex items-center gap-xs mb-sm">
+            <span class="material-symbols-outlined text-[16px]">settings</span>
             Configuração Tess AI
         </h4>
         <div class="space-y-2">
             <div class="space-y-1">
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Chave de API</label>
-                <input id="api-key-tess" class="w-full bg-black/40 border border-white/10 focus:border-secondary rounded-lg py-2 px-3 text-xs font-mono-console outline-none text-white" type="password" placeholder="Chave Tess AI..."/>
+                <label class="font-label-md text-[10px] text-secondary-fixed-dim">Chave de API</label>
+                <input id="api-key-tess" class="w-full bg-black/20 border border-white/10 focus:border-primary-container rounded-lg py-2 px-3 text-xs font-mono outline-none text-white" type="password" placeholder="Chave Tess AI..."/>
             </div>
             <div class="space-y-1">
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">ID do Agente</label>
-                <input id="agent-id-tess" class="w-full bg-black/40 border border-white/10 focus:border-secondary rounded-lg py-2 px-3 text-xs font-mono-console outline-none text-white" type="text" placeholder="Ex: 1234"/>
+                <label class="font-label-md text-[10px] text-secondary-fixed-dim">ID do Agente</label>
+                <input id="agent-id-tess" class="w-full bg-black/20 border border-white/10 focus:border-primary-container rounded-lg py-2 px-3 text-xs font-mono outline-none text-white" type="text" placeholder="Ex: 1234"/>
             </div>
         </div>
-        <button id="btn-salvar-chaves" onclick="salvarChavesAPI()" class="w-full py-2 bg-secondary/15 hover:bg-secondary/25 border border-secondary/35 text-secondary rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+        <button id="btn-salvar-chaves" onclick="salvarChavesAPI()" class="w-full mt-sm py-2 bg-primary-container/15 hover:bg-primary-container/25 border border-primary-container/40 text-primary-container rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
             <span class="material-symbols-outlined text-[14px]">save</span>
-            <span>Salvar Configuração</span>
+            Salvar Configuração
         </button>
     </div>
-</aside>
+</nav>
 
-<!-- Top Navbar -->
-<header class="docked full-width top-0 sticky z-40 bg-surface/30 backdrop-blur-md border-b border-white/10 flex justify-between items-center h-16 px-6 ml-[280px]">
-    <div class="flex items-center gap-4">
-        <h2 id="header-title" class="font-headline-lg text-[20px] font-black text-primary">Painel Central</h2>
-    </div>
-    <div class="flex items-center gap-6">
-        <button onclick="window.pywebview.api.fechar_app()" class="text-on-surface-variant hover:text-error transition-colors">
+<!-- Main Wrapper -->
+<div class="flex-1 flex flex-col md:ml-[280px] min-h-screen">
+    <!-- TopAppBar -->
+    <header class="sticky top-0 w-full bg-surface border-b border-outline-variant z-10 flex justify-between items-center px-margin py-md">
+        <h2 id="header-title" class="font-headline-sm text-headline-sm text-on-surface font-bold">Processamento de XMLs</h2>
+        <button onclick="window.pywebview.api.fechar_app()" class="text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-sm rounded-full">
             <span class="material-symbols-outlined">close</span>
         </button>
-    </div>
-</header>
+    </header>
 
-<!-- Main Content: Processar XMLs -->
-<main id="aba-xml" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6">
-    <div class="space-y-1">
-        <div class="flex items-center gap-3">
-            <h3 class="font-headline-xl text-[32px] font-bold">Processamento de XMLs</h3>
-            <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/15 text-secondary rounded-full text-xs font-bold neon-pulse">
-                <span class="w-2 h-2 rounded-full bg-secondary"></span>
-                Tess AI Ativo
-            </span>
-        </div>
-        <p class="text-on-surface-variant text-sm mt-1 max-w-[850px]">Lê arquivos XML de NFS-e de uma pasta selecionada, identifica o código de serviço e classifica o CNAE correspondente usando a inteligência artificial do <strong class="text-secondary">Tess AI</strong> com base na tabela oficial de CNAEs. Conta com sistema de cache local para acelerar reprocessamentos e gera uma planilha consolidada pronta para a escrituração.</p>
-        <p class="text-on-surface-variant text-xs mt-1 max-w-[850px] flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-secondary text-[16px]">verified</span>
-            Layouts de XML suportados (detectados automaticamente, arquivo por arquivo, sem necessidade de selecionar qual usar): <strong class="text-on-surface">Portal Nacional</strong> e <strong class="text-on-surface">Portal Da Paraíba</strong>.
-        </p>
-    </div>
-
-    <!-- Seleção da pasta de origem -->
-    <div class="glass-card p-5 rounded-2xl space-y-4">
-        <h4 class="font-bold text-on-surface flex items-center gap-2">
-            <span class="material-symbols-outlined text-secondary">folder_open</span>
-            Pasta de Origem dos XMLs
-        </h4>
-        <div class="flex gap-3">
-            <input id="input-pasta-xml" type="text" placeholder="Selecione a pasta onde estão os arquivos XML..." class="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-sm text-on-surface font-mono-console focus:outline-none focus:border-secondary/50" />
-            <button onclick="selecionarPastaXML()" class="px-4 py-2 bg-secondary/10 hover:bg-secondary/20 border border-secondary/30 text-secondary rounded-lg text-sm font-bold transition-all">
-                <span class="material-symbols-outlined align-middle">folder_open</span>
-                Pasta
-            </button>
-        </div>
-    </div>
-
-    <!-- Progresso -->
-    <div id="progresso-container-xml" class="hidden glass-card p-5 rounded-2xl">
-        <div class="flex justify-between items-center mb-2">
-            <span id="progresso-status-xml" class="text-sm text-secondary">Aguardando...</span>
-            <span id="progresso-porcentagem-xml" class="text-sm font-bold text-secondary">0%</span>
-        </div>
-        <div class="w-full bg-white/10 rounded-full h-2">
-            <div id="progresso-barra-xml" class="bg-secondary h-2 rounded-full transition-all duration-300 progress-pulse" style="width: 0%"></div>
-        </div>
-    </div>
-
-    <!-- Botão Processar -->
-    <button id="btn-processar-xml" onclick="iniciarProcessamentoXML()" class="w-full py-3 bg-secondary/10 hover:bg-secondary/20 border border-secondary/30 text-secondary rounded-xl font-bold tracking-wider transition-all">
-        <span class="material-symbols-outlined align-middle mr-2">play_arrow</span>
-        INICIAR PROCESSAMENTO DE XMLs
-    </button>
-
-    <!-- Botão Abrir Planilha Gerada (oculto até o fim do processamento) MELHORIA-05 -->
-    <div id="container-abrir-planilha" class="hidden">
-        <button id="btn-abrir-planilha" onclick="abrirPlanilhaGerada()" class="w-full py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary rounded-xl font-bold tracking-wider transition-all flex items-center justify-center gap-2">
-            <span class="material-symbols-outlined align-middle">table_view</span>
-            ABRIR PLANILHA GERADA
-        </button>
-    </div>
-
-    <!-- Botão Abrir Pasta com Planilhas (caso a pasta selecionada tenha subpastas, uma planilha por subpasta) -->
-    <div id="container-abrir-pasta-resultados" class="hidden">
-        <button id="btn-abrir-pasta-resultados" onclick="abrirPastaResultados()" class="w-full py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary rounded-xl font-bold tracking-wider transition-all flex items-center justify-center gap-2">
-            <span class="material-symbols-outlined align-middle">folder_open</span>
-            <span id="lbl-abrir-pasta-resultados">ABRIR PASTA COM AS PLANILHAS GERADAS</span>
-        </button>
-    </div>
-
-    <!-- Log Terminal -->
-    <section class="glass-card rounded-2xl overflow-hidden">
-        <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
-            <span class="text-xs font-mono-console text-on-surface-variant">xml_processamento_output.log</span>
-            <button onclick="limparLogXml()" title="Limpar terminal" class="flex items-center gap-1 text-on-surface-variant hover:text-error transition-colors text-xs">
-                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
-                Limpar
-            </button>
-        </div>
-        <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 350px; max-height: 350px; overflow-y: auto;" id="log-xml">
-            <p class="text-on-surface-variant opacity-60">Aguardando início do processamento...</p>
-        </div>
-    </section>
-</main>
-
-<!-- Main Content: Automação -->
-<main id="aba-automacao" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6 hidden">
-    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-            <h1 class="font-headline-xl text-[32px] font-bold text-on-surface">Automação: Escrituração</h1>
-            <div class="flex items-center gap-3 mt-2">
-                <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-full">
-                    <span class="w-2 h-2 rounded-full bg-secondary blink"></span>
-                    <span class="text-secondary font-bold text-xs">Robô Escriturador</span>
-                </span>
+    <!-- ============ ABA: Processar XMLs ============ -->
+    <main id="aba-xml" class="flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <div class="flex items-center gap-sm">
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">Processamento de XMLs</h1>
+                    <span class="flex items-center gap-1.5 px-sm py-1 bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                        Tess AI Ativo
+                    </span>
+                </div>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-xs max-w-[850px]">Lê arquivos XML de NFS-e de uma pasta selecionada, identifica o código de serviço e classifica o CNAE correspondente usando a inteligência artificial do <strong class="text-secondary">Tess AI</strong> com base na tabela oficial de CNAEs. Gera uma planilha consolidada pronta para a escrituração.</p>
             </div>
-            <p class="text-on-surface-variant text-sm mt-3 max-w-[850px]">Realiza a digitação automatizada dos dados de notas fiscais no portal da <strong class="text-secondary">ISS Fortaleza</strong> a partir da planilha Excel gerada no Processamento de XMLs. O robô navega pelo portal, seleciona a competência de trabalho e efetua os lançamentos nota por nota de forma sequencial, após o login manual do operador.</p>
-        </div>
-    </div>
 
-    <div class="grid grid-cols-12 gap-6">
-        <div class="col-span-12 lg:col-span-4 space-y-6">
-            <section class="glass-panel rounded-2xl p-6 border-white/5 relative overflow-hidden">
-                <div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
-                <h3 class="font-headline-lg-mobile text-[20px] font-bold text-on-surface mb-6 flex items-center gap-2">
-                    <span class="material-symbols-outlined text-secondary">tune</span>
-                    Parâmetros da Escrituração
-                </h3>
-                <div class="space-y-6">
-                    <div class="space-y-2">
-                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Planilha Excel Origem (Gerada no XML)</label>
-                        <div class="flex gap-2">
-                            <input id="input-excel-automacao" class="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a planilha..."/>
-                            <button onclick="selecionarExcelAutomacao()" class="bg-surface-container-highest px-4 rounded-xl text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1 flex flex-col gap-lg">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">folder_open</span>
+                            Pasta de Origem dos XMLs
+                        </h3>
+                        <div id="dropzone-pasta-xml" onclick="selecionarPastaXML()" class="border-2 border-dashed border-outline-variant rounded-lg p-lg flex flex-col items-center justify-center text-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer">
+                            <span class="material-symbols-outlined text-secondary text-[32px] mb-xs">folder_open</span>
+                            <p id="lbl-pasta-xml" class="font-body-sm text-body-sm text-on-surface-variant break-all">Clique para selecionar a pasta com os arquivos XML...</p>
+                        </div>
+                        <button id="btn-processar-xml" onclick="iniciarProcessamentoXML()" class="w-full bg-primary-container text-white font-label-md text-label-md py-md rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                            Iniciar Processamento
+                        </button>
+                        <div id="container-abrir-planilha" class="hidden">
+                            <button id="btn-abrir-planilha" onclick="abrirPlanilhaGerada()" class="w-full border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">table_view</span>
+                                Abrir Planilha Gerada
+                            </button>
+                        </div>
+                        <div id="container-abrir-pasta-resultados" class="hidden">
+                            <button id="btn-abrir-pasta-resultados" onclick="abrirPastaResultados()" class="w-full border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">folder_open</span>
+                                <span id="lbl-abrir-pasta-resultados">Abrir Pasta com as Planilhas Geradas</span>
+                            </button>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="space-y-2">
-                            <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Mês Competência</label>
-                            <select id="select-mes-automacao" class="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm outline-none text-white focus:border-secondary">
-                                <option value="01">Janeiro</option>
-                                <option value="02">Fevereiro</option>
-                                <option value="03">Março</option>
-                                <option value="04">Abril</option>
-                                <option value="05">Maio</option>
-                                <option value="06">Junho</option>
-                                <option value="07">Julho</option>
-                                <option value="08">Agosto</option>
-                                <option value="09">Setembro</option>
-                                <option value="10">Outubro</option>
-                                <option value="11">Novembro</option>
-                                <option value="12">Dezembro</option>
-                            </select>
+                </div>
+
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-xml" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-xml" class="text-secondary">Aguardando...</span>
+                            <span id="progresso-porcentagem-xml" class="text-secondary">0%</span>
                         </div>
-                        <div class="space-y-2">
-                            <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Ano Competência</label>
-                            <select id="select-ano-automacao" class="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm outline-none text-white focus:border-secondary">
-                                <option value="2026">2026</option>
-                                <option value="2025">2025</option>
-                                <option value="2024">2024</option>
-                                <option value="2023">2023</option>
-                            </select>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-xml" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
                     </div>
-                    <button id="btn-iniciar-automacao" onclick="iniciarAutomacao()" class="w-full bg-secondary-container text-on-secondary-container py-4 rounded-xl font-bold text-lg hover:scale-[1.02] active:scale-95 transition-all neon-glow-cyan flex items-center justify-center gap-3">
-                        <span class="material-symbols-outlined font-bold">play_arrow</span>
-                        Iniciar Escrituração
-                    </button>
-                    
-                    <!-- Card de Confirmação de Login -->
-                    <div id="card-confirmar-login" class="hidden mt-4 p-4 rounded-xl border border-secondary/30 bg-secondary/5 text-xs text-on-surface space-y-3">
-                        <div class="flex gap-2 items-start">
-                            <span class="material-symbols-outlined text-secondary">info</span>
-                            <div>
-                                <strong class="block text-secondary mb-1">Aguardando Login Manual</strong>
-                                <span>O Chrome foi aberto no portal. Faça o login manualmente e clique no botão abaixo assim que estiver na tela inicial do sistema.</span>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                xml_processamento_output.log
+                            </span>
+                            <button onclick="limparLogXml()" title="Limpar terminal" class="flex items-center gap-1 text-secondary-fixed-dim hover:text-white transition-colors text-xs">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-xml" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 420px; max-height: 420px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início do processamento...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ============ ABA: Automação: Escrituração ============ -->
+    <main id="aba-automacao" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <h1 class="font-headline-lg text-headline-lg text-on-surface">Automação: Escrituração</h1>
+                <span class="inline-block px-sm py-1 mt-xs mr-xs bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes</span>
+                <span class="inline-flex items-center gap-1.5 px-sm py-1 mt-xs bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                    Robô Escriturador
+                </span>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Realiza a digitação automatizada dos dados de notas fiscais no portal da <strong class="text-secondary">ISS Fortaleza</strong> a partir da planilha Excel gerada no Processamento de XMLs, nota por nota, após o login manual do operador.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Parâmetros da Escrituração
+                        </h3>
+                        <div class="flex flex-col gap-lg">
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Planilha Excel Origem (Gerada no XML)</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-excel-automacao" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a planilha..."/>
+                                    <button onclick="selecionarExcelAutomacao()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Mês Competência</label>
+                                    <select id="select-mes-automacao" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+                                        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+                                        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+                                        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Ano Competência</label>
+                                    <select id="select-ano-automacao" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="btn-iniciar-automacao" onclick="iniciarAutomacao()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined">play_arrow</span>
+                                Iniciar Escrituração
+                            </button>
+
+                            <div id="card-confirmar-login" class="hidden p-md rounded-lg border border-primary-container/40 bg-primary-container/10 text-xs text-on-surface space-y-sm">
+                                <div class="flex gap-sm items-start">
+                                    <span class="material-symbols-outlined text-primary-container">info</span>
+                                    <div>
+                                        <strong class="block text-on-surface mb-1">Aguardando Login Manual</strong>
+                                        <span class="text-on-surface-variant">O Chrome foi aberto no portal. Faça o login manualmente e clique no botão abaixo assim que estiver na tela inicial do sistema.</span>
+                                    </div>
+                                </div>
+                                <button id="btn-confirmar-login" onclick="confirmarLoginFeito()" class="w-full py-sm bg-primary-container text-white rounded-lg font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                                    Confirmar Login Realizado
+                                </button>
                             </div>
                         </div>
-                        <button id="btn-confirmar-login" onclick="confirmarLoginFeito()" class="w-full py-2.5 bg-gradient-to-r from-primary to-secondary text-on-primary rounded-lg font-black hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2">
-                            <span class="material-symbols-outlined text-sm font-bold">check_circle</span>
-                            Confirmar Login Realizado
-                        </button>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <div class="col-span-12 lg:col-span-8">
-            <section class="h-full flex flex-col glass-panel rounded-2xl border-white/5 overflow-hidden">
-                <!-- Barra de Progresso Automação -->
-                <div id="progresso-container-automacao" class="p-4 bg-black/30 border-b border-white/10 hidden">
-                    <div class="flex justify-between items-center text-xs font-bold mb-1.5">
-                        <span id="progresso-status-automacao" class="text-secondary">Processando Automação...</span>
-                        <span id="progresso-porcentagem-automacao" class="text-secondary">0%</span>
-                    </div>
-                    <div class="w-full bg-white/5 border border-white/10 rounded-full h-3 overflow-hidden relative progress-pulse">
-                        <div id="progresso-barra-automacao" class="bg-gradient-to-r from-primary to-secondary h-full rounded-full transition-all duration-300" style="width: 0%"></div>
                     </div>
                 </div>
 
-                <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs font-mono-console text-on-surface-variant">console_output.log</span>
-                    </div>
-                    <!-- Botão Limpar Log da Automação (MELHORIA-02) -->
-                    <button onclick="limparLogAutomacao()" title="Limpar terminal" class="flex items-center gap-1 text-on-surface-variant hover:text-error transition-colors text-xs">
-                        <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
-                        Limpar
-                    </button>
-                    <!-- Botão de Pausar/Retomar Automação -->
-                    <button id="btn-pausar-retomar-automacao" onclick="alternarPausaAutomacao()" class="hidden px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none">
-                        <span class="material-symbols-outlined text-[12px]">pause</span>
-                        <span id="lbl-pausar-retomar-automacao">PARAR AUTOMAÇÃO</span>
-                    </button>
-                    <!-- Botão de Cancelar Automação: aborta de vez, diferente de pausar -->
-                    <button id="btn-cancelar-automacao" onclick="cancelarAutomacao()" class="hidden px-2.5 py-1 bg-red-600/10 hover:bg-red-600/20 border border-red-600/40 text-red-500 rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none">
-                        <span class="material-symbols-outlined text-[12px]">cancel</span>
-                        CANCELAR
-                    </button>
-                </div>
-                <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 450px; max-height: 450px; overflow-y: auto;" id="log-automacao">
-                    <p class="text-on-surface-variant opacity-60">Initializing Shell...</p>
-                </div>
-            </section>
-        </div>
-    </div>
-</main>
-
-<!-- Main Content: Exportar XML de Prestados -->
-<main id="aba-exportar" class="ml-[280px] p-6 max-w-[1440px] mx-auto space-y-6 hidden">
-    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-            <h1 class="font-headline-xl text-[32px] font-bold text-on-surface">Exportar XML de Prestados</h1>
-            <div class="flex items-center gap-3 mt-2">
-                <span class="flex items-center gap-1.5 px-3 py-1 bg-secondary/10 border border-secondary/20 rounded-full">
-                    <span class="w-2 h-2 rounded-full bg-secondary blink"></span>
-                    <span class="text-secondary font-bold text-xs">Robô Exportador</span>
-                </span>
-            </div>
-            <p class="text-on-surface-variant text-sm mt-3 max-w-[850px]">Automatiza o download em lote de arquivos XML de NFS-e (Serviços Prestados) diretamente do portal da <strong class="text-secondary">ISS Fortaleza</strong>. O robô acessa o painel de consulta, filtra pela competência (mês/ano) de trabalho escolhida e realiza a seleção e exportação das notas fiscais de forma sequencial, em lotes de até <strong class="text-secondary">10 páginas</strong> por vez.</p>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-12 gap-6">
-        <div class="col-span-12 lg:col-span-4 space-y-6">
-            <section class="glass-panel rounded-2xl p-6 border-white/5 relative overflow-hidden">
-                <div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
-                <h3 class="font-headline-lg-mobile text-[20px] font-bold text-on-surface mb-6 flex items-center gap-2">
-                    <span class="material-symbols-outlined text-secondary">tune</span>
-                    Parâmetros da Exportação
-                </h3>
-                <div class="space-y-6">
-                    <!-- Pasta de Destino -->
-                    <div class="space-y-2">
-                        <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Pasta de Destino dos Downloads</label>
-                        <div class="flex gap-2">
-                            <input id="input-pasta-exportar" class="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-3 text-sm font-mono-console outline-none" readonly type="text" placeholder="Selecione a pasta de destino..."/>
-                            <button onclick="selecionarPastaExportar()" class="bg-surface-container-highest px-4 rounded-xl text-sm font-bold hover:bg-white/10 transition-colors">Selecionar</button>
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-automacao" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-automacao" class="text-secondary">Processando Automação...</span>
+                            <span id="progresso-porcentagem-automacao" class="text-secondary">0%</span>
+                        </div>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-automacao" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
                     </div>
-                    <!-- Mês e Ano de Competência -->
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="space-y-2">
-                            <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Mês Competência</label>
-                            <select id="select-mes-exportar" class="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm outline-none text-white focus:border-secondary">
-                                <option value="01">Janeiro</option>
-                                <option value="02">Fevereiro</option>
-                                <option value="03">Março</option>
-                                <option value="04">Abril</option>
-                                <option value="05">Maio</option>
-                                <option value="06">Junho</option>
-                                <option value="07">Julho</option>
-                                <option value="08">Agosto</option>
-                                <option value="09">Setembro</option>
-                                <option value="10">Outubro</option>
-                                <option value="11">Novembro</option>
-                                <option value="12">Dezembro</option>
-                            </select>
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Ano Competência</label>
-                            <select id="select-ano-exportar" class="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm outline-none text-white focus:border-secondary">
-                                <option value="2026">2026</option>
-                                <option value="2025">2025</option>
-                                <option value="2024">2024</option>
-                                <option value="2023">2023</option>
-                            </select>
-                        </div>
-                    </div>
-                    <!-- Botão Iniciar -->
-                    <button id="btn-iniciar-exportacao" onclick="iniciarExportacaoXML()" class="w-full bg-secondary-container text-on-secondary-container py-4 rounded-xl font-bold text-lg hover:scale-[1.02] active:scale-95 transition-all neon-glow-cyan flex items-center justify-center gap-3">
-                        <span class="material-symbols-outlined font-bold">file_download</span>
-                        Iniciar Exportação
-                    </button>
-
-                    <!-- Card de Confirmação de Login -->
-                    <div id="card-confirmar-login-exportar" class="hidden mt-4 p-4 rounded-xl border border-secondary/30 bg-secondary/5 text-xs text-on-surface space-y-3">
-                        <div class="flex gap-2 items-start">
-                            <span class="material-symbols-outlined text-secondary">info</span>
-                            <div>
-                                <strong class="block text-secondary mb-1">Aguardando Login Manual</strong>
-                                <span>O Chrome foi aberto no portal. Faça o login manualmente e clique no botão abaixo assim que estiver na tela inicial do sistema.</span>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                console_output.log
+                            </span>
+                            <div class="flex items-center gap-sm">
+                                <button onclick="limparLogAutomacao()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                    <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                                </button>
+                                <button id="btn-pausar-retomar-automacao" onclick="alternarPausaAutomacao()" class="hidden px-sm py-1 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded text-[10px] font-bold tracking-wider transition-all flex items-center gap-1">
+                                    <span class="material-symbols-outlined text-[12px]">pause</span>
+                                    <span id="lbl-pausar-retomar-automacao">PARAR</span>
+                                </button>
+                                <button id="btn-cancelar-automacao" onclick="cancelarAutomacao()" class="hidden px-sm py-1 bg-error/20 hover:bg-error/30 border border-error/50 text-white rounded text-[10px] font-bold tracking-wider transition-all flex items-center gap-1">
+                                    <span class="material-symbols-outlined text-[12px]">cancel</span>
+                                    CANCELAR
+                                </button>
                             </div>
                         </div>
-                        <button onclick="confirmarLoginExportacao()" class="w-full py-2.5 bg-gradient-to-r from-primary to-secondary text-on-primary rounded-lg font-black hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2">
-                            <span class="material-symbols-outlined text-sm font-bold">check_circle</span>
-                            Confirmar Login Realizado
-                        </button>
-                    </div>
+                        <div id="log-automacao" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Initializing Shell...</p>
+                        </div>
+                    </section>
                 </div>
-            </section>
+            </div>
         </div>
+    </main>
 
-        <div class="col-span-12 lg:col-span-8">
-            <section class="h-full flex flex-col glass-panel rounded-2xl border-white/5 overflow-hidden">
-                <!-- Barra de Progresso Exportação -->
-                <div id="progresso-container-exportar" class="p-4 bg-black/30 border-b border-white/10 hidden">
-                    <div class="flex justify-between items-center text-xs font-bold mb-1.5">
-                        <span id="progresso-status-exportar" class="text-secondary">Exportando XMLs...</span>
-                        <span id="progresso-porcentagem-exportar" class="text-secondary">0%</span>
-                    </div>
-                    <div class="w-full bg-white/5 border border-white/10 rounded-full h-3 overflow-hidden relative progress-pulse">
-                        <div id="progresso-barra-exportar" class="bg-gradient-to-r from-primary to-secondary h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+    <!-- ============ ABA: Exportar XML de Prestados ============ -->
+    <main id="aba-exportar" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <h1 class="font-headline-lg text-headline-lg text-on-surface">Exportar XML de Prestados</h1>
+                <span class="inline-flex items-center gap-1.5 px-sm py-1 mt-xs bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                    Robô Exportador
+                </span>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Automatiza o download em lote de arquivos XML de NFS-e (Serviços Prestados) do portal da <strong class="text-secondary">ISS Fortaleza</strong>, filtrando pela competência escolhida.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Parâmetros da Exportação
+                        </h3>
+                        <div class="flex flex-col gap-lg">
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Destino dos Downloads</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-pasta-exportar" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a pasta de destino..."/>
+                                    <button onclick="selecionarPastaExportar()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Mês Competência</label>
+                                    <select id="select-mes-exportar" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+                                        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+                                        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+                                        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Ano Competência</label>
+                                    <select id="select-ano-exportar" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="btn-iniciar-exportacao" onclick="iniciarExportacaoXML()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined">file_download</span>
+                                Iniciar Exportação
+                            </button>
+
+                            <div id="card-confirmar-login-exportar" class="hidden p-md rounded-lg border border-primary-container/40 bg-primary-container/10 text-xs text-on-surface space-y-sm">
+                                <div class="flex gap-sm items-start">
+                                    <span class="material-symbols-outlined text-primary-container">info</span>
+                                    <div>
+                                        <strong class="block text-on-surface mb-1">Aguardando Login Manual</strong>
+                                        <span class="text-on-surface-variant">O Chrome foi aberto no portal. Faça o login manualmente e clique no botão abaixo assim que estiver na tela inicial do sistema.</span>
+                                    </div>
+                                </div>
+                                <button onclick="confirmarLoginExportacao()" class="w-full py-sm bg-primary-container text-white rounded-lg font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                                    Confirmar Login Realizado
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
-                    <span class="text-xs font-mono-console text-on-surface-variant">exportar_xml_output.log</span>
-                    <!-- Botão Limpar Log da Exportação (MELHORIA-02) -->
-                    <button onclick="limparLogExportar()" title="Limpar terminal" class="flex items-center gap-1 text-on-surface-variant hover:text-error transition-colors text-xs">
-                        <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
-                        Limpar
-                    </button>
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-exportar" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-exportar" class="text-secondary">Exportando XMLs...</span>
+                            <span id="progresso-porcentagem-exportar" class="text-secondary">0%</span>
+                        </div>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-exportar" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                exportar_xml_output.log
+                            </span>
+                            <button onclick="limparLogExportar()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-exportar" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Initializing Shell...</p>
+                        </div>
+                    </section>
                 </div>
-                <div class="flex-1 bg-black p-6 font-mono-console text-sm terminal-scroll" style="height: 450px; max-height: 450px; overflow-y: auto;" id="log-exportar">
-                    <p class="text-on-surface-variant opacity-60">Initializing Shell...</p>
-                </div>
-            </section>
+            </div>
         </div>
-    </div>
-</main>
+    </main>
 
-<script>
-    // Tab Navigation Logic
-    const btnAutomacao = document.getElementById('btn-aba-automacao');
-    const btnXml = document.getElementById('btn-aba-xml');
-    const btnExportar = document.getElementById('btn-aba-exportar');
-    const abaAutomacao = document.getElementById('aba-automacao');
-    const abaXml = document.getElementById('aba-xml');
-    const abaExportar = document.getElementById('aba-exportar');
-    const headerTitle = document.getElementById('header-title');
+    <!-- ============ ABA: Captura Escrituração (Com Movimento) ============ -->
+    <main id="aba-captura-movimento" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <div class="flex items-center gap-sm">
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">Captura Escrituração (Com Movimento)</h1>
+                    <span class="px-sm py-1 bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes</span>
+                    <span class="inline-flex items-center gap-1.5 px-sm py-1 bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                        Robô de Captura
+                    </span>
+                </div>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Baixa automaticamente os certificados de escrituração ISS das empresas encerradas <strong class="text-secondary">com movimento</strong> no período, diretamente do portal ISS Fortaleza.</p>
+            </div>
 
-    function setActiveTab(tab) {
-        [btnAutomacao, btnXml, btnExportar].forEach(btn => {
-            if (btn) {
-                btn.classList.remove('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-                btn.classList.add('text-on-surface-variant');
-            }
-        });
-        [abaAutomacao, abaXml, abaExportar].forEach(a => {
-            if (a) a.classList.add('hidden');
-        });
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Configuração de Captura
+                        </h3>
+                        <div class="flex flex-col gap-lg">
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Planilha Fiscal (.xlsx)</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-planilha-captura" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a planilha fiscal..."/>
+                                    <button onclick="selecionarPlanilhaCaptura()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Saída</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-saida-captura" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a pasta de saída..."/>
+                                    <button onclick="selecionarSaidaCaptura()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Mês Competência</label>
+                                    <select id="select-mes-captura" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+                                        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+                                        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+                                        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Ano Competência</label>
+                                    <select id="select-ano-captura" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Data de Encerramento (filtro)</label>
+                                <input id="input-data-encerramento-captura" type="date" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white"/>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">CPF (Portal ISS)</label>
+                                    <input id="input-cpf-captura" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" placeholder="000.000.000-00"/>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Senha</label>
+                                    <input id="input-senha-captura" type="password" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" placeholder="••••••••"/>
+                                </div>
+                            </div>
+                            <details class="text-sm">
+                                <summary class="font-label-md text-label-md text-secondary cursor-pointer select-none">Configurações Avançadas</summary>
+                                <div class="flex flex-col gap-md mt-sm">
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">Caminho do Chrome</label>
+                                        <input id="input-chrome-captura" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" value="C:\Program Files\Google\Chrome\Application\chrome.exe"/>
+                                    </div>
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">URL do Portal</label>
+                                        <input id="input-url-captura" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" value="https://iss.fortaleza.ce.gov.br/grpfor/login.seam"/>
+                                    </div>
+                                </div>
+                            </details>
+                            <button id="btn-iniciar-captura" onclick="iniciarCapturaComMovimento()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined">play_arrow</span>
+                                Iniciar Captura
+                            </button>
+                            <button id="btn-cancelar-captura" onclick="cancelarCapturaComMovimento()" class="hidden w-full border border-error text-error py-sm rounded-lg font-bold text-sm hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[16px]">cancel</span>
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
-        if (tab === 'automacao') {
-            btnAutomacao.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnAutomacao.classList.remove('text-on-surface-variant');
-            abaAutomacao.classList.remove('hidden');
-            headerTitle.innerText = 'Automação: Escrituração';
-        } else if (tab === 'xml') {
-            btnXml.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnXml.classList.remove('text-on-surface-variant');
-            abaXml.classList.remove('hidden');
-            headerTitle.innerText = 'Processamento de XMLs';
-        } else if (tab === 'exportar') {
-            btnExportar.classList.add('text-secondary', 'border-secondary', 'bg-white/5', 'font-bold');
-            btnExportar.classList.remove('text-on-surface-variant');
-            abaExportar.classList.remove('hidden');
-            headerTitle.innerText = 'Exportar XML de Prestados';
-        }
-    }
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                captura_escrituracao_output.log
+                            </span>
+                            <button onclick="limparLogCaptura()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-captura" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início da captura...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
 
-    btnAutomacao.addEventListener('click', () => setActiveTab('automacao'));
-    btnXml.addEventListener('click', () => setActiveTab('xml'));
-    btnExportar.addEventListener('click', () => setActiveTab('exportar'));
+    <!-- ============ ABA: Encerramento ISS (Sem Movimento) ============ -->
+    <main id="aba-encerramento-sem-movimento" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <div class="flex items-center gap-sm">
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">Encerramento ISS (Sem Movimento)</h1>
+                    <span class="px-sm py-1 bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes</span>
+                    <span class="inline-flex items-center gap-1.5 px-sm py-1 bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                        Robô de Encerramento
+                    </span>
+                </div>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Encerra automaticamente a escrituração ISS das empresas <strong class="text-secondary">sem movimento</strong>/inativas no período, baixando o certificado de encerramento e gerando o relatório consolidado da execução.</p>
+            </div>
 
-    // ---- Automação: Escrituração ----
-    async function selecionarExcelAutomacao() {
-        if (window.pywebview) {
-            const file = await window.pywebview.api.selecionar_arquivo();
-            if (file) {
-                document.getElementById('input-excel-automacao').value = file;
-            }
-        }
-    }
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Configuração de Encerramento
+                        </h3>
+                        <div class="flex flex-col gap-lg">
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Planilha Fiscal (.xlsx)</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-planilha-encerramento" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a planilha fiscal..."/>
+                                    <button onclick="selecionarPlanilhaEncerramento()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Saída</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-saida-encerramento" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a pasta de saída..."/>
+                                    <button onclick="selecionarSaidaEncerramento()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Mês Competência</label>
+                                    <select id="select-mes-encerramento" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+                                        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+                                        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+                                        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Ano Competência</label>
+                                    <select id="select-ano-encerramento" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">CPF (Portal ISS)</label>
+                                    <input id="input-cpf-encerramento" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" placeholder="000.000.000-00"/>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Senha</label>
+                                    <input id="input-senha-encerramento" type="password" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" placeholder="••••••••"/>
+                                </div>
+                            </div>
+                            <details class="text-sm">
+                                <summary class="font-label-md text-label-md text-secondary cursor-pointer select-none">Configurações Avançadas</summary>
+                                <div class="flex flex-col gap-md mt-sm">
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">Caminho do Chrome</label>
+                                        <input id="input-chrome-encerramento" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" value="C:\Program Files\Google\Chrome\Application\chrome.exe"/>
+                                    </div>
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">URL do Portal</label>
+                                        <input id="input-url-encerramento" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" value="https://iss.fortaleza.ce.gov.br/grpfor/login.seam"/>
+                                    </div>
+                                </div>
+                            </details>
+                            <button id="btn-iniciar-encerramento" onclick="iniciarEncerramentoSemMovimento()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined">send</span>
+                                Realizar Encerramento
+                            </button>
+                            <button id="btn-cancelar-encerramento" onclick="cancelarEncerramentoSemMovimento()" class="hidden w-full border border-error text-error py-sm rounded-lg font-bold text-sm hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[16px]">cancel</span>
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
 
-    let automacaoPausada = false;
+                    <div id="resumo-encerramento" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h4 class="font-headline-sm text-headline-sm font-semibold mb-sm">Resumo da Execução</h4>
+                        <div class="grid grid-cols-3 gap-sm text-center">
+                            <div><p id="resumo-processadas" class="font-headline-md text-headline-md">0</p><p class="font-label-md text-label-md text-on-surface-variant">Processadas</p></div>
+                            <div><p id="resumo-encerradas" class="font-headline-md text-headline-md text-secondary">0</p><p class="font-label-md text-label-md text-on-surface-variant">Encerradas</p></div>
+                            <div><p id="resumo-problemas" class="font-headline-md text-headline-md text-error">0</p><p class="font-label-md text-label-md text-on-surface-variant">Problemas</p></div>
+                        </div>
+                        <button id="btn-abrir-relatorio-encerramento" onclick="abrirRelatorioEncerramento()" class="hidden w-full mt-md border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors">Abrir Relatório de Execução</button>
+                    </div>
+                </div>
 
-    async function iniciarAutomacao() {
-        const inputExcel = document.getElementById('input-excel-automacao').value;
-        const mes = document.getElementById('select-mes-automacao').value;
-        const ano = document.getElementById('select-ano-automacao').value;
-        const competencia = `${mes}/${ano}`;
-        
-        if (!inputExcel) {
-            addLogAutomacao("Selecione o arquivo Excel de origem.", true);
-            return;
-        }
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                encerramento_iss_output.log
+                            </span>
+                            <button onclick="limparLogEncerramento()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-encerramento" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início do encerramento...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
 
-        // MELHORIA-06: Aviso visual se o arquivo não foi selecionado nesta sessão
-        if (!window._arquivoExcelSelecionadoNestaSessao) {
-            addLogAutomacao("Atenção: verifique se o arquivo Excel selecionado ainda existe no caminho informado antes de continuar.", false);
-        }
+    <!-- Footer -->
+    <footer class="w-full py-base bg-secondary border-t border-outline-variant flex justify-center items-center">
+        <span class="font-label-md text-label-md text-white">Barreira &amp; Associados - Assessoria Contábil</span>
+    </footer>
+</div>
 
-        // Configura e exibe a barra de progresso da automação
-        const container = document.getElementById('progresso-container-automacao');
-        const bar = document.getElementById('progresso-barra-automacao');
-        const pct = document.getElementById('progresso-porcentagem-automacao');
-        const st = document.getElementById('progresso-status-automacao');
-        
-        container.classList.remove('hidden');
-        bar.style.width = '0%';
-        pct.innerText = '0%';
-        st.innerText = 'Iniciando automação...';
-
-        // Garante que o botão comece ocultado e no estado não-pausado
-        document.getElementById('btn-pausar-retomar-automacao').classList.add('hidden');
-        automacaoPausada = false;
-        const btnPausaAut = document.getElementById('btn-pausar-retomar-automacao');
-        const lblPausaAut = document.getElementById('lbl-pausar-retomar-automacao');
-        const iconPausaAut = btnPausaAut.querySelector('.material-symbols-outlined');
-        lblPausaAut.innerText = "PARAR AUTOMAÇÃO";
-        iconPausaAut.innerText = "pause";
-        btnPausaAut.className = "hidden px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none";
-
-        // Diferente do botão de pausa (só aparece após confirmar login), o de Cancelar
-        // já aparece aqui — o caso mais importante para cancelar é durante a própria
-        // espera da confirmação de login.
-        const btnCancelar = document.getElementById('btn-cancelar-automacao');
-        btnCancelar.classList.remove('hidden');
-        btnCancelar.disabled = false;
-
-        // FALHA-08: O card de confirmação de login é exibido APÓS a chamada da API Python,
-        // não antes — evita que o card fique preso visível em caso de erro precoce.
-        addLogAutomacao(`Iniciando portal da ISS Fortaleza (Competência: ${competencia})...`);
-        document.getElementById('btn-iniciar-automacao').disabled = true;
-        
-        if (window.pywebview) {
-            await window.pywebview.api.iniciar_automacao(inputExcel, competencia);
-        }
-        document.getElementById('btn-iniciar-automacao').disabled = false;
-    }
-
-    async function confirmarLoginFeito() {
-        if (window.pywebview && window.pywebview.api) {
-            const ok = await window.pywebview.api.confirmar_login_feito();
-            if (ok) {
-                addLogAutomacao("Login verificado pelo operador. Retomando robô...");
-                // FALHA-08: O card só é ocultado AQUI (após confirmação OK) e é exibido pela API Python
-                document.getElementById('card-confirmar-login').classList.add('hidden');
-                document.getElementById('btn-pausar-retomar-automacao').classList.remove('hidden');
-            } else {
-                addLogAutomacao("Falha ao enviar sinal de confirmação do login.", true);
-            }
-        }
-    }
-
-    function alternarPausaAutomacao() {
-        if (!window.pywebview || !window.pywebview.api) return;
-        automacaoPausada = !automacaoPausada;
-        const lbl = document.getElementById('lbl-pausar-retomar-automacao');
-        const btn = document.getElementById('btn-pausar-retomar-automacao');
-        const icon = btn.querySelector('.material-symbols-outlined');
-        
-        if (automacaoPausada) {
-            window.pywebview.api.pausar_automacao();
-            lbl.innerText = "CONTINUAR AUTOMAÇÃO";
-            icon.innerText = "play_arrow";
-            btn.className = "px-2.5 py-1 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none";
-            addLogAutomacao("Automação PAUSADA pelo operador.");
-        } else {
-            window.pywebview.api.retomar_automacao();
-            lbl.innerText = "PARAR AUTOMAÇÃO";
-            icon.innerText = "pause";
-            btn.className = "px-2.5 py-1 bg-error/10 hover:bg-error/20 border border-error/30 text-error rounded-lg text-[9px] font-bold tracking-wider transition-all flex items-center gap-1 select-none";
-            addLogAutomacao("Automação RETOMADA pelo operador.");
-        }
-    }
-
-    function cancelarAutomacao() {
-        if (!window.pywebview || !window.pywebview.api) return;
-        const confirmado = confirm(
-            "Tem certeza que deseja cancelar a automação?\n\n" +
-            "O navegador será fechado e você precisará começar do zero: selecionar a " +
-            "planilha e a competência novamente, e refazer o login manual."
-        );
-        if (!confirmado) return;
-
-        window.pywebview.api.cancelar_automacao();
-        addLogAutomacao("Cancelamento solicitado pelo operador. Encerrando a automação...", true);
-        document.getElementById('btn-cancelar-automacao').disabled = true;
-    }
-
-    function addLogAutomacao(msg, isError=false) {
-        const logContainer = document.getElementById('log-automacao');
-        if (!logContainer) return;
-        const p = document.createElement('p');
-        // MELHORIA-01: Prefixar mensagem com timestamp local
-        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        p.innerText = `[${agora}] ${msg}`;
-        if (isError) p.className = "text-error font-bold";
-        else p.className = "text-[#a3defe]";
-        logContainer.appendChild(p);
-        logContainer.scrollTop = logContainer.scrollHeight;
-    }
-    window.log_automacao = addLogAutomacao;
-
-    function limparLogAutomacao() {
-        const el = document.getElementById('log-automacao');
-        if (el) el.innerHTML = '';
-    }
-
-    function updateProgressoAutomacao(porcentagem, status) {
-        const container = document.getElementById('progresso-container-automacao');
-        const bar = document.getElementById('progresso-barra-automacao');
-        const pct = document.getElementById('progresso-porcentagem-automacao');
-        const st = document.getElementById('progresso-status-automacao');
-        
-        if (container) container.classList.remove('hidden');
-        if (bar) bar.style.width = `${porcentagem}%`;
-        if (pct) pct.innerText = `${porcentagem}%`;
-        if (st) st.innerText = status;
-    }
-    window.update_progresso_automacao = updateProgressoAutomacao;
-
-
-    // ---- Exportar XML de Prestados ----
-    async function selecionarPastaExportar() {
-        if (window.pywebview) {
-            const pasta = await window.pywebview.api.selecionar_pasta();
-            if (pasta) {
-                document.getElementById('input-pasta-exportar').value = pasta;
-            }
-        }
-    }
-
-    async function iniciarExportacaoXML() {
-        const pasta = document.getElementById('input-pasta-exportar').value.trim();
-        const mes = document.getElementById('select-mes-exportar').value;
-        const ano = document.getElementById('select-ano-exportar').value;
-        const competencia = `${mes}/${ano}`;
-
-        if (!pasta) {
-            addLogExportar('Selecione a pasta de destino dos downloads.', true);
-            return;
-        }
-
-        document.getElementById('log-exportar').innerHTML = '';
-        addLogExportar(`Iniciando exportação de XMLs para competência ${competencia}...`);
-        document.getElementById('progresso-container-exportar').classList.remove('hidden');
-
-        if (window.pywebview && window.pywebview.api) {
-            try {
-                await window.pywebview.api.iniciar_exportacao_xml_gui(pasta, competencia);
-            } catch (e) {
-                addLogExportar('Erro ao iniciar exportação: ' + e, true);
-            }
-        }
-    }
-
-    async function confirmarLoginExportacao() {
-        if (window.pywebview && window.pywebview.api) {
-            const ok = await window.pywebview.api.confirmar_login_exportacao();
-            if (ok) {
-                addLogExportar('Login verificado pelo operador. Retomando robô exportador...');
-                document.getElementById('card-confirmar-login-exportar').classList.add('hidden');
-            } else {
-                addLogExportar('Falha ao enviar sinal de confirmação do login.', true);
-            }
-        }
-    }
-
-    function addLogExportar(msg, isError=false) {
-        const el = document.getElementById('log-exportar');
-        if (!el) return;
-        const p = document.createElement('p');
-        // MELHORIA-01: Prefixar mensagem com timestamp local
-        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        p.innerText = `[${agora}] ${msg}`;
-        p.className = isError ? 'text-error font-bold' : 'text-[#a3defe]';
-        el.appendChild(p);
-        el.scrollTop = el.scrollHeight;
-    }
-    window.log_exportar = addLogExportar;
-
-    function limparLogExportar() {
-        const el = document.getElementById('log-exportar');
-        if (el) el.innerHTML = '';
-    }
-
-    function updateProgressoExportar(porcentagem, status) {
-        const container = document.getElementById('progresso-container-exportar');
-        const bar = document.getElementById('progresso-barra-exportar');
-        const pct = document.getElementById('progresso-porcentagem-exportar');
-        const st = document.getElementById('progresso-status-exportar');
-
-        if (container) container.classList.remove('hidden');
-        if (bar) bar.style.width = `${porcentagem}%`;
-        if (pct) pct.innerText = `${porcentagem}%`;
-        if (st) st.innerText = status;
-    }
-    window.update_progresso_exportar = updateProgressoExportar;
-
-
-    // ---- Processamento de XMLs (Tess AI) ----
-    async function selecionarPastaXML() {
-        if (window.pywebview) {
-            const pasta = await window.pywebview.api.selecionar_pasta();
-            if (pasta) {
-                document.getElementById('input-pasta-xml').value = pasta;
-            }
-        }
-    }
-
-    async function iniciarProcessamentoXML() {
-        const pasta = document.getElementById('input-pasta-xml').value.trim();
-        if (!pasta) {
-            addLogXml('Selecione a pasta de origem dos XMLs.', true);
-            return;
-        }
-
-        const tessKey = document.getElementById('api-key-tess').value.trim();
-        const tessAgent = document.getElementById('agent-id-tess').value.trim();
-
-        document.getElementById('log-xml').innerHTML = '';
-        // Oculta botão de abrir planilha de execução anterior (MELHORIA-05)
-        document.getElementById('container-abrir-planilha').classList.add('hidden');
-        window._ultimaPlanilhaGerada = null;
-        // Oculta botão de abrir pasta com planilhas (caso de subpastas) de execução anterior
-        document.getElementById('container-abrir-pasta-resultados').classList.add('hidden');
-        window._ultimaPastaResultados = null;
-
-        addLogXml('Iniciando varredura e importação de XMLs...');
-        document.getElementById('progresso-container-xml').classList.remove('hidden');
-
-        // MELHORIA-10: Muda o botão para estado "processando" com ícone animado
-        const btnProcessar = document.getElementById('btn-processar-xml');
-        btnProcessar.disabled = true;
-        btnProcessar.innerHTML = '<span class="material-symbols-outlined align-middle mr-2" style="animation: spin 1s linear infinite; display:inline-block;">progress_activity</span> PROCESSANDO...';
-
-        if (window.pywebview && window.pywebview.api) {
-            try {
-                await window.pywebview.api.processar_xmls_gui(pasta, tessKey, tessAgent);
-            } catch (e) {
-                addLogXml('Erro ao chamar processamento de XMLs: ' + e, true);
-            }
-        }
-
-        // MELHORIA-10: Restaura o botão após o processamento
-        btnProcessar.disabled = false;
-        btnProcessar.innerHTML = '<span class="material-symbols-outlined align-middle mr-2">play_arrow</span> INICIAR PROCESSAMENTO DE XMLs';
-    }
-
-    function addLogXml(msg, isError=false) {
-        const el = document.getElementById('log-xml');
-        if (!el) return;
-        const p = document.createElement('p');
-        // MELHORIA-01: Prefixar mensagem com timestamp local
-        const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        p.innerText = `[${agora}] ${msg}`;
-        p.className = isError ? 'text-error font-bold' : 'text-secondary';
-        el.appendChild(p);
-        el.scrollTop = el.scrollHeight;
-    }
-    window.log_xml = addLogXml;
-
-    function limparLogXml() {
-        const el = document.getElementById('log-xml');
-        if (el) el.innerHTML = '';
-    }
-
-    // MELHORIA-05: Exibe o botão de abrir planilha e armazena o caminho gerado pelo Python
-    function mostrarBotaoPlanilha(caminho) {
-        window._ultimaPlanilhaGerada = caminho;
-        const container = document.getElementById('container-abrir-planilha');
-        if (container) container.classList.remove('hidden');
-    }
-    window.mostrar_botao_planilha = mostrarBotaoPlanilha;
-
-    function abrirPlanilhaGerada() {
-        if (window._ultimaPlanilhaGerada && window.pywebview && window.pywebview.api) {
-            window.pywebview.api.abrir_link('file:///' + window._ultimaPlanilhaGerada.replace(/\\/g, '/'));
-        }
-    }
-
-    // Exibe o botão de abrir a pasta-pai quando o processamento gerou uma planilha
-    // por subpasta (várias planilhas), em vez de um único arquivo consolidado.
-    function mostrarBotaoPastaResultados(pasta, quantidade) {
-        window._ultimaPastaResultados = pasta;
-        const lbl = document.getElementById('lbl-abrir-pasta-resultados');
-        if (lbl) lbl.innerText = `ABRIR PASTA COM AS ${quantidade} PLANILHAS GERADAS`;
-        const container = document.getElementById('container-abrir-pasta-resultados');
-        if (container) container.classList.remove('hidden');
-    }
-    window.mostrar_botao_pasta_resultados = mostrarBotaoPastaResultados;
-
-    function abrirPastaResultados() {
-        if (window._ultimaPastaResultados && window.pywebview && window.pywebview.api) {
-            window.pywebview.api.abrir_link('file:///' + window._ultimaPastaResultados.replace(/\\/g, '/'));
-        }
-    }
-
-    function updateProgressoXml(porcentagem, status) {
-        const container = document.getElementById('progresso-container-xml');
-        const bar = document.getElementById('progresso-barra-xml');
-        const pct = document.getElementById('progresso-porcentagem-xml');
-        const st = document.getElementById('progresso-status-xml');
-        
-        if (container) container.classList.remove('hidden');
-        if (bar) bar.style.width = `${porcentagem}%`;
-        if (pct) pct.innerText = `${porcentagem}%`;
-        if (st) st.innerText = status;
-    }
-    window.update_progresso_xml = updateProgressoXml;
-
-
-    // ---- Credenciais e Configurações ----
-    async function carregarChavesAPI() {
-        if (window.pywebview && window.pywebview.api) {
-            try {
-                const chaves = await window.pywebview.api.obter_chaves_salvas();
-                if (chaves) {
-                    if (chaves.tess_key) {
-                        document.getElementById('api-key-tess').value = chaves.tess_key;
-                    }
-                    if (chaves.tess_agent_id) {
-                        document.getElementById('agent-id-tess').value = chaves.tess_agent_id;
-                    }
-                }
-            } catch (e) {
-                console.error("Erro ao carregar chaves:", e);
-            }
-        }
-    }
-
-    async function salvarChavesAPI() {
-        const tessKey = document.getElementById('api-key-tess').value.trim();
-        const tessAgent = document.getElementById('agent-id-tess').value.trim();
-        
-        if (window.pywebview && window.pywebview.api) {
-            const ok = await window.pywebview.api.salvar_chaves(tessKey, tessAgent);
-            if (ok) {
-                addLogXml("Configurações do Tess AI salvas com sucesso!");
-            } else {
-                addLogXml("Falha ao salvar configurações do Tess AI.", true);
-            }
-        }
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-        const hoje = new Date();
-        const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
-        const anoAtual = String(hoje.getFullYear());
-
-        // MELHORIA-06: Flag para detectar se o arquivo foi selecionado nesta sessão
-        window._arquivoExcelSelecionadoNestaSessao = false;
-
-        // FALHA-07: Função reutilizável para inicializar seletores de ano em ambas as abas
-        function inicializarSeletorAno(idSelect) {
-            const select = document.getElementById(idSelect);
-            if (!select) return;
-            let anoExiste = Array.from(select.options).some(o => o.value === anoAtual);
-            if (!anoExiste) {
-                const opt = document.createElement('option');
-                opt.value = anoAtual;
-                opt.text = anoAtual;
-                select.add(opt, select.options[0]);
-            }
-            select.value = anoAtual;
-        }
-
-        // Aplica inicialização dinâmica para os seletores de ano (automação e exportação)
-        inicializarSeletorAno('select-ano-automacao');
-        inicializarSeletorAno('select-ano-exportar'); // FALHA-07
-
-        const selectMes = document.getElementById('select-mes-automacao');
-        if (selectMes) selectMes.value = mesAtual;
-
-        const selectMesExportar = document.getElementById('select-mes-exportar');
-        if (selectMesExportar) selectMesExportar.value = mesAtual;
-
-        // Adiciona keyframe de rotação para o spinner (MELHORIA-10)
-        const style = document.createElement('style');
-        style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
-        document.head.appendChild(style);
-
-        if (window.pywebview && window.pywebview.api) {
-            carregarChavesAPI();
-        } else {
-            window.addEventListener('pywebviewready', carregarChavesAPI);
-        }
-        setActiveTab('xml');
-    });
-
-</script>
+<script src="js/shared.js"></script>
+<script src="js/app-shell.js"></script>
+<script src="js/tab-xml.js"></script>
+<script src="js/tab-automacao.js"></script>
+<script src="js/tab-exportar.js"></script>
+<script src="js/tab-captura-com-movimento.js"></script>
+<script src="js/tab-encerramento-sem-movimento.js"></script>
 </body>
 </html>
