@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.2.1-testes] - 2026-09-08
+
+### Alterado
+- **README.md reescrito em versão comercial** (`README.md`): documenta agora as 5 automações do sistema (antes só 3 estavam descritas — faltavam "Captura Escrituração (Com Movimento)" e "Encerramento ISS (Sem Movimento)"), com tabela de status (estável/em testes) alinhada ao `manual_sistema.html`, seção de segurança/conformidade/auditoria e proposta de valor voltada a apresentação comercial do produto para o escritório.
+
+## [0.2.0-testes] - 2026-08-25
+
+### Adicionado
+- **Aba "Encerramento Sem Movimento" na interface Tkinter** (`app_tkinter.py`, `tk_controller.py`, novo `encerramento_iss_sem_movimento.py`): porta a automação de encerramento de escrituração ISS para empresas sem movimento/inativas do projeto irmão `encerramento-iss-sem-movimento`. Lê a planilha fiscal/contábil do escritório, filtra empresas sem movimento/inativas de Fortaleza, busca cada uma por CNPJ no portal, encerra a escrituração (ou baixa o certificado se já estava encerrada), grava o resultado na planilha e gera um relatório Excel final. Login sempre manual (nunca digita CPF/senha), com pausa/retomada/cancelamento próprios — consistente com as demais abas.
+- **Tags de status por aba** (`app_tkinter.py`): "Processamento de XMLs" ganhou a tag verde "APROVADA"; "Automação: Escrituração", "Exportar XML de Prestados" e "Encerramento Sem Movimento" ganharam a tag dourada "EM TESTES", exibidas ao lado do título de cada aba.
+- **Console de log mais legível nas 4 abas** (`app_tkinter.py`, `tk_controller.py`): o console passa a ficar dentro de um cartão com título ("Acompanhamento em Tempo Real") e um parágrafo explicando o que vai aparecer ali, inspirado na tela de progresso do `automacao-mit-dctfweb`. As linhas de log ganham cores por nível — info, sucesso (verde), aviso (âmbar) e erro (vermelho) — cada uma com um marcador curto (✓/⚠/✗). As mensagens visíveis ao operador nos 4 módulos de automação (`iss_fortaleza_automacao.py`, `processamento_xml.py`, `exportador_xml_prestados.py`, `encerramento_iss_sem_movimento.py`) foram reescritas num tom mais direto e humano, e o uso de "aviso" vs. "erro" foi padronizado (antes inconsistente). `app.py`/`gui/index.html` (produção) não foram alterados — o contrato externo `callback_log(msg, is_error)` das funções compartilhadas com a produção continua exatamente igual.
+
 ## [2.26.0] - 2026-08-25
 
 ### Adicionado
