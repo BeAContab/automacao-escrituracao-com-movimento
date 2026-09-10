@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.2.3-testes] - 2026-09-10
+
+### Corrigido
+- **MEI não detectado por nome em XMLs do layout NFS-e Nacional** (`processamento_xml.py`, função `_extrair_dados_xml_nacional`): a detecção de MEI pelo padrão de nome auto-gerado (raiz do CNPJ + nome completo, ex. `"48.244.611 LILIAN SOUZA FERREIRA MACIEL"`) só existia no parser do layout Portal Da Paraíba — layout Nacional sempre gravava `TIPO_TRIBUTACAO = "Normal"` mesmo para prestadores MEI reais (confirmado em produção: NF 499, CNPJ 48244611000101). Isso fazia o robô de escrituração selecionar "Normal" no campo Tipo de Tributação do portal ISS Fortaleza para prestadores MEI de fora do município, o que por sua vez levava o portal a aplicar a regra de retenção obrigatória de ISS (art. 223/224 do CTM) que não deveria valer para MEI — marcando ISS Retido = SIM mesmo com a planilha dizendo "NÃO" (mesmo sintoma observado, por outro motivo, na NF 8675/VBBR). Corrigido aplicando a mesma checagem de nome-padrão-MEI (`_eh_nome_prestador_padrao_mei`) também no parser Nacional, preenchendo `TIPO_TRIBUTACAO = "Simples Nacional MEI"` quando o nome do prestador segue o padrão — validado com um XML de teste reproduzindo o caso real.
+
+## [0.2.2-testes] - 2026-09-08
+
+### Alterado
+- **Redesign do `manual_sistema.html`** seguindo os padrões da skill de design de frontend: cobertura CSS revisada (regra `.section-header h2` substitui 13 estilos inline repetidos `style="border:none;margin:0;"`); capa ganhou um índice em aba nas 5 funções do sistema (estilo divisória de livro-razão, `writing-mode: vertical-rl`) e um fundo com filetes horizontais a cada 34px remetendo a uma folha de razão contábil; Sumário passou a ser navegável de verdade (âncoras `id="sec-N"` em cada seção + links reais com estado de foco visível); as 8 seções que forçam quebra de página impressa ganharam uma faixa fina reafirmando "Automações ISS · Manual do Sistema" no topo; a tabela da Seção 1 passou a usar os componentes de selo (`status-badge estavel`/`testes`) em vez de texto simples; o aviso de encerramento irreversível na Função 5 subiu de `alert-warn` para `alert-danger` (severidade real); Data de Emissão atualizada para Setembro de 2026.
+
 ## [0.2.1-testes] - 2026-09-08
 
 ### Alterado

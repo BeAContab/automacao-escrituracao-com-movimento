@@ -46,7 +46,17 @@
         code { font-family: "Courier New", monospace; background: var(--surface-container); border: 1px solid var(--outline-variant); border-radius: 3px; padding: 1px 5px; font-size: 9pt; color: var(--primary-dark); }
 
         /* ===== Capa ===== */
-        .cover { min-height: 220mm; display: flex; flex-direction: column; justify-content: center; padding: 40px 36px; background: var(--secondary); color: #fff; border-radius: 0 0 12px 12px; margin-bottom: 36px; }
+        /* O fundo combina a cor sólida da marca com um filete horizontal a cada 34px —
+           a mesma métrica de uma linha de razão contábil, referência direta ao objeto
+           que o sistema automatiza (a escrituração). */
+        .cover {
+            position: relative; overflow: hidden; min-height: 220mm;
+            display: flex; flex-direction: column; justify-content: center;
+            padding: 40px 92px 40px 36px;
+            background-color: var(--secondary);
+            background-image: repeating-linear-gradient(180deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 34px);
+            color: #fff; border-radius: 0 0 12px 12px; margin-bottom: 36px;
+        }
         .cover-brand { display: flex; align-items: center; gap: 16px; margin-bottom: 40px; }
         .cover-logo-img { width: 64px; height: 64px; object-fit: contain; background: #fff; border-radius: 10px; padding: 6px; flex-shrink: 0; }
         .cover-brand-text { display: flex; flex-direction: column; }
@@ -59,16 +69,37 @@
         .cover-meta span { display: block; margin-bottom: 3px; }
         .cover-meta strong { color: #fff; }
 
-        .section { margin-bottom: 36px; }
+        /* Índice em aba, como as divisórias de um livro razão — cada uma das 5
+           funções ganha sua "lombada" na borda da capa, na ordem em que aparecem
+           no menu do sistema. Decorativo (aria-hidden); a navegação real é o Sumário. */
+        .cover-index { position: absolute; top: 0; right: 0; bottom: 0; width: 56px; display: flex; flex-direction: column; }
+        .cover-index-item {
+            flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+            writing-mode: vertical-rl; padding: 10px 0;
+            border-left: 1px solid rgba(255,255,255,0.14);
+            background: rgba(0,0,0,0.08);
+            font-family: "Plus Jakarta Sans", sans-serif; font-size: 7.5pt; font-weight: 800;
+            letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255,255,255,0.55);
+        }
+        .cover-index-item:nth-child(even) { background: rgba(0,0,0,0.18); }
+        .cover-index-item .idx-num { color: var(--primary); }
+
+        .section { margin-bottom: 36px; scroll-margin-top: 18px; }
         .section-header { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid var(--secondary); padding-bottom: 8px; margin-bottom: 16px; }
+        .section-header h2 { margin: 0; }
         .section-number { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--secondary); color: #fff; font-family: "Plus Jakarta Sans", sans-serif; font-weight: 800; font-size: 12pt; border-radius: 50%; flex-shrink: 0; }
+
+        /* Faixa fina reafirmando a identidade do documento no início de cada página
+           impressa — útil quando o manual é impresso e as folhas se separam. */
+        .print-strip { display: flex; justify-content: space-between; font-family: "Plus Jakarta Sans", sans-serif; font-size: 7.5pt; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--on-surface-variant); opacity: .5; margin-bottom: 14px; }
 
         .feature-card { border: 1px solid var(--outline-variant); border-left: 4px solid var(--primary); border-radius: 8px; padding: 16px 18px; margin-bottom: 18px; background: var(--background); }
         .feature-card h3 { margin-top: 0; color: var(--secondary-dark); }
 
-        .status-badge { display: inline-flex; align-items: center; gap: 5px; font-family: "Plus Jakarta Sans", sans-serif; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 10px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
+        .status-badge { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-family: "Plus Jakarta Sans", sans-serif; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 10px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
         .status-badge.testes { background: var(--error-container); color: var(--error); border: 1px solid #f0b4ae; }
         .status-badge.estavel { background: var(--success-container); color: var(--success); border: 1px solid #a9dcc2; }
+        td .status-badge { margin-left: 0; }
 
         .steps { counter-reset: steps; list-style: none; padding: 0; }
         .steps li { counter-increment: steps; display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
@@ -87,10 +118,14 @@
         tr:nth-child(even) td { background: var(--surface-container); }
 
         .footer { border-top: 1px solid var(--outline-variant); padding-top: 14px; margin-top: 40px; font-size: 8pt; color: var(--on-surface-variant); display: flex; justify-content: space-between; }
-        .toc-item { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; font-size: 10pt; }
+        .toc-item { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; padding: 2px 4px; margin-left: -4px; font-size: 10pt; text-decoration: none; color: inherit; border-radius: 4px; }
+        .toc-item:hover { background: var(--surface-container); }
+        .toc-item:hover .toc-num { color: var(--primary); }
+        .toc-item:focus-visible { outline: 2px solid var(--primary-dark); outline-offset: 1px; }
         .toc-num  { font-weight: 700; color: var(--primary-dark); min-width: 20px; }
         .toc-dots { flex: 1; border-bottom: 1px dotted var(--outline-variant); }
         .toc-page { color: var(--on-surface-variant); font-size: 9pt; }
+        @media print { .toc-item:hover { background: none; } }
 
         /* Card de campos de formulário (usado nas seções de cada função) */
         .field-list { list-style: none; padding: 0; margin-bottom: 14px; }
@@ -113,43 +148,50 @@
     <span class="cover-badge">Manual de Operação — Uso Interno</span>
     <div class="cover-meta">
         <span><strong>Versão do Sistema:</strong> 2.26.0</span>
-        <span><strong>Data de Emissão:</strong> Agosto de 2026</span>
+        <span><strong>Data de Emissão:</strong> Setembro de 2026</span>
         <span><strong>Classificação:</strong> Documento Interno — Uso Exclusivo Barreira &amp; Associados</span>
+    </div>
+    <div class="cover-index" aria-hidden="true">
+        <div class="cover-index-item"><span class="idx-num">01</span><span>Processar XMLs</span></div>
+        <div class="cover-index-item"><span class="idx-num">02</span><span>Escrituração</span></div>
+        <div class="cover-index-item"><span class="idx-num">03</span><span>Exportar XML</span></div>
+        <div class="cover-index-item"><span class="idx-num">04</span><span>Captura</span></div>
+        <div class="cover-index-item"><span class="idx-num">05</span><span>Encerramento</span></div>
     </div>
 </div>
 
 <div class="section avoid-break">
-    <div class="section-header"><h2 style="border:none;margin:0;">Sumário</h2></div>
-    <div class="toc-item"><span class="toc-num">1.</span><span>Visão Geral do Sistema</span><span class="toc-dots"></span><span class="toc-page">2</span></div>
-    <div class="toc-item"><span class="toc-num">2.</span><span>Requisitos e Instalação</span><span class="toc-dots"></span><span class="toc-page">2</span></div>
-    <div class="toc-item"><span class="toc-num">3.</span><span>Conhecendo a Interface</span><span class="toc-dots"></span><span class="toc-page">3</span></div>
-    <div class="toc-item"><span class="toc-num">4.</span><span>Configuração do Tess AI</span><span class="toc-dots"></span><span class="toc-page">3</span></div>
-    <div class="toc-item"><span class="toc-num">5.</span><span>Função 1 — Processar XMLs</span><span class="toc-dots"></span><span class="toc-page">4</span></div>
-    <div class="toc-item"><span class="toc-num">6.</span><span>Função 2 — Automação: Escrituração</span><span class="toc-dots"></span><span class="toc-page">5</span></div>
-    <div class="toc-item"><span class="toc-num">7.</span><span>Função 3 — Exportar XML de Prestados</span><span class="toc-dots"></span><span class="toc-page">6</span></div>
-    <div class="toc-item"><span class="toc-num">8.</span><span>Função 4 — Captura Escrituração (Com Movimento)</span><span class="toc-dots"></span><span class="toc-page">7</span></div>
-    <div class="toc-item"><span class="toc-num">9.</span><span>Função 5 — Encerramento ISS (Sem Movimento)</span><span class="toc-dots"></span><span class="toc-page">8</span></div>
-    <div class="toc-item"><span class="toc-num">10.</span><span>Onde Ficam os Logs de Cada Execução</span><span class="toc-dots"></span><span class="toc-page">9</span></div>
-    <div class="toc-item"><span class="toc-num">11.</span><span>Solução de Problemas</span><span class="toc-dots"></span><span class="toc-page">9</span></div>
+    <div class="section-header"><h2>Sumário</h2></div>
+    <a class="toc-item" href="#sec-1"><span class="toc-num">1.</span><span>Visão Geral do Sistema</span><span class="toc-dots"></span><span class="toc-page">2</span></a>
+    <a class="toc-item" href="#sec-2"><span class="toc-num">2.</span><span>Requisitos e Instalação</span><span class="toc-dots"></span><span class="toc-page">2</span></a>
+    <a class="toc-item" href="#sec-3"><span class="toc-num">3.</span><span>Conhecendo a Interface</span><span class="toc-dots"></span><span class="toc-page">3</span></a>
+    <a class="toc-item" href="#sec-4"><span class="toc-num">4.</span><span>Configuração do Tess AI</span><span class="toc-dots"></span><span class="toc-page">3</span></a>
+    <a class="toc-item" href="#sec-5"><span class="toc-num">5.</span><span>Função 1 — Processar XMLs</span><span class="toc-dots"></span><span class="toc-page">4</span></a>
+    <a class="toc-item" href="#sec-6"><span class="toc-num">6.</span><span>Função 2 — Automação: Escrituração</span><span class="toc-dots"></span><span class="toc-page">5</span></a>
+    <a class="toc-item" href="#sec-7"><span class="toc-num">7.</span><span>Função 3 — Exportar XML de Prestados</span><span class="toc-dots"></span><span class="toc-page">6</span></a>
+    <a class="toc-item" href="#sec-8"><span class="toc-num">8.</span><span>Função 4 — Captura Escrituração (Com Movimento)</span><span class="toc-dots"></span><span class="toc-page">7</span></a>
+    <a class="toc-item" href="#sec-9"><span class="toc-num">9.</span><span>Função 5 — Encerramento ISS (Sem Movimento)</span><span class="toc-dots"></span><span class="toc-page">8</span></a>
+    <a class="toc-item" href="#sec-10"><span class="toc-num">10.</span><span>Onde Ficam os Logs de Cada Execução</span><span class="toc-dots"></span><span class="toc-page">9</span></a>
+    <a class="toc-item" href="#sec-11"><span class="toc-num">11.</span><span>Solução de Problemas</span><span class="toc-dots"></span><span class="toc-page">9</span></a>
 </div>
 
-<div class="section avoid-break">
-    <div class="section-header"><span class="section-number">1</span><h2 style="border:none;margin:0;">Visão Geral do Sistema</h2></div>
+<div class="section avoid-break" id="sec-1">
+    <div class="section-header"><span class="section-number">1</span><h2>Visão Geral do Sistema</h2></div>
     <p>O <strong>Automações ISS</strong> é a plataforma de robótica de processos contábeis (RPA) desenvolvida exclusivamente para o escritório <strong>Barreira &amp; Associados</strong>. O sistema reúne <strong>5 automações</strong> integradas em um único programa, cobrindo o ciclo completo de tratamento de notas fiscais de serviços (NFS-e) junto ao portal da Prefeitura de Fortaleza — ISS Fortaleza.</p>
     <table class="avoid-break">
         <tr><th>Função</th><th>Descrição</th><th>Situação</th></tr>
-        <tr><td><strong>1. Processar XMLs</strong></td><td>Leitura e classificação de NFS-e com IA</td><td>Estável</td></tr>
-        <tr><td><strong>2. Automação: Escrituração</strong></td><td>Digitação automatizada no portal ISS</td><td>Em testes</td></tr>
-        <tr><td><strong>3. Exportar XML de Prestados</strong></td><td>Download em lote de NFS-e emitidas</td><td>Estável</td></tr>
-        <tr><td><strong>4. Captura Escrituração (Com Movimento)</strong></td><td>Baixa certificados de escrituração de empresas encerradas com movimento</td><td>Em testes</td></tr>
-        <tr><td><strong>5. Encerramento ISS (Sem Movimento)</strong></td><td>Encerra a escrituração de empresas sem movimento/inativas</td><td>Em testes</td></tr>
+        <tr><td><strong>1. Processar XMLs</strong></td><td>Leitura e classificação de NFS-e com IA</td><td><span class="status-badge estavel">✅ Estável</span></td></tr>
+        <tr><td><strong>2. Automação: Escrituração</strong></td><td>Digitação automatizada no portal ISS</td><td><span class="status-badge testes">🧪 Em testes</span></td></tr>
+        <tr><td><strong>3. Exportar XML de Prestados</strong></td><td>Download em lote de NFS-e emitidas</td><td><span class="status-badge estavel">✅ Estável</span></td></tr>
+        <tr><td><strong>4. Captura Escrituração (Com Movimento)</strong></td><td>Baixa certificados de escrituração de empresas encerradas com movimento</td><td><span class="status-badge testes">🧪 Em testes</span></td></tr>
+        <tr><td><strong>5. Encerramento ISS (Sem Movimento)</strong></td><td>Encerra a escrituração de empresas sem movimento/inativas</td><td><span class="status-badge testes">🧪 Em testes</span></td></tr>
     </table>
     <div class="alert alert-warn"><span class="alert-icon">🧪</span><div><strong>Sobre o selo "Em Testes":</strong> as funções marcadas acima ainda estão em fase de validação em produção. Elas já funcionam ponta a ponta, mas recomenda-se conferir manualmente os resultados (certificados, planilhas e relatórios gerados) até que a equipe técnica remova o selo na interface.</div></div>
     <div class="alert alert-info"><span class="alert-icon">ℹ️</span><div>Nenhuma das 5 funções realiza qualquer ação no portal da Prefeitura sem a <strong>autenticação manual e prévia</strong> do operador (login com CPF/senha, ou confirmação manual de login). O robô sempre aguarda essa etapa antes de agir.</div></div>
 </div>
 
-<div class="section avoid-break">
-    <div class="section-header"><span class="section-number">2</span><h2 style="border:none;margin:0;">Requisitos e Instalação</h2></div>
+<div class="section avoid-break" id="sec-2">
+    <div class="section-header"><span class="section-number">2</span><h2>Requisitos e Instalação</h2></div>
     <h3>Requisitos de Sistema</h3>
     <ul>
         <li>Sistema Operacional: <strong>Windows 10 ou superior</strong> (64 bits)</li>
@@ -168,8 +210,9 @@
     <div class="alert alert-warn"><span class="alert-icon">⚠️</span><div><strong>Atenção:</strong> O Google Chrome deve estar instalado na máquina. As automações de navegador não são compatíveis com outros navegadores como Firefox, Edge ou Opera.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">3</span><h2 style="border:none;margin:0;">Conhecendo a Interface</h2></div>
+<div class="section page-break" id="sec-3">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">3</span><h2>Conhecendo a Interface</h2></div>
     <p>Ao abrir o programa, você encontra três áreas principais, sempre visíveis:</p>
     <ul>
         <li><strong>Menu lateral (esquerda):</strong> lista as 5 funções do sistema, cada uma com um ícone. A função ativa aparece destacada em laranja. No rodapé do menu fica o painel de configuração do Tess AI.</li>
@@ -179,8 +222,8 @@
     <div class="alert alert-tip"><span class="alert-icon">✅</span><div>Todas as funções seguem o mesmo padrão visual: preencha os campos do card à esquerda, clique no botão de ação (laranja) e acompanhe o andamento no console à direita. Isso é válido para as 5 funções do sistema.</div></div>
 </div>
 
-<div class="section avoid-break">
-    <div class="section-header"><span class="section-number">4</span><h2 style="border:none;margin:0;">Configuração do Tess AI</h2></div>
+<div class="section avoid-break" id="sec-4">
+    <div class="section-header"><span class="section-number">4</span><h2>Configuração do Tess AI</h2></div>
     <p>O Tess AI é a plataforma de inteligência artificial utilizada para classificar os códigos CNAE das notas fiscais de forma automática durante o Processamento de XMLs (Função 1).</p>
     <ol class="steps">
         <li>Acesse o painel do Tess AI em <strong>tess.pareto.io</strong> e faça login com a conta do escritório.</li>
@@ -192,8 +235,9 @@
     <div class="alert alert-tip"><span class="alert-icon">✅</span><div>As credenciais do Tess AI ficam salvas de forma persistente no computador do usuário. Elas <strong>não são perdidas</strong> ao fechar o programa.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">5</span><h2 style="border:none;margin:0;">Função 1 — Processar XMLs</h2></div>
+<div class="section page-break" id="sec-5">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">5</span><h2>Função 1 — Processar XMLs</h2></div>
     <div class="feature-card avoid-break">
         <h3>O que faz?</h3>
         <p>Lê uma pasta de arquivos XML de NFS-e, extrai as informações fiscais relevantes de cada nota e utiliza o agente de inteligência artificial do Tess AI para classificar automaticamente o <strong>código CNAE</strong>. Ao final, gera uma planilha Excel consolidada com todos os dados estruturados, pronta para ser utilizada na Função 2 (Automação: Escrituração).</p>
@@ -215,8 +259,9 @@
     <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div><strong>Cache local de CNAE:</strong> para economizar chamadas à IA, o sistema reaproveita a classificação de CNAEs já processados para o mesmo código de serviço, sem gastar tokens novamente.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">6</span><h2 style="border:none;margin:0;">Função 2 — Automação: Escrituração <span class="status-badge testes">🧪 Em Testes</span></h2></div>
+<div class="section page-break" id="sec-6">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">6</span><h2>Função 2 — Automação: Escrituração <span class="status-badge testes">🧪 Em Testes</span></h2></div>
     <div class="feature-card avoid-break">
         <h3>O que faz?</h3>
         <p>Automatiza a digitação dos dados de notas fiscais no portal <strong>ISS Fortaleza</strong>. O robô lê a planilha Excel gerada na Função 1 e, após o login manual do operador, realiza os lançamentos nota por nota, de forma sequencial.</p>
@@ -239,8 +284,9 @@
     <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div><strong>Pausar, retomar e cancelar:</strong> use os botões que aparecem no console durante a execução para pausar/retomar a qualquer momento, ou cancelar por completo (o navegador é fechado e será preciso reiniciar do zero).</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">7</span><h2 style="border:none;margin:0;">Função 3 — Exportar XML de Prestados</h2></div>
+<div class="section page-break" id="sec-7">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">7</span><h2>Função 3 — Exportar XML de Prestados</h2></div>
     <div class="feature-card avoid-break">
         <h3>O que faz?</h3>
         <p>Automatiza o download em lote dos arquivos XML de NFS-e (Serviços Prestados) diretamente do portal <strong>ISS Fortaleza</strong>. O robô filtra as notas pela competência escolhida e realiza a exportação, reunindo os resultados em arquivos XML combinados.</p>
@@ -264,8 +310,9 @@
     <div class="alert alert-tip avoid-break"><span class="alert-icon">✅</span><div>O navegador permanece aberto ao final da exportação, permitindo que o operador realize outras consultas manualmente.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">8</span><h2 style="border:none;margin:0;">Função 4 — Captura Escrituração (Com Movimento) <span class="status-badge testes">🧪 Em Testes</span></h2></div>
+<div class="section page-break" id="sec-8">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">8</span><h2>Função 4 — Captura Escrituração (Com Movimento) <span class="status-badge testes">🧪 Em Testes</span></h2></div>
     <div class="feature-card avoid-break">
         <h3>O que faz?</h3>
         <p>Baixa automaticamente os <strong>certificados de escrituração ISS</strong> das empresas que foram encerradas <strong>com movimento</strong> em uma data específica. O robô lê a planilha fiscal, filtra as empresas de Fortaleza encerradas na data informada (e que não estejam marcadas como "sem movimento"), procura a inscrição de cada uma no portal e baixa o certificado de escrituração da competência escolhida.</p>
@@ -291,8 +338,9 @@
     <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div>Diferente das Funções 2 e 3, esta função faz o login <strong>automaticamente</strong> com o CPF/senha informados — não é necessário confirmar login manual, a menos que o portal peça uma verificação extra.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">9</span><h2 style="border:none;margin:0;">Função 5 — Encerramento ISS (Sem Movimento) <span class="status-badge testes">🧪 Em Testes</span></h2></div>
+<div class="section page-break" id="sec-9">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">9</span><h2>Função 5 — Encerramento ISS (Sem Movimento) <span class="status-badge testes">🧪 Em Testes</span></h2></div>
     <div class="feature-card avoid-break">
         <h3>O que faz?</h3>
         <p>Encerra automaticamente a escrituração ISS das empresas marcadas como <strong>sem movimento ou inativas</strong> na planilha fiscal (responsável começando com "SM -", "SEM MOVIMENTO -" ou "INATIVA -"). Para cada empresa, o robô verifica se há serviços prestados ou pendentes — se houver, marca como problema e segue adiante; se não houver, encerra a escrituração, baixa o certificado em PDF e grava a data de encerramento de volta na planilha.</p>
@@ -315,11 +363,12 @@
         <li>Ao final, confira o card <strong>Resumo da Execução</strong> — mostra quantas empresas foram <em>Processadas</em>, quantas foram <em>Encerradas</em> e quantas tiveram <em>Problemas</em>.</li>
         <li>Clique em <strong>Abrir Relatório de Execução</strong> para ver o detalhamento completo em Excel.</li>
     </ol>
-    <div class="alert alert-warn avoid-break"><span class="alert-icon">⚠️</span><div><strong>Esta função altera dados no portal da Prefeitura:</strong> o encerramento da escrituração não é uma consulta — é uma ação real e, na prática, difícil de reverter. Confira com atenção a lista de empresas na planilha antes de iniciar.</div></div>
+    <div class="alert alert-danger avoid-break"><span class="alert-icon">🚫</span><div><strong>Esta função altera dados no portal da Prefeitura:</strong> o encerramento da escrituração não é uma consulta — é uma ação real e, na prática, difícil de reverter. Confira com atenção a lista de empresas na planilha antes de iniciar.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">10</span><h2 style="border:none;margin:0;">Onde Ficam os Logs de Cada Execução</h2></div>
+<div class="section page-break" id="sec-10">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">10</span><h2>Onde Ficam os Logs de Cada Execução</h2></div>
     <p>Toda vez que uma automação é executada, o sistema grava automaticamente um arquivo de log dentro de uma subpasta <code>log</code>, criada na <strong>pasta de saída que você informou</strong> para aquela função — assim o histórico de cada execução fica junto do resultado gerado, e não espalhado em outro lugar.</p>
     <table class="avoid-break">
         <tr><th>Função</th><th>Onde o log é salvo</th></tr>
@@ -333,8 +382,9 @@
     <div class="alert alert-info avoid-break"><span class="alert-icon">ℹ️</span><div>As <strong>credenciais do Tess AI</strong> (Seção 4) são a exceção: ficam salvas separadamente em <code>%APPDATA%\BeAContab\.env</code>, não junto dos logs de execução.</div></div>
 </div>
 
-<div class="section page-break">
-    <div class="section-header"><span class="section-number">11</span><h2 style="border:none;margin:0;">Solução de Problemas</h2></div>
+<div class="section page-break" id="sec-11">
+    <div class="print-strip"><span>Automações ISS · Manual do Sistema</span><span>Barreira &amp; Associados</span></div>
+    <div class="section-header"><span class="section-number">11</span><h2>Solução de Problemas</h2></div>
     <table class="avoid-break">
         <tr><th>Problema</th><th>Causa Provável</th><th>Solução</th></tr>
         <tr><td><strong>Erro ao abrir o Chrome</strong></td><td>Google Chrome não instalado ou desatualizado</td><td>Instale ou atualize o Google Chrome para a versão estável mais recente.</td></tr>

@@ -282,6 +282,17 @@ def _extrair_dados_xml_nacional(root: ET.Element, caminho_xml: Path) -> dict[str
         if not nome_prestador:
             nome_prestador = obter_texto_tag(prest, "xNome")
 
+    # O padrão de nome MEI auto-gerado (raiz do CNPJ + nome completo) não é
+    # exclusivo do Portal Da Paraíba: é uma convenção nacional do cadastro do
+    # Simples Nacional/MEI, então também aparece em XMLs no layout NFS-e
+    # Nacional (confirmado em produção — ex.: "48.244.611 LILIAN SOUZA
+    # FERREIRA MACIEL"). Sem essa checagem aqui, TIPO_TRIBUTACAO ficava
+    # "Normal" para MEI nesse layout, o portal ISS Fortaleza selecionava o
+    # Tipo de Tributação errado e por vezes marcava ISS Retido sozinho.
+    tipo_tributacao = "Normal"
+    if _eh_nome_prestador_padrao_mei(nome_prestador):
+        tipo_tributacao = "Simples Nacional MEI"
+
     # 5. Dados do Serviço e Local de Prestação
     # Busca de forma ampla no XML para maior resiliência em relação à estrutura
     id_cnae = obter_texto_tag(root, "cTribNac")
@@ -420,8 +431,7 @@ def _extrair_dados_xml_nacional(root: ET.Element, caminho_xml: Path) -> dict[str
         # Este layout só procura a tag CNPJ (nunca CPF) em emit/prest, então o
         # prestador é sempre pessoa jurídica.
         "tipo_cliente_prestador": "Pessoa Jurídica",
-        # Este layout não tem o padrão de nome MEI do Portal Da Paraíba.
-        "tipo_tributacao": "Normal",
+        "tipo_tributacao": tipo_tributacao,
         "nome_prestador": nome_prestador,
         "uf_prestador": uf_prestador,
         "cidade_prestador": xLocEmi or cidade_local_prestacao,
