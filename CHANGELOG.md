@@ -1,5 +1,80 @@
 # CHANGELOG
 
+## [2.35.1] - 2026-09-18
+
+### Corrigido
+- **Tela inicial voltava para "Processar XMLs" mesmo após a mudança da 2.35.0** (`gui/js/shared.js`): o `setActiveTab('nfse-nacional')` chamado em `app-shell.js` funcionava, mas o listener `DOMContentLoaded` de `shared.js` rodava depois e continha um `setActiveTab('xml')` esquecido do comportamento antigo, sobrescrevendo a aba de volta para "Processar XMLs" a cada abertura do app. Removida a chamada redundante; validado rodando o app e conferindo que abre direto em "Baixar NFS-e — Portal Nacional".
+
+## [2.35.0] - 2026-09-18
+
+### Alterado
+- **Tela inicial passa a ser "Baixar NFS-e Nacional"** (`gui/index.html`, `gui/js/app-shell.js`): antes o app sempre abria em "Processar XMLs" (só porque foi a primeira aba implementada, sem nenhum motivo de negócio). Agora abre direto em "Baixar NFS-e — Portal Nacional" — a `<main>` visível por padrão e o título do cabeçalho foram trocados, e `setActiveTab('nfse-nacional')` passou a ser chamado na carga da página para o destaque do menu lateral também refletir isso desde o início (antes nenhuma aba tinha o destaque visual aplicado até o operador clicar em algo).
+- **Tags "TESTE" removidas das Funções Principais** (`gui/index.html`): "Baixar NFS-e Nacional" e "Automação: Escrituração" não exibem mais o selo "TESTE" no menu lateral ("Processar XMLs" já não tinha). As funções do grupo "Outras Funções" (Captura Escrituração, Encerramento ISS) mantêm o selo.
+
+## [2.34.0] - 2026-09-17
+
+### Adicionado
+- **Filtro opcional de Ano/Mês na Função 6** (`nfse_nacional_downloader.py`, novos parâmetros `ano_filtro`/`mes_filtro` em `executar_download_nfse_nacional` e `_processar_lote`; `app.py`; `gui/index.html`; `gui/js/tab-nfse-nacional.js`): dois campos numéricos opcionais na tela — se deixados vazios, baixa tudo como antes. Preenchidos, mantém em disco só os documentos cuja data de emissão (`dhEmi`) bate com o ano/mês informado (ano sozinho também funciona, filtrando o ano inteiro). Importante deixado explícito na tela e no docstring: a API do ADN não tem parâmetro de consulta por data — só por NSU sequencial — então isto não acelera nem reduz a varredura em si; o download continua percorrendo sequencialmente todo o histórico de NSU a partir do ponto de início, só descartando sem salvar o que ficar fora do período pedido. Útil para reprocessar/conferir um mês específico sem misturar XMLs de outros períodos na pasta de saída, não para economizar tempo de download. Combina normalmente com o filtro "apenas Notas Tomadas" já existente — ambos são filtros do que é persistido, nunca do que é varrido, então não interferem na detecção de lacunas de NSU.
+
+## [2.33.0] - 2026-09-17
+
+### Corrigido
+- **Lacuna no início da sequência de NSU não era detectada** (`nfse_nacional_downloader.py`): reportado ao vivo (pasta `MULTI\21345512000160\Notas Tomadas`) — apagar o ano inteiro mais antigo (2025) e pedir para baixar de novo continuava pulando o buraco, mesmo após a correção anterior (`2.32.0`), porque a sugestão de retomada só procurava lacunas *entre* o menor e o maior NSU ainda presentes na pasta — e como 2025 era literalmente o início da sequência, o "menor NSU ainda presente" já ficava depois do buraco inteiro, então nada parecia faltando dali pra frente. Corrigido com um novo rastreamento persistente por CNPJ (`atualizar_primeiro_nsu_visto`/`obter_primeiro_nsu_visto`, gravado a cada lote realmente recebido da API) que registra o menor NSU que a API já retornou de fato — não o NSU que o operador pediu para começar (normalmente 0, o que não ajudava, já que o NSU é uma numeração global do ADN e o começo real de cada CNPJ pode estar bem mais à frente). `detectar_nsu_para_retomar` agora usa esse histórico como limite inferior da varredura de lacunas, e como a varredura da API é sequencial e contínua, retomar da primeira lacuna encontrada recupera automaticamente todas as lacunas seguintes numa única passada, em qualquer subpasta de ano/mês/tipo. Sem histórico (primeira vez usando a função), cai de volta no comportamento conservador anterior, sem falsos positivos. Validado com um teste reproduzindo o cenário exato do incidente.
+
+### Adicionado
+- **Checkbox "Baixar apenas as Notas Tomadas" na Função 6** (`nfse_nacional_downloader.py`, novo parâmetro `apenas_notas_tomadas`; `app.py`; `gui/index.html`; `gui/js/tab-nfse-nacional.js`): checkbox pré-marcada na tela que, quando ativa, descarta (não grava em disco) os documentos que não forem "Notas Tomadas" pelo CNPJ informado — Notas Emitidas, Outras e Eventos são ignorados. O NSU continua avançando normalmente sobre todos os documentos do lote recebido da API, filtrados ou não; é um filtro só do que é persistido em disco, não do que é varrido (não afeta a numeração de NSU nem a detecção de lacunas).
+
+## [2.32.0] - 2026-09-17
+
+### Corrigido
+- **Retomada automática pela pasta sobrescrevia o NSU informado pelo operador** (`nfse_nacional_downloader.py`): reportado ao vivo (pasta `MULTI`) — o operador apagou os XMLs de 2025 e pediu para baixar de novo a partir de um NSU anterior a eles, mas o download pulou o intervalo apagado porque a retomada automática (`2.30.0`) comparava o NSU informado com o **maior NSU ainda presente na pasta** (dos XMLs de 2026, não apagados) e sempre usava o maior dos dois — nunca deixando o operador "voltar no tempo" de propósito enquanto arquivos mais novos continuassem na mesma pasta. Corrigido: `executar_download_nfse_nacional` agora respeita o `nsu_inicial` recebido ao pé da letra, sem nenhum ajuste automático. A detecção pelo conteúdo da pasta (renomeada para `detectar_maior_nsu_na_pasta`, pública) virou só uma **sugestão de pré-preenchimento** no campo "NSU inicial" da GUI ao selecionar a pasta (novo `detectar_nsu_pasta_nfse_nacional` em `app.py`) — só se aplica quando o campo está vazio, nunca sobrescreve um valor já digitado, e o operador pode trocar livremente antes de iniciar. Observação que vale documentar para o usuário: como a varredura da API é sequencial por NSU, reprocessar um intervalo apagado no meio da pasta também rebaixa (sem problema, os arquivos são sobrescritos com o mesmo conteúdo) tudo que vier depois dele até o fim da fila — não é possível pedir "só os de 2025" isoladamente se já existem NSUs de 2026 à frente.
+
+## [2.31.0] - 2026-09-17
+
+### Corrigido
+- **Colunas usadas na Automação: Escrituração sem destaque no cabeçalho da planilha** (`processamento_xml.py`, `COLUNAS_OBRIGATORIAS_AUTOMACAO`): o conjunto de colunas destacadas em amarelo (`FFC000`) no cabeçalho cobria só os campos estritamente "obrigatórios" (`validar_campos_obrigatorios` em `iss_fortaleza_automacao.py`), mas a automação também lê e usa outras 14 colunas para preencher ou decidir campos no portal — digitadas diretamente (`NUMERO_PRESTADOR`, `EMAIL_PRESTADOR`, `ALIQUOTA`, `VALOR_DEDUCOES`, `DESCONTOS_INCONDICIONADOS`, `DESCONTOS_CONDICIONADOS`, `OUTRAS_RETENCOES`, `IR`, `PIS_NAO_RETIDO`, `COFINS_NAO_RETIDO`, `CSRF (CSLL + PIS + Cofins Retidos)`, `INSS`) ou usadas para decidir uma seleção/checkbox (`REGIME_TRIBUTARIO` define a opção de "Tipo do Documento Digitado" para MEI; `ID_CNAE` pode forçar o checkbox de ISS Retido) — nenhuma delas tinha destaque visual, apesar de afetarem o resultado da escrituração. `PREFEITURA` foi conferida e confirmada como campo morto (lido mas nunca usado; inclusive já removida ativamente pela própria `processamento_xml.py` quando é a coluna B) — corretamente deixada sem destaque. Validado com um teste reproduzindo todas as colunas do `DocumentoPortalISS` de uma vez, incluindo um bug de sensibilidade a maiúsculas descoberto no processo (a comparação do destaque usa `.upper()`, então a entrada do conjunto para a coluna CSRF precisou ir em maiúsculas, diferente do nome exato da coluna esperado por `iss_fortaleza_automacao.py`).
+
+## [2.30.0] - 2026-09-17
+
+### Adicionado
+- **Retomada automática a partir do conteúdo da pasta de destino** (`nfse_nacional_downloader.py`, nova `_maior_nsu_na_pasta`): além do arquivo de estado (`nfse_nacional_estado.json`, que só existe se o download foi feito por esta função antes), a varredura agora também escaneia recursivamente a pasta de destino informada em busca de arquivos já baixados no padrão `nsu_<N>_<tipo>.xml` — mesma nomenclatura usada por esta função e pela extensão Chrome irmã. Se algum for encontrado, a varredura começa a partir do maior NSU já presente na pasta + 1 (nunca abaixo do NSU informado manualmente ou do estado salvo), evitando baixar de novo o que já está lá. Cobre o caso de apontar para uma pasta trazida de outra máquina ou com XMLs baixados antes pela extensão, sem depender do arquivo de estado local.
+
+## [2.29.0] - 2026-09-17
+
+### Adicionado
+- **Autopreenchimento do CNPJ da Filial ao selecionar o certificado** (`windows_certstore.py`, `gui/js/tab-nfse-nacional.js`): certificados e-CNPJ trazem o CNPJ do titular embutido no CN (`RAZÃO SOCIAL:CNPJ`), já usado para exibir o nome/CNPJ formatado no cartão. `_extrair_info_certificado` passou a devolver também o CNPJ em dígitos puros (`cnpj`), e a seleção de certificado (tanto ao escolher um novo quanto ao carregar o último usado) preenche automaticamente o campo "CNPJ da Filial" com esse valor — o operador ainda pode editá-lo manualmente se precisar filtrar por uma filial diferente da do certificado.
+
+## [2.28.4] - 2026-09-17
+
+### Alterado
+- **Menu lateral reorganizado em grupos** (`gui/index.html`): itens da sidebar agrupados sob "Funções Principais" (Baixar NFS-e Nacional, Processar XMLs, Automação: Escrituração) e "Outras Funções" (Exportar XML de Prestados, Captura Escrituração, Encerramento ISS), com rótulos de seção — a ordenação antes era só a ordem de implementação histórica, sem hierarquia de uso.
+- **Número da versão exibido na GUI** (`gui/index.html`): rodapé do menu lateral agora mostra o `AppVersion` atual, sincronizado manualmente com `setup.iss` (comentário no HTML lembra de atualizar os dois juntos a cada release).
+
+## [2.28.3] - 2026-09-16
+
+### Alterado
+- **Exibição do certificado selecionado mais legível na Função 6** (`windows_certstore.py`, `nfse_nacional_downloader.py`, `app.py`, `gui/index.html`, `gui/js/tab-nfse-nacional.js`): o cartão mostrava o Subject X.500 cru do certificado (`CN=EMPRESA\, LTDA:14355...,OU=Certificado PJ A1,OU=...,O=ICP-Brasil,C=BR`), ilegível para o operador. Certificados ICP-Brasil (e-CNPJ/e-CPF) trazem o CN no formato `RAZÃO SOCIAL:CNPJ`; agora esse campo é decomposto em nome da empresa, CNPJ formatado (`14.355.120/0001-60`), tipo do certificado (ex. "Certificado PJ A1", lido da OU) e validade (`DD/MM/AAAA`, do próprio certificado), exibidos num cartão com ícone em vez do texto técnico. O thumbprint salvo para retomada (`nfse_nacional_estado.json`) agora guarda esses campos também.
+
+## [2.28.2] - 2026-09-16
+
+### Corrigido
+- **Download interrompido com erro ao chegar ao fim da fila de NSU** (`nfse_nacional_downloader.py`, `_interpretar_resposta`/`_buscar_lote_com_retry`): confirmado em produção que a API do ADN às vezes sinaliza "não há mais documentos a partir deste NSU" com **HTTP 404** + `StatusProcessamento: NENHUM_DOCUMENTO_LOCALIZADO` (código de erro `E2220`), em vez do HTTP 204/`SEM_DOCUMENTOS` já tratado. O código tratava qualquer HTTP fora da faixa 2xx como falha real, derrubando o download com `RuntimeError` bem no fim da varredura (ex.: NSU 1298 na primeira execução real). Corrigido para reconhecer `NENHUM_DOCUMENTO_LOCALIZADO` (além de `SEM_DOCUMENTOS`) como fim normal da fila, mesmo quando vem acompanhado de um status HTTP de erro — validado com um teste reproduzindo exatamente o corpo de resposta do incidente.
+
+## [2.28.1] - 2026-09-16
+
+### Corrigido
+- **Janela de console piscando a cada lote na Função 6** (`nfse_nacional_downloader.py`, `_ClienteCurlSchannel.get`): cada chamada ao `curl.exe` via `subprocess.run` abria e fechava rapidamente uma janela de terminal, pois o processo pai (app `--windowed` do PyInstaller) ainda cria um console novo por subprocesso por padrão no Windows. Corrigido com `creationflags=subprocess.CREATE_NO_WINDOW` — validado com uma chamada real via certificado de teste, sem regressão no resultado (`status_code` e corpo continuam corretos).
+
+## [2.28.0] - 2026-09-16
+
+### Adicionado
+- **Seletor nativo de certificado do Windows na Função 6** (novo `windows_certstore.py`; `nfse_nacional_downloader.py`; `app.py`; `gui/index.html`; `gui/js/tab-nfse-nacional.js`): em vez de exigir arquivo `.pfx` e senha, a Função 6 ganhou um botão "Selecionar Certificado do Windows" que abre o mesmo diálogo nativo `CryptUIDlgSelectCertificateFromStore` (cryptui.dll) usado pelo Chrome/Edge, listando os certificados já instalados no repositório "Pessoal" do usuário atual. A autenticação passa a ser feita pelo `curl.exe` nativo do Windows (`C:\Windows\System32\curl.exe`, backend Schannel), referenciando o certificado só pelo thumbprint (`--cert "CurrentUser\MY\<thumbprint>"`) — a chave privada nunca sai do repositório do Windows/CNG, o que também deve funcionar com certificados A3 (token/smartcard), delegando o PIN ao driver do próprio fabricante. Importante: usa o caminho absoluto do curl do Windows, nunca `"curl"` do PATH — em máquinas com Git for Windows instalado, o `curl` do PATH é o do MinGW (backend OpenSSL), que não reconhece certificados do repositório do Windows (validado ao vivo: falha silenciosa com erro genérico de "arquivo não encontrado" se usado por engano). O fluxo anterior por arquivo `.pfx`+senha (via `requests`/OpenSSL) foi mantido como modo alternativo, numa seção recolhível da tela, para quando o certificado não estiver importado no Windows. Último certificado selecionado é lembrado (thumbprint não é segredo) em `nfse_nacional_estado.json`, junto ao NSU.
+
+## [2.27.0] - 2026-09-16
+
+### Adicionado
+- **Função 6 — Baixar NFS-e (Portal Nacional), via certificado digital A1** (novo `nfse_nacional_downloader.py`; `app.py`; `gui/index.html`; `gui/js/app-shell.js`; novo `gui/js/tab-nfse-nacional.js`): porta a lógica da extensão Chrome irmã `baixar-nfse-portal-nacional` (varredura por NSU na API do ADN, decodificação Base64/GZip dos XMLs, organização por CNPJ/tipo/competência) para dentro do app desktop, mas autenticando diretamente via mTLS com o certificado A1 (`.pfx`/`.p12`) do escritório — sem abrir navegador nem exigir login manual no portal, diferente das demais automações que dependem de Selenium. A senha do certificado nunca é persistida em disco; a chave privada só existe em texto plano numa pasta temporária durante a execução, sempre removida ao final (sucesso, erro ou cancelamento). Inclui retomada automática por CNPJ (último NSU bem-sucedido salvo em `%APPDATA%\BeAContab\brain\nfse_nacional_estado.json`) e retry com backoff exponencial em HTTP 429/500/503, replicando o comportamento da extensão. Os XMLs baixados saem no layout Nacional (`infNFSe`) sem qualquer transformação, prontos para alimentar a Função 1 (Processar XMLs) diretamente. Novas dependências: `cryptography`, `requests` (`requirements.txt`, hidden-imports em `build.py`).
+
 ## [0.2.3-testes] - 2026-09-10
 
 ### Corrigido

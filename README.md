@@ -22,9 +22,9 @@ A conferência e digitação manual de notas fiscais é um dos gargalos operacio
 
 ---
 
-## 📦 As 5 Automações do Sistema
+## 📦 As 6 Automações do Sistema
 
-O sistema reúne cinco automações integradas, acessíveis por abas na interface, cobrindo o ciclo fiscal completo de ISSQN de tomados e prestados:
+O sistema reúne seis automações integradas, acessíveis por abas na interface, cobrindo o ciclo fiscal completo de ISSQN de tomados e prestados:
 
 | # | Função | O que faz | Situação |
 |---|---|---|---|
@@ -33,6 +33,7 @@ O sistema reúne cinco automações integradas, acessíveis por abas na interfac
 | 3 | **Exportar XML de Prestados** | Baixa em lote os XMLs de notas emitidas (serviços prestados) direto do portal | ✅ Estável |
 | 4 | **Captura Escrituração (Com Movimento)** | Baixa em lote os certificados de escrituração de empresas encerradas com movimento | 🧪 Em testes |
 | 5 | **Encerramento ISS (Sem Movimento)** | Encerra a escrituração de empresas sem movimento/inativas e emite relatório consolidado | 🧪 Em testes |
+| 6 | **Baixar NFS-e — Portal Nacional** | Baixa em lote os XMLs de NFS-e direto da API do Portal Nacional (ADN), autenticando por certificado digital A1 | 🧪 Em testes |
 
 > As funções marcadas **Em testes** já operam ponta a ponta em produção; recomenda-se conferência manual dos resultados até a validação completa pela equipe técnica.
 
@@ -69,11 +70,20 @@ Automatiza o encerramento em massa de empresas inativas:
 * Identifica empresas sem movimento/inativas na planilha fiscal, verifica pendências de serviços prestados antes de agir, encerra a escrituração das aptas, baixa o certificado em PDF e grava a data de encerramento de volta na planilha.
 * Ao final, apresenta um resumo objetivo (processadas / encerradas / com problema) e gera um relatório Excel detalhado para conferência.
 
+### 6. Baixar NFS-e — Portal Nacional — Download Direto via API
+Automatiza o download em lote de NFS-e do Portal Nacional (Ambiente de Dados Nacional/ADN), sem depender de navegador:
+* **Seletor nativo de certificado do Windows:** o mesmo diálogo "Selecionar um Certificado" usado pelo Chrome/Edge — basta escolher entre os certificados já instalados; a chave privada nunca sai do repositório do Windows. Funciona com A1 e, potencialmente, com A3 (token/smartcard). Um modo alternativo por arquivo `.pfx`/`.p12` + senha continua disponível para quem não tem o certificado importado no Windows.
+* **Varredura por NSU:** consulta a API oficial do governo a partir de qualquer ponto de partida, com retomada automática a partir do último NSU processado com sucesso.
+* **Filtro por filial:** suporte a CNPJ completo de 14 dígitos para restringir a busca a um estabelecimento específico.
+* **Organização automática:** os XMLs baixados já saem organizados por CNPJ, tipo de nota (emitidas/tomadas) e competência, prontos para alimentar a Função 1 (Processar XMLs) sem etapas manuais.
+* **Segurança:** a senha do certificado nunca é salva em disco; a chave privada só existe em texto plano durante a execução, em pasta temporária apagada ao final (com sucesso, erro ou cancelamento).
+
 ---
 
 ## 🛡️ Segurança, Conformidade e Auditoria
 
 * **Login manual nas ações mais sensíveis:** as Funções 2 e 3 exigem autenticação manual do operador no portal antes de qualquer lançamento — a automação nunca conhece nem armazena a senha do usuário nesses fluxos.
+* **Certificado digital nunca persistido:** na Função 6, a senha do certificado A1 não é salva em disco e a chave privada só existe em texto plano durante a execução, em pasta temporária apagada ao final.
 * **Ações irreversíveis sinalizadas:** o encerramento de escrituração (Função 5) é tratado como uma ação real e de difícil reversão, com aviso explícito na interface antes da execução.
 * **Log de auditoria por execução:** toda automação grava, junto ao resultado gerado, um arquivo de log com timestamp de cada etapa — histórico pronto para conferência interna ou suporte técnico.
 * **Rede de segurança contra dados incompletos:** notas com campos obrigatórios ausentes ou inconsistentes são automaticamente puladas e registradas em log próprio, em vez de escrituradas incorretamente.
@@ -95,6 +105,7 @@ Automatiza o encerramento em massa de empresas inativas:
 2. **Processamento:** a Função 1 lê os XMLs, classifica os CNAEs com apoio de IA e gera a planilha fiscal consolidada.
 3. **Escrituração:** a Função 2 usa essa planilha para lançar as notas no portal ISS Fortaleza, nota a nota, com supervisão do operador.
 4. **Encerramento e certificação:** as Funções 4 e 5 cuidam do ciclo de vida das empresas — capturando certificados de quem encerrou com movimento e encerrando/baixando certificado de quem está sem movimento.
+5. **Captura alternativa:** a Função 6 baixa diretamente da API do Portal Nacional os XMLs de NFS-e (via certificado A1), sem necessidade de navegador, alimentando a Função 1 na sequência.
 
 ---
 
@@ -102,9 +113,10 @@ Automatiza o encerramento em massa de empresas inativas:
 
 * Windows 10 ou superior (64 bits)
 * Google Chrome instalado e atualizado
-* Acesso à internet (portal ISS Fortaleza e API do Tess AI)
+* Acesso à internet (portal ISS Fortaleza, API do Tess AI e API do Portal Nacional/ADN)
 * Credenciais válidas do portal ISS Fortaleza
 * Chave de API e ID do Agente do Tess AI (para a Função 1)
+* Certificado digital A1 (ou A3) válido, instalado no repositório de certificados do Windows (ou em arquivo `.pfx`/`.p12`), para a Função 6
 
 ---
 

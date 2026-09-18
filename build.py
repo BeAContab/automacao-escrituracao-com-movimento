@@ -107,6 +107,10 @@ def main():
             "--hidden-import=selenium.webdriver.support.wait",
             "--hidden-import=webdriver_manager",
             "--hidden-import=webdriver_manager.chrome",
+            "--hidden-import=cryptography",
+            "--hidden-import=cryptography.hazmat.primitives.serialization.pkcs12",
+            "--hidden-import=cryptography.hazmat.backends.openssl",
+            "--hidden-import=requests",
             "app.py"
         ]
         

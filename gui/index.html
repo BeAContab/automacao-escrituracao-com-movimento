@@ -137,6 +137,11 @@ tailwind.config = {
     </div>
 
     <div class="flex-1 py-md flex flex-col gap-xs overflow-y-auto px-sm">
+        <p class="px-lg pt-xs pb-1 font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider">Funções Principais</p>
+        <a id="btn-aba-nfse-nacional" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">verified_user</span>
+            <span class="font-label-md text-label-md flex-1">Baixar NFS-e Nacional</span>
+        </a>
         <a id="btn-aba-xml" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
             <span class="material-symbols-outlined">data_object</span>
             <span class="font-label-md text-label-md flex-1">Processar XMLs</span>
@@ -144,8 +149,9 @@ tailwind.config = {
         <a id="btn-aba-automacao" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
             <span class="material-symbols-outlined">edit_note</span>
             <span class="font-label-md text-label-md flex-1">Automação: Escrituração</span>
-            <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
         </a>
+
+        <p class="px-lg pt-md pb-1 font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider">Outras Funções</p>
         <a id="btn-aba-exportar" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
             <span class="material-symbols-outlined">ios_share</span>
             <span class="font-label-md text-label-md flex-1">Exportar XML de Prestados</span>
@@ -182,6 +188,8 @@ tailwind.config = {
             <span class="material-symbols-outlined text-[14px]">save</span>
             Salvar Configuração
         </button>
+        <!-- Mantenha sincronizado com AppVersion/OutputBaseFilename em setup.iss a cada release -->
+        <p class="text-center font-label-md text-[10px] text-secondary-fixed-dim/60 mt-sm">v2.35.0</p>
     </div>
 </nav>
 
@@ -189,14 +197,14 @@ tailwind.config = {
 <div class="flex-1 flex flex-col md:ml-[280px] min-h-screen">
     <!-- TopAppBar -->
     <header class="sticky top-0 w-full bg-surface border-b border-outline-variant z-10 flex justify-between items-center px-margin py-md">
-        <h2 id="header-title" class="font-headline-sm text-headline-sm text-on-surface font-bold">Processamento de XMLs</h2>
+        <h2 id="header-title" class="font-headline-sm text-headline-sm text-on-surface font-bold">Baixar NFS-e — Portal Nacional</h2>
         <button onclick="window.pywebview.api.fechar_app()" class="text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer active:scale-95 p-sm rounded-full">
             <span class="material-symbols-outlined">close</span>
         </button>
     </header>
 
     <!-- ============ ABA: Processar XMLs ============ -->
-    <main id="aba-xml" class="flex-1 p-margin bg-background">
+    <main id="aba-xml" class="hidden flex-1 p-margin bg-background">
         <div class="max-w-[1440px] mx-auto space-y-lg">
             <div>
                 <div class="flex items-center gap-sm">
@@ -701,6 +709,137 @@ tailwind.config = {
         </div>
     </main>
 
+    <!-- ============ ABA: Baixar NFS-e (Portal Nacional) ============ -->
+    <main id="aba-nfse-nacional" class="flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <h1 class="font-headline-lg text-headline-lg text-on-surface">Baixar NFS-e — Portal Nacional</h1>
+                <span class="inline-flex items-center gap-1.5 px-sm py-1 mt-xs bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                    Robô NFS-e Nacional
+                </span>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Baixa em lote os XMLs de NFS-e direto da API do <strong class="text-secondary">Portal Nacional (ADN)</strong>, autenticando com o certificado digital do escritório já instalado no Windows — sem abrir navegador nem depender de login manual.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Parâmetros do Download
+                        </h3>
+                        <div class="flex flex-col gap-lg">
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Certificado Digital</label>
+                                <div id="card-certificado-selecionado-nfse-nacional" class="hidden p-sm rounded-lg border border-primary-container/40 bg-primary-container/10">
+                                    <div class="flex items-start gap-sm">
+                                        <span class="material-symbols-outlined text-primary-container text-[20px] mt-0.5">verified_user</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p id="lbl-certificado-nome-nfse-nacional" class="font-label-md text-label-md text-on-surface break-words"></p>
+                                            <p id="lbl-certificado-detalhe-nfse-nacional" class="font-body-sm text-body-sm text-on-surface-variant mt-0.5"></p>
+                                        </div>
+                                        <button onclick="selecionarCertificadoWindows()" class="shrink-0 text-secondary font-bold text-xs hover:underline">Trocar</button>
+                                    </div>
+                                </div>
+                                <button id="btn-selecionar-certificado-windows" onclick="selecionarCertificadoWindows()" class="w-full border border-secondary text-secondary py-sm rounded-lg font-bold text-sm hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined text-[18px]">verified_user</span>
+                                    Selecionar Certificado do Windows
+                                </button>
+                                <span class="font-body-sm text-body-sm text-on-surface-variant">Abre o seletor nativo do Windows com os certificados já instalados — a chave privada nunca sai do computador.</span>
+                            </div>
+                            <details class="rounded-lg border border-outline-variant">
+                                <summary class="px-sm py-xs cursor-pointer font-label-md text-label-md text-on-surface-variant select-none">Usar certificado em arquivo (.pfx) em vez do Windows</summary>
+                                <div class="p-sm pt-0 flex flex-col gap-md">
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">Certificado Digital (.pfx/.p12)</label>
+                                        <div class="flex gap-sm">
+                                            <input id="input-pfx-nfse-nacional" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione o arquivo do certificado..."/>
+                                            <button onclick="selecionarCertificadoNfseNacional()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">Senha do Certificado</label>
+                                        <input id="input-senha-cert-nfse-nacional" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" type="password" placeholder="Senha do certificado..."/>
+                                        <span class="font-body-sm text-body-sm text-on-surface-variant">A senha nunca é salva em disco — é usada só em memória durante o download.</span>
+                                    </div>
+                                </div>
+                            </details>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">NSU Inicial</label>
+                                    <input id="input-nsu-inicial-nfse-nacional" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" type="number" min="0" step="1" placeholder="0"/>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">CNPJ da Filial (opcional)</label>
+                                    <input id="input-cnpj-filial-nfse-nacional" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" type="text" maxlength="14" placeholder="14 dígitos, ou vazio"/>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Ano (opcional)</label>
+                                    <input id="input-ano-filtro-nfse-nacional" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" type="number" min="2000" max="2100" step="1" placeholder="Ex: 2026"/>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Mês (opcional)</label>
+                                    <input id="input-mes-filtro-nfse-nacional" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" type="number" min="1" max="12" step="1" placeholder="Ex: 8"/>
+                                </div>
+                            </div>
+                            <span class="font-body-sm text-body-sm text-on-surface-variant -mt-xs">Se preenchido, mantém só as notas emitidas no período — o download continua varrendo todo o histórico de NSU, só não salva o que ficar fora do período.</span>
+                            <label class="flex items-center gap-sm cursor-pointer select-none">
+                                <input id="checkbox-apenas-notas-tomadas-nfse-nacional" type="checkbox" checked class="w-4 h-4 rounded accent-primary-container cursor-pointer"/>
+                                <span class="font-body-sm text-body-sm text-on-surface">Baixar apenas as Notas Tomadas (descarta Emitidas/Outras/Eventos)</span>
+                            </label>
+                            <button onclick="usarUltimoNsuSalvoNfseNacional()" class="w-full border border-secondary text-secondary py-sm rounded-lg font-bold text-sm hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">history</span>
+                                Usar Último NSU Salvo
+                            </button>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Destino dos XMLs</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-pasta-nfse-nacional" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a pasta de destino..."/>
+                                    <button onclick="selecionarPastaNfseNacional()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="flex gap-sm">
+                                <button id="btn-iniciar-nfse-nacional" onclick="iniciarNfseNacional()" class="flex-1 bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined">cloud_download</span>
+                                    Iniciar Download
+                                </button>
+                                <button id="btn-cancelar-nfse-nacional" onclick="cancelarNfseNacional()" class="px-md rounded-lg text-sm font-bold border border-error text-error hover:bg-error/10 transition-colors">Cancelar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-nfse-nacional" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-nfse-nacional" class="text-secondary">Baixando NFS-e...</span>
+                            <span id="progresso-porcentagem-nfse-nacional" class="text-secondary">0%</span>
+                        </div>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-nfse-nacional" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                nfse_nacional_output.log
+                            </span>
+                            <button onclick="limparLogNfseNacional()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-nfse-nacional" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início do download...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
     <!-- Footer -->
     <footer class="w-full py-base bg-secondary border-t border-outline-variant flex justify-center items-center">
         <span class="font-label-md text-label-md text-white">Barreira &amp; Associados - Assessoria Contábil</span>
@@ -714,5 +853,6 @@ tailwind.config = {
 <script src="js/tab-exportar.js"></script>
 <script src="js/tab-captura-com-movimento.js"></script>
 <script src="js/tab-encerramento-sem-movimento.js"></script>
+<script src="js/tab-nfse-nacional.js"></script>
 </body>
 </html>

@@ -66,5 +66,4 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
         window.addEventListener('pywebviewready', carregarChavesAPI);
     }
-    setActiveTab('xml');
 });

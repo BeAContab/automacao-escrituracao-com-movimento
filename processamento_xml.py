@@ -32,16 +32,26 @@ MAPA_IBGE_UF = {
     "50": "MS", "51": "MT", "52": "GO", "53": "DF"
 }
 
-# Colunas cujo preenchimento é exigido pela automação de escrituração no portal
-# ISS Fortaleza (campos_obrigatorios/validar_campos_obrigatorios em
-# iss_fortaleza_automacao.py) — destacadas visualmente no cabeçalho da planilha
-# gerada. Mantido em sincronia manualmente entre os dois módulos.
+# Colunas efetivamente lidas e usadas pela automação de escrituração no portal
+# ISS Fortaleza (iss_fortaleza_automacao.py) — seja para preencher um campo
+# diretamente (ex.: NUMERO_PRESTADOR -> idNumero, ALIQUOTA -> idAliquota) ou para
+# decidir uma seleção/checkbox (ex.: REGIME_TRIBUTARIO define a opção de "Tipo do
+# Documento Digitado" para MEI; ID_CNAE pode forçar o checkbox de ISS Retido) —
+# destacadas visualmente no cabeçalho da planilha gerada. Cobre tanto os campos
+# obrigatórios (validar_campos_obrigatorios) quanto os opcionais (DocumentoPortalISS,
+# "usados no preenchimento manual"). Mantido em sincronia manualmente entre os dois
+# módulos (processamento_xml.py não importa iss_fortaleza_automacao.py de propósito,
+# para não puxar a dependência do Selenium só para colorir cabeçalho).
 COLUNAS_OBRIGATORIAS_AUTOMACAO = {
     "CNPJ_PRESTADOR", "NUMERO_NF", "DATA_EMISSAO", "ID_CNAE_FINAL",
     "DESCRICAO_SERVICO", "UF_LOCAL_PRESTACAO", "CIDADE_LOCAL_PRESTACAO",
     "NATUREZA_OPERACAO", "ISS_RETIDO", "VALOR_SERVICO",
     "NOME_PRESTADOR", "UF_PRESTADOR", "CIDADE_PRESTADOR", "CEP_PRESTADOR",
     "LOGRADOURO_PRESTADOR", "BAIRRO_PRESTADOR", "TIPO_CLIENTE", "TIPO_TRIBUTACAO",
+    "NUMERO_PRESTADOR", "EMAIL_PRESTADOR", "ALIQUOTA", "REGIME_TRIBUTARIO", "ID_CNAE",
+    "VALOR_DEDUCOES", "DESCONTOS_INCONDICIONADOS", "DESCONTOS_CONDICIONADOS",
+    "OUTRAS_RETENCOES", "IR", "PIS_NAO_RETIDO", "COFINS_NAO_RETIDO",
+    "CSRF (CSLL + PIS + COFINS RETIDOS)", "INSS",
 }
 
 def formatar_monetario(valor_str: str) -> str:

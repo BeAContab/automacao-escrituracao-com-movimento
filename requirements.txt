@@ -10,3 +10,5 @@ pyinstaller>=6.0.0
 pydantic>=2.13.0
 loguru>=0.7.3
 python-spreadsheet-reader>=2.1.0,<2.2.0
+cryptography>=42.0.0
+requests>=2.31.0

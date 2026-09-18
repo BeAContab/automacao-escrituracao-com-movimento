@@ -23,6 +23,14 @@ from core.captura_escrituracao_com_movimento.classes import ThreadStoppedExcepti
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
 from core.encerramento_iss_sem_movimento.iss.credenciais import CredenciaisISSFortaleza
 from core.encerramento_iss_sem_movimento.utils.classes import UserStoppedThreadException
+from nfse_nacional_downloader import (
+    executar_download_nfse_nacional,
+    obter_ultimo_nsu_salvo,
+    obter_ultimo_certificado_salvo,
+    salvar_ultimo_certificado,
+    detectar_nsu_para_retomar,
+)
+from windows_certstore import selecionar_certificado_windows
 
 class GUIStdoutWrapper:
     def __init__(self, original_stdout, api):
@@ -78,6 +86,11 @@ class BeAContabAPI:
         self._encerramento_sem_movimento_em_execucao = False
         self._lock_encerramento_sem_movimento = threading.Lock()
         self._cancelar_encerramento_sem_movimento_event = threading.Event()
+
+        # Idem para a aba "Baixar NFS-e (Portal Nacional)"
+        self._nfse_nacional_em_execucao = False
+        self._lock_nfse_nacional = threading.Lock()
+        self._cancelar_nfse_nacional_event = threading.Event()
 
         # Carrega chaves salvas para as variáveis de ambiente na inicialização
         try:
@@ -162,6 +175,16 @@ class BeAContabAPI:
                 self.window.evaluate_js("window._arquivoExcelSelecionadoNestaSessao = true;")
             except Exception:
                 pass
+            return result[0]
+        return None
+
+    def selecionar_arquivo_certificado(self):
+        result = self.window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=False,
+            file_types=('Certificado Digital (*.pfx;*.p12)', 'All files (*.*)')
+        )
+        if result:
             return result[0]
         return None
 
@@ -688,6 +711,115 @@ class BeAContabAPI:
             with self._lock_encerramento_sem_movimento:
                 self._encerramento_sem_movimento_em_execucao = False
 
+    def selecionar_certificado_windows_gui(self):
+        """Abre o seletor nativo do Windows para escolher um certificado já instalado
+        no repositório 'Pessoal' do usuário atual. Retorna {"thumbprint", "subject"}
+        ou None se o operador cancelar."""
+        try:
+            resultado = selecionar_certificado_windows()
+            if resultado:
+                salvar_ultimo_certificado(resultado)
+            return resultado
+        except Exception as e:
+            print(f"Erro ao abrir o seletor de certificados do Windows: {e}")
+            return None
+
+    def obter_ultimo_certificado_nfse_nacional(self):
+        """Retorna o último certificado do Windows usado com sucesso, para a GUI pré-selecionar."""
+        try:
+            return obter_ultimo_certificado_salvo()
+        except Exception:
+            return None
+
+    def iniciar_nfse_nacional_gui(self, pasta_destino, nsu_inicial=0, cnpj_filial="",
+                                   apenas_notas_tomadas=True, ano_filtro="", mes_filtro="",
+                                   certificado_thumbprint="", caminho_pfx="", senha_certificado=""):
+        """Dispara o download de NFS-e do Portal Nacional em uma thread separada.
+
+        Aceita dois modos de autenticação (um dos dois deve ser informado):
+        - certificado_thumbprint: certificado já instalado no repositório do Windows (recomendado).
+        - caminho_pfx + senha_certificado: arquivo .pfx/.p12 (modo alternativo).
+        """
+        with self._lock_nfse_nacional:
+            if self._nfse_nacional_em_execucao:
+                self.window.evaluate_js("window.log_nfse_nacional('Erro: o download já está em andamento!', true)")
+                return
+            self._nfse_nacional_em_execucao = True
+
+        self._cancelar_nfse_nacional_event.clear()
+        threading.Thread(
+            target=self._processar_nfse_nacional,
+            args=(pasta_destino, nsu_inicial, cnpj_filial, apenas_notas_tomadas, ano_filtro, mes_filtro,
+                  certificado_thumbprint, caminho_pfx, senha_certificado),
+            daemon=True
+        ).start()
+
+    def cancelar_nfse_nacional(self):
+        self._cancelar_nfse_nacional_event.set()
+
+    def obter_ultimo_nsu_nfse_nacional(self, cnpj_filial=""):
+        """Retorna o último NSU salvo para o CNPJ informado (ou geral), para a GUI pré-preencher o campo."""
+        try:
+            return obter_ultimo_nsu_salvo(cnpj_filial or None)
+        except Exception:
+            return None
+
+    def detectar_nsu_pasta_nfse_nacional(self, pasta_destino, cnpj_filial=""):
+        """Retorna o NSU sugerido para retomar a partir do conteúdo da pasta informada
+        (detectando lacunas de arquivos apagados, não só o maior NSU), ou None —
+        como sugestão para a GUI pré-preencher o campo "NSU inicial". Nunca é
+        aplicado automaticamente pelo download em si."""
+        try:
+            return detectar_nsu_para_retomar(pasta_destino, cnpj_filial or None)
+        except Exception:
+            return None
+
+    def _processar_nfse_nacional(self, pasta_destino, nsu_inicial, cnpj_filial, apenas_notas_tomadas,
+                                  ano_filtro, mes_filtro, certificado_thumbprint, caminho_pfx, senha_certificado):
+        caminho_log = self._abrir_arquivo_log(pasta_destino)
+        log_gui = self._criar_log_gui("log_nfse_nacional", caminho_log)
+
+        def callback_progresso(pct, status):
+            try:
+                status_js = json.dumps(status)
+                self.window.evaluate_js(f"window.update_progresso_nfse_nacional({pct}, {status_js})")
+            except Exception:
+                pass
+
+        def callback_cancelamento():
+            return self._cancelar_nfse_nacional_event.is_set()
+
+        try:
+            resultado = executar_download_nfse_nacional(
+                pasta_destino=pasta_destino,
+                nsu_inicial=int(nsu_inicial or 0),
+                cnpj_filial=cnpj_filial or None,
+                apenas_notas_tomadas=bool(apenas_notas_tomadas),
+                ano_filtro=int(ano_filtro) if str(ano_filtro).strip() else None,
+                mes_filtro=int(mes_filtro) if str(mes_filtro).strip() else None,
+                certificado_thumbprint=certificado_thumbprint or None,
+                caminho_certificado_pfx=caminho_pfx or None,
+                senha_certificado=SecretStr(senha_certificado) if senha_certificado else None,
+                callback_log=log_gui,
+                callback_progresso=callback_progresso,
+                callback_cancelamento=callback_cancelamento,
+            )
+            registrar_evento_execucao(
+                f"Download NFS-e Nacional concluído: {resultado['total_notas']} nota(s) em {resultado['total_lotes']} lote(s).",
+                "NFS-e Nacional",
+            )
+            log_gui(f"Concluído! {resultado['total_notas']} nota(s) baixada(s). Último NSU: {resultado['ultimo_nsu']}")
+            self.window.evaluate_js("window.update_progresso_nfse_nacional(100, 'Download concluído!')")
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO NFSE NACIONAL] {tb}")
+            registrar_erro(e, "NFS-e Nacional", caminho_log)
+            log_gui(f"Erro crítico no download: {e}", True)
+            self.window.evaluate_js("window.update_progresso_nfse_nacional(100, 'Falha no download')")
+        finally:
+            with self._lock_nfse_nacional:
+                self._nfse_nacional_em_execucao = False
+
 def obter_caminho_recurso(caminho_relativo: str) -> str:
     """Retorna o caminho absoluto do recurso, funcionando no desenvolvimento ou no executável empacotado."""
     if hasattr(sys, '_MEIPASS'):
@@ -725,6 +857,13 @@ if __name__ == '__main__':
         api.cancelar_captura_com_movimento,
         api.iniciar_encerramento_sem_movimento_gui,
         api.cancelar_encerramento_sem_movimento,
+        api.selecionar_arquivo_certificado,
+        api.selecionar_certificado_windows_gui,
+        api.obter_ultimo_certificado_nfse_nacional,
+        api.iniciar_nfse_nacional_gui,
+        api.cancelar_nfse_nacional,
+        api.obter_ultimo_nsu_nfse_nacional,
+        api.detectar_nsu_pasta_nfse_nacional,
     )
     
     # Ícone da janela/barra de tarefas — sem isso, o Windows usa o ícone padrão do

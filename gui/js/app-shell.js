@@ -6,6 +6,7 @@ const TABS = [
     { id: 'exportar', btnId: 'btn-aba-exportar', mainId: 'aba-exportar', title: 'Exportar XML de Prestados' },
     { id: 'captura-movimento', btnId: 'btn-aba-captura-movimento', mainId: 'aba-captura-movimento', title: 'Captura Escrituração (Com Movimento)' },
     { id: 'encerramento-sem-movimento', btnId: 'btn-aba-encerramento-sem-movimento', mainId: 'aba-encerramento-sem-movimento', title: 'Encerramento ISS (Sem Movimento)' },
+    { id: 'nfse-nacional', btnId: 'btn-aba-nfse-nacional', mainId: 'aba-nfse-nacional', title: 'Baixar NFS-e — Portal Nacional' },
 ];
 
 const NAV_ACTIVE_CLASSES = ['border-l-4', 'border-primary-container', 'bg-on-secondary-fixed-variant', 'text-white'];
@@ -36,3 +37,9 @@ TABS.forEach(tab => {
     const btn = document.getElementById(tab.btnId);
     if (btn) btn.addEventListener('click', () => setActiveTab(tab.id));
 });
+
+// Tela inicial: "Baixar NFS-e Nacional" (a `<main>` correspondente já vem sem a
+// classe "hidden" no HTML para evitar flash de outra aba antes do JS carregar;
+// esta chamada só garante que o destaque do menu e o título do cabeçalho também
+// fiquem corretos desde o início).
+setActiveTab('nfse-nacional');
