@@ -7,13 +7,13 @@
 ; "Automação ISS Fortaleza" sejam atualizadas in-place, mesmo com o nome/pasta mudando.
 AppId={{54DA395C-DA64-4ABE-938A-2E5061AE3821}
 AppName=Automações ISS
-AppVersion=2.35.0
+AppVersion=2.35.1
 AppPublisher=Barreira & Associados
 DefaultDirName={autopf}\Automações ISS
 DisableProgramGroupPage=yes
 ; Local e nome do instalador gerado
 OutputDir=installer_output
-OutputBaseFilename=Setup_Automacoes_ISS_v2.35.0
+OutputBaseFilename=Setup_Automacoes_ISS_v2.35.1
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
