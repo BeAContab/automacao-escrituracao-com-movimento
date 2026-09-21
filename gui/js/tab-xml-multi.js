@@ -57,12 +57,10 @@ function alternarPausaXmlMulti() {
         window.pywebview.api.pausar_processamento_xml('multi');
         document.getElementById('lbl-pausar-xml-multi').innerText = 'Continuar';
         document.getElementById('icone-pausar-xml-multi').innerText = 'play_arrow';
-        addLogXmlMulti('Processamento PAUSADO pelo operador (termina o XML em andamento e aguarda).');
     } else {
         window.pywebview.api.retomar_processamento_xml('multi');
         document.getElementById('lbl-pausar-xml-multi').innerText = 'Pausar';
         document.getElementById('icone-pausar-xml-multi').innerText = 'pause';
-        addLogXmlMulti('Processamento RETOMADO pelo operador.');
     }
 }
 
@@ -74,7 +72,6 @@ function pararProcessamentoXmlMulti() {
     );
     if (!confirmado) return;
     window.pywebview.api.cancelar_processamento_xml('multi');
-    addLogXmlMulti('Parada solicitada pelo operador. Finalizando o XML em andamento...', true);
     document.getElementById('btn-parar-xml-multi').disabled = true;
 }
 

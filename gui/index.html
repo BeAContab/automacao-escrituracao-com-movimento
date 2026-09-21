@@ -156,6 +156,10 @@ tailwind.config = {
             <span class="material-symbols-outlined">groups</span>
             <span class="font-label-md text-label-md flex-1">Processar XMLs</span>
         </a>
+        <a id="btn-aba-esc-multi" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">edit_note</span>
+            <span class="font-label-md text-label-md flex-1">Escrituração</span>
+        </a>
 
         <p class="px-lg pt-md pb-1 font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider">Outras Funções</p>
         <a id="btn-aba-exportar" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
@@ -363,6 +367,82 @@ tailwind.config = {
                         </div>
                         <div id="log-xml-multi" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 420px; max-height: 420px; overflow-y: auto;">
                             <p class="opacity-60">Aguardando início do processamento...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ============ ABA: Escrituração (Multi-CNPJ) ============ -->
+    <main id="aba-esc-multi" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <h1 class="font-headline-lg text-headline-lg text-on-surface">Escrituração — Multi-CNPJ</h1>
+                <span class="inline-block px-sm py-1 mt-xs mr-xs bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes — Etapa 1</span>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-xs max-w-[850px]">Usa a planilha gerada em <strong class="text-secondary">Processar XMLs — Multi-CNPJ</strong> (com <strong class="text-secondary">CNPJ_TOMADOR</strong>, <strong class="text-secondary">LOGIN</strong> e <strong class="text-secondary">SENHA</strong> preenchidos). Nesta etapa o robô apenas <strong class="text-secondary">valida os acessos</strong>: para cada empresa faz login no portal ISS, seleciona e confere o CNPJ e faz logout — <strong class="text-secondary">nenhuma nota é escriturada</strong>. Empresa com problema é pulada e o robô segue para a próxima.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1 flex flex-col gap-lg">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">table_view</span>
+                            Planilha Multi-CNPJ
+                        </h3>
+                        <div onclick="selecionarPlanilhaEscMulti()" class="border-2 border-dashed border-outline-variant rounded-lg p-lg flex flex-col items-center justify-center text-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer">
+                            <span class="material-symbols-outlined text-secondary text-[32px] mb-xs">upload_file</span>
+                            <p id="lbl-planilha-esc-multi" class="font-body-sm text-body-sm text-on-surface-variant break-all">Clique para selecionar a planilha (.xlsx)...</p>
+                        </div>
+                        <label class="flex items-start gap-sm text-on-surface-variant">
+                            <input id="chk-apenas-validar-esc-multi" type="checkbox" checked disabled class="mt-1">
+                            <span class="font-body-sm text-body-sm"><strong class="text-secondary">Apenas validar acessos</strong> (login, seleção do CNPJ e logout, sem escriturar). A escrituração das notas chega na próxima etapa.</span>
+                        </label>
+                        <span class="font-body-sm text-body-sm text-on-surface-variant">O log da execução é salvo na mesma pasta da planilha. Por segurança, as senhas nunca são gravadas nem exibidas no log.</span>
+                        <button id="btn-iniciar-esc-multi" onclick="iniciarEscrituracaoMulti()" class="w-full bg-primary-container text-white font-label-md text-label-md py-md rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                            <span class="material-symbols-outlined">verified_user</span>
+                            Validar Acessos
+                        </button>
+                        <div id="controles-esc-multi" class="hidden grid grid-cols-2 gap-sm">
+                            <button id="btn-pausar-esc-multi" onclick="alternarPausaEscMulti()" class="border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span id="icone-pausar-esc-multi" class="material-symbols-outlined text-[18px]">pause</span>
+                                <span id="lbl-pausar-esc-multi">Pausar</span>
+                            </button>
+                            <button id="btn-parar-esc-multi" onclick="pararEscrituracaoMulti()" class="border border-error text-error font-label-md text-label-md py-sm rounded-lg hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">stop</span>
+                                Parar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="resumo-esc-multi" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1 flex flex-col gap-sm">
+                        <h3 id="resumo-esc-multi-titulo" class="font-headline-sm text-headline-sm font-semibold"></h3>
+                        <div id="resumo-esc-multi-lista" class="flex flex-col"></div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-esc-multi" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-esc-multi" class="text-secondary">Aguardando...</span>
+                            <span id="progresso-porcentagem-esc-multi" class="text-secondary">0%</span>
+                        </div>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-esc-multi" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                escrituracao_multi_cnpj_output.log
+                            </span>
+                            <button onclick="limparLogEscMulti()" title="Limpar terminal" class="flex items-center gap-1 text-secondary-fixed-dim hover:text-white transition-colors text-xs">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-esc-multi" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 420px; max-height: 420px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início da validação...</p>
                         </div>
                     </section>
                 </div>
@@ -944,6 +1024,7 @@ tailwind.config = {
 <script src="js/app-shell.js"></script>
 <script src="js/tab-xml.js"></script>
 <script src="js/tab-xml-multi.js"></script>
+<script src="js/tab-esc-multi.js"></script>
 <script src="js/tab-automacao.js"></script>
 <script src="js/tab-exportar.js"></script>
 <script src="js/tab-captura-com-movimento.js"></script>
