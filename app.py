@@ -75,6 +75,12 @@ def _ler_versao_app() -> str:
         return ""
 
 
+# Trava da escrita nos arquivos de log: o robô e os botões da tela (pausar/continuar/parar) gravam
+# no mesmo arquivo de threads diferentes, e no Windows duas aberturas simultâneas em modo
+# "append" podem falhar e perder a linha.
+_LOCK_ARQUIVO_LOG = threading.Lock()
+
+
 class _ControleProcessamentoXml:
     """Estado de pausa/parada de uma execução de "Processar XMLs" (individual ou Multi-CNPJ)."""
 
@@ -193,10 +199,11 @@ class BeAContabAPI:
                 pass
             if caminho_log:
                 try:
-                    with caminho_log.open("a", encoding="utf-8") as arquivo:
-                        hora = datetime.now().strftime("%H:%M:%S")
-                        prefixo = "[ERRO] " if is_error else ""
-                        arquivo.write(f"[{hora}] {prefixo}{msg}\n")
+                    with _LOCK_ARQUIVO_LOG:
+                        with caminho_log.open("a", encoding="utf-8") as arquivo:
+                            hora = datetime.now().strftime("%H:%M:%S")
+                            prefixo = "[ERRO] " if is_error else ""
+                            arquivo.write(f"[{hora}] {prefixo}{msg}\n")
                 except Exception:
                     pass
         return log_gui
@@ -558,18 +565,20 @@ class BeAContabAPI:
     def retomar_processamento_xml(self, modo: str = "individual"):
         controle = self._controles_xml[modo]
         estava_pausado = not controle.pausa.is_set()
-        controle.pausa.set()
         if estava_pausado:
+            # Registra ANTES de liberar o robô: assim o aviso vem antes da próxima linha do robô no log.
             controle.avisar("RETOMADA pelo operador — continuando a execução.")
+        controle.pausa.set()
 
     def cancelar_processamento_xml(self, modo: str = "individual"):
         """Pede a parada; libera uma pausa em andamento para a parada poder ser percebida."""
         controle = self._controles_xml[modo]
         ja_cancelado = controle.cancelar.is_set()
+        if not ja_cancelado:
+            # Registra ANTES de acionar a parada: o aviso vem antes das mensagens de cancelamento do robô.
+            controle.avisar(f"PARADA solicitada pelo operador — {self._MENSAGENS_PARADA.get(modo, 'finalizando')}.", True)
         controle.cancelar.set()
         controle.pausa.set()
-        if not ja_cancelado:
-            controle.avisar(f"PARADA solicitada pelo operador — {self._MENSAGENS_PARADA.get(modo, 'finalizando')}.", True)
 
     def iniciar_escrituracao_multi_gui(self, planilha: str):
         """Inicia a Escrituração Multi-CNPJ (Etapa 1: apenas valida os acessos de cada empresa)."""

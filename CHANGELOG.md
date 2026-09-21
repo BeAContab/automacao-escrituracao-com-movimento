@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [2.43.0] - 2026-09-21
+
+### Adicionado
+- **Robô de escrituração próprio para o Multi-CNPJ — cópia independente da função individual** (novo `escrituracao_multi_robo.py`; `tests/test_escrituracao_multi_robo.py`): passo 1 da Etapa 2 da "Escrituração — Multi-CNPJ". O módulo é uma **cópia podada** de `iss_fortaleza_automacao.py`, gerada de forma mecânica (o arquivo original, o `exportador_xml_prestados.py` e o fluxo da Escrituração individual **não foram alterados** — conferido por hash SHA-256 antes e depois). Ficaram os helpers de campos, prestador, CNAE, documento, gravação e navegação; saíram os pedidos por terminal, o login manual, a abertura de navegador, a extração avulsa e o ponto de entrada da CLI (18 funções). Uma correção futura nos campos do formulário precisa ser feita nos dois módulos (avisado no cabeçalho da cópia).
+- **Gravação bloqueada por padrão** (`GravacaoBloqueadaError`, `gravacao_habilitada`): o único clique em "Gravar" do módulo (`_clicar_gravar_documento`) só funciona dentro de `gravacao_habilitada(True)`; fora dele (modo simulação, testes, qualquer bug) levanta erro **antes de tocar no navegador**. Um teste varre o código-fonte e falha se surgir qualquer outro caminho de gravação.
+- **Saída e marcos próprios**: as mensagens do robô (`print` no original) vão para um gancho (`configurar_saida`) e os marcos (`registrar_evento_execucao`) para outro, ligados depois ao log único da execução; nada vai ao terminal nem ao `tratamento_erros` (que gravaria em pastas de log de outra função).
+- **Pausa e cancelamento próprios** (`configurar_controle`), zerados ao terminar, com medição do tempo em pausa (`consumir_tempo_pausado`) para detectar sessão expirada após pausas longas.
+- **Classificação e pré-análise offline das notas** (`classificar_documento`, `analisar_documentos`, `chave_da_nota`, `agrupar_por_tomador`): mesmas regras do laço original (prestador de Fortaleza/CE que não é MEI é ignorado; campo obrigatório ausente = incompleta), sem navegador. `DocumentoPortalISS` ganha `cnpj_tomador`, lido da coluna opcional `CNPJ_TOMADOR` da planilha.
+- 30 testes novos (driver falso; nenhum teste toca o portal nem grava nota). Ainda não usado pelo app: a integração vem nos próximos passos.
+
+### Corrigido
+- **Linha de log perdida ao clicar em Continuar/Parar** (`app.py`, `_criar_log_gui`, `retomar_processamento_xml`, `cancelar_processamento_xml`): descoberto por um teste instável (falhava ~1 vez em 6). O botão (thread da tela) e o robô gravam no mesmo arquivo de log ao mesmo tempo; no Windows duas aberturas simultâneas em modo "append" podem falhar, e como o erro era ignorado a linha sumia do arquivo. Agora a escrita no arquivo de log tem uma trava (vale para todas as funções que usam `_criar_log_gui`) e os avisos "RETOMADA" e "PARADA" são registrados **antes** de liberar o robô, garantindo a ordem correta no log. Validado com 60 execuções seguidas do teste, sem falha.
+
 ## [2.42.0] - 2026-09-21
 
 ### Adicionado
