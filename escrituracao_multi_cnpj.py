@@ -16,7 +16,9 @@ arquivo de retomada; nos logs o login aparece mascarado.
 from __future__ import annotations
 
 import json
+import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +43,10 @@ STATUS_EMPRESA_NAO_ENCONTRADA = "EMPRESA_NAO_ENCONTRADA"
 STATUS_CNPJ_DIVERGENTE = "CNPJ_DIVERGENTE"
 STATUS_ERRO = "ERRO"
 STATUS_CANCELADA = "CANCELADA"
+STATUS_SIMULADA = "SIMULADA"  # preencheu os campos e NÃO gravou nada
+STATUS_COM_PENDENCIAS = "COM_PENDENCIAS"  # alguma nota deu erro: será refeita na próxima execução
+STATUS_COMPETENCIA_INDISPONIVEL = "COMPETENCIA_INDISPONIVEL"
+STATUS_SESSAO_EXPIRADA = "SESSAO_EXPIRADA"
 
 ROTULOS_STATUS = {
     STATUS_ACESSO_VALIDADO: "Acesso validado",
@@ -52,6 +58,10 @@ ROTULOS_STATUS = {
     STATUS_CNPJ_DIVERGENTE: "CNPJ divergente",
     STATUS_ERRO: "Erro",
     STATUS_CANCELADA: "Cancelada",
+    STATUS_SIMULADA: "Simulada (nada foi gravado)",
+    STATUS_COM_PENDENCIAS: "Concluída com pendências",
+    STATUS_COMPETENCIA_INDISPONIVEL: "Competência indisponível para escriturar",
+    STATUS_SESSAO_EXPIRADA: "Sessão do portal expirada",
 }
 
 
@@ -76,6 +86,14 @@ class EmpresaNaoEncontradaError(ErroAcessoIss):
 
 class CnpjDivergenteError(ErroAcessoIss):
     status = STATUS_CNPJ_DIVERGENTE
+
+
+class CompetenciaIndisponivelError(ErroAcessoIss):
+    status = STATUS_COMPETENCIA_INDISPONIVEL
+
+
+class SessaoExpiradaIssError(ErroAcessoIss):
+    status = STATUS_SESSAO_EXPIRADA
 
 
 class OperacaoCanceladaError(RuntimeError):
@@ -167,6 +185,9 @@ class EmpresaMultiCnpj:
     qtd_notas: int = 0
     problemas: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
+    # preenchidos pelo orquestrador (só para calcular o progresso dentro da empresa)
+    posicao: int = 0
+    total_empresas: int = 0
 
     @property
     def valida(self) -> bool:
@@ -244,39 +265,95 @@ def carregar_empresas_xlsx(caminho_xlsx: Path) -> PlanilhaMultiCnpj:
 
 
 # ---------------------------------------------------------------------------
-# Retomada (empresas já concluídas)
+# Retomada (empresas concluídas e notas já escrituradas, por competência)
 # ---------------------------------------------------------------------------
+#
+# Arquivo `<planilha>.escrituracao_multi_estado.json`:
+#   {"competencias": {"09/2026": {"empresas_concluidas": ["<cnpj>", ...],
+#                                  "notas": {"<cnpj>": ["<chave da nota>", ...]}}}}
+# Guarda por competência (reusar a planilha em outro mês não pula nada por engano) e NUNCA
+# contém login, senha ou qualquer dado sigiloso. Só o modo "Escriturar de verdade" escreve aqui.
+
+_LOCK_ESTADO = threading.Lock()
 
 
 def caminho_estado(caminho_xlsx: Path) -> Path:
     return caminho_xlsx.with_name(caminho_xlsx.stem + ".escrituracao_multi_estado.json")
 
 
-def ler_empresas_concluidas(caminho_xlsx: Path) -> set[str]:
+def _ler_estado(caminho_xlsx: Path) -> dict[str, Any]:
     try:
         dados = json.loads(caminho_estado(caminho_xlsx).read_text(encoding="utf-8"))
-        return set(dados.get("empresas_concluidas", []))
     except (OSError, ValueError):
-        return set()
+        return {"competencias": {}}
+    if not isinstance(dados, dict) or not isinstance(dados.get("competencias"), dict):
+        return {"competencias": {}}
+    return dados
 
 
-def marcar_empresa_concluida(caminho_xlsx: Path, cnpj: str) -> None:
-    concluidas = ler_empresas_concluidas(caminho_xlsx)
-    concluidas.add(cnpj)
+def _gravar_estado(caminho_xlsx: Path, dados: dict[str, Any]) -> None:
+    """Grava de forma atômica (arquivo temporário + troca), para uma queda no meio não corromper o estado."""
+    destino = caminho_estado(caminho_xlsx)
+    temporario = destino.with_name(destino.name + ".tmp")
     try:
-        caminho_estado(caminho_xlsx).write_text(
-            json.dumps({"empresas_concluidas": sorted(concluidas)}, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        temporario.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporario, destino)
     except OSError:
         pass
 
 
-def limpar_estado(caminho_xlsx: Path) -> None:
-    try:
-        caminho_estado(caminho_xlsx).unlink()
-    except OSError:
-        pass
+def _bloco(dados: dict[str, Any], competencia: str) -> dict[str, Any]:
+    bloco = dados["competencias"].setdefault(competencia, {})
+    if not isinstance(bloco.get("empresas_concluidas"), list):
+        bloco["empresas_concluidas"] = []
+    if not isinstance(bloco.get("notas"), dict):
+        bloco["notas"] = {}
+    return bloco
+
+
+def ler_empresas_concluidas(caminho_xlsx: Path, competencia: str) -> set[str]:
+    with _LOCK_ESTADO:
+        return set(_bloco(_ler_estado(caminho_xlsx), competencia)["empresas_concluidas"])
+
+
+def marcar_empresa_concluida(caminho_xlsx: Path, cnpj: str, competencia: str) -> None:
+    with _LOCK_ESTADO:
+        dados = _ler_estado(caminho_xlsx)
+        bloco = _bloco(dados, competencia)
+        if cnpj not in bloco["empresas_concluidas"]:
+            bloco["empresas_concluidas"].append(cnpj)
+        _gravar_estado(caminho_xlsx, dados)
+
+
+def ler_notas_escrituradas(caminho_xlsx: Path, cnpj: str, competencia: str) -> set[str]:
+    with _LOCK_ESTADO:
+        return set(_bloco(_ler_estado(caminho_xlsx), competencia)["notas"].get(cnpj, []))
+
+
+def registrar_nota_escriturada(caminho_xlsx: Path, cnpj: str, chave: str, competencia: str) -> None:
+    with _LOCK_ESTADO:
+        dados = _ler_estado(caminho_xlsx)
+        notas = _bloco(dados, competencia)["notas"].setdefault(cnpj, [])
+        if chave not in notas:
+            notas.append(chave)
+        _gravar_estado(caminho_xlsx, dados)
+
+
+def limpar_estado(caminho_xlsx: Path, competencia: Optional[str] = None) -> None:
+    """Remove o estado da competência (ou tudo, sem `competencia`); apaga o arquivo se sobrar vazio."""
+    with _LOCK_ESTADO:
+        if competencia is None:
+            dados: dict[str, Any] = {"competencias": {}}
+        else:
+            dados = _ler_estado(caminho_xlsx)
+            dados["competencias"].pop(competencia, None)
+        if dados["competencias"]:
+            _gravar_estado(caminho_xlsx, dados)
+        else:
+            try:
+                caminho_estado(caminho_xlsx).unlink()
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +369,15 @@ class AcessoIss(Protocol):
     def logout(self) -> bool: ...
 
     def encerrar(self) -> None: ...
+
+
+@dataclass
+class ResumoEmpresa:
+    """Retorno do gancho `processar_empresa` (pode devolver também só um `int` = notas escrituradas)."""
+
+    descricao: str
+    qtd: int = 0  # notas escrituradas (ou simuladas)
+    pendencias: int = 0  # notas que deram erro (a empresa será refeita, só essas notas, na próxima execução)
 
 
 @dataclass
@@ -323,7 +409,7 @@ class ResultadoMultiCnpj:
                 {
                     "cnpj": formatar_cnpj(r.cnpj),
                     "status": ROTULOS_STATUS.get(r.status, r.status),
-                    "ok": r.status in (STATUS_ACESSO_VALIDADO, STATUS_CONCLUIDA, STATUS_JA_CONCLUIDA),
+                    "ok": r.status in (STATUS_ACESSO_VALIDADO, STATUS_CONCLUIDA, STATUS_JA_CONCLUIDA, STATUS_SIMULADA),
                     "mensagem": r.mensagem,
                 }
                 for r in self.empresas
@@ -334,21 +420,34 @@ class ResultadoMultiCnpj:
 def executar_escrituracao_multi_cnpj(
     caminho_xlsx: Path,
     criar_acesso: Callable[[], AcessoIss],
-    processar_empresa: Optional[Callable[[EmpresaMultiCnpj, AcessoIss], int]] = None,
+    processar_empresa: Optional[Callable[[EmpresaMultiCnpj, AcessoIss], Any]] = None,
     callback_log: Optional[Callable[[str, bool], None]] = None,
     callback_progresso: Optional[Callable[[int, str], None]] = None,
     callback_pausa: Optional[Callable[[], None]] = None,
     callback_cancelamento: Optional[Callable[[], bool]] = None,
+    simulacao: bool = False,
+    competencia: Optional[str] = None,
+    analisar_empresa: Optional[Callable[[EmpresaMultiCnpj], str]] = None,
 ) -> ResultadoMultiCnpj:
     """Percorre as empresas da planilha: login → seleção/conferência da empresa → (se
     `processar_empresa` for informado) escrituração das notas → logout.
 
-    Sem `processar_empresa` (Etapa 1) roda em modo "apenas validar acessos": não escritura
-    nada e não usa/grava o arquivo de retomada. Com ele, empresas já concluídas numa
-    execução interrompida são puladas; empresas que falharam são tentadas de novo.
+    Três modos:
+    - **validar acessos** (sem `processar_empresa`): não escritura nada e não usa o estado;
+    - **simular** (`processar_empresa` + `simulacao=True`): o gancho preenche os campos e NÃO
+      grava; o estado de retomada nunca é lido nem escrito (uma simulação não pode fazer
+      uma execução real pular empresas);
+    - **escriturar** (`processar_empresa` + `competencia`): o estado guarda, por competência,
+      as empresas concluídas (puladas na reexecução) e as notas já escrituradas. Empresa com
+      alguma nota com erro fica "concluída com pendências" e NÃO é marcada como concluída:
+      na próxima execução só as notas com erro são refeitas.
+
+    `processar_empresa` devolve um `ResumoEmpresa` (ou um `int` = notas escrituradas).
+    `analisar_empresa` (opcional) devolve um texto de pré-análise offline por empresa.
 
     Falha em uma empresa (planilha inválida, login recusado, empresa não encontrada, CNPJ
-    divergente, erro) não interrompe as demais. Cancelar encerra tudo (com logout).
+    divergente, competência indisponível, sessão expirada, erro) não interrompe as demais.
+    Cancelar encerra tudo (com logout).
     """
 
     def log(msg: str, is_error: bool = False) -> None:
@@ -365,16 +464,22 @@ def executar_escrituracao_multi_cnpj(
         return bool(callback_cancelamento and callback_cancelamento())
 
     modo_validacao = processar_empresa is None
+    usa_estado = not modo_validacao and not simulacao
+    if usa_estado and not competencia:
+        raise ValueError("Para escriturar de verdade é preciso informar a competência (usada no estado de retomada).")
     planilha = carregar_empresas_xlsx(caminho_xlsx)
     for aviso in planilha.avisos_gerais:
         log(aviso, True)
-    log(
-        f"Planilha lida: {len(planilha.empresas)} empresa(s) encontrada(s)."
-        + (" Modo: apenas validar acessos (nada será escriturado)." if modo_validacao else "")
-    )
+    if modo_validacao:
+        descricao_modo = " Modo: apenas validar acessos (nada será escriturado)."
+    elif simulacao:
+        descricao_modo = " Modo: SIMULAÇÃO (preenche os campos e NÃO grava nenhuma nota)."
+    else:
+        descricao_modo = " Modo: ESCRITURAR de verdade (as notas serão gravadas no portal)."
+    log(f"Planilha lida: {len(planilha.empresas)} empresa(s) encontrada(s)." + descricao_modo)
 
     resultado = ResultadoMultiCnpj()
-    concluidas = set() if modo_validacao else ler_empresas_concluidas(caminho_xlsx)
+    concluidas = ler_empresas_concluidas(caminho_xlsx, competencia) if usa_estado else set()
     a_processar: list[EmpresaMultiCnpj] = []
 
     for empresa in planilha.empresas:
@@ -389,6 +494,11 @@ def executar_escrituracao_multi_cnpj(
         else:
             for aviso in empresa.avisos:
                 log(f"{prefixo}Aviso: {aviso}.")
+            if analisar_empresa is not None:
+                try:
+                    log(f"{prefixo}Pré-análise da planilha: {analisar_empresa(empresa)}.")
+                except Exception as erro:  # noqa: BLE001 — a pré-análise nunca derruba a execução
+                    log(f"{prefixo}Não consegui fazer a pré-análise da planilha: {type(erro).__name__}.", True)
             a_processar.append(empresa)
 
     if not a_processar:
@@ -408,6 +518,7 @@ def executar_escrituracao_multi_cnpj(
                 resultado.cancelado = True
                 break
 
+            empresa.posicao, empresa.total_empresas = posicao, total
             progresso(int(((posicao - 1) / total) * 100), f"Empresa {posicao} de {total} — {formatar_cnpj(empresa.cnpj)}")
             log(f"{prefixo}Empresa {posicao} de {total}: entrando no portal com o login {mascarar_login(empresa.login)}...")
             status, mensagem, qtd = STATUS_ERRO, "", 0
@@ -419,10 +530,20 @@ def executar_escrituracao_multi_cnpj(
                 if processar_empresa is None:
                     status, mensagem = STATUS_ACESSO_VALIDADO, "Login, seleção da empresa e conferência do CNPJ ok."
                 else:
-                    qtd = processar_empresa(empresa, acesso)
-                    marcar_empresa_concluida(caminho_xlsx, empresa.cnpj)
-                    status, mensagem = STATUS_CONCLUIDA, f"{qtd} nota(s) escriturada(s)."
-                log(f"{prefixo}{ROTULOS_STATUS[status]}.")
+                    retorno = processar_empresa(empresa, acesso)
+                    if isinstance(retorno, ResumoEmpresa):
+                        qtd, pendencias, mensagem = retorno.qtd, retorno.pendencias, retorno.descricao
+                    else:
+                        qtd, pendencias = int(retorno or 0), 0
+                        mensagem = f"{qtd} nota(s) escriturada(s)."
+                    if pendencias:
+                        status = STATUS_COM_PENDENCIAS  # não marca como concluída: será refeita (só as notas com erro)
+                    elif simulacao:
+                        status = STATUS_SIMULADA
+                    else:
+                        status = STATUS_CONCLUIDA
+                        marcar_empresa_concluida(caminho_xlsx, empresa.cnpj, competencia)
+                log(f"{prefixo}{ROTULOS_STATUS[status]}." + (f" {mensagem}" if mensagem and not modo_validacao else ""))
             except OperacaoCanceladaError:
                 status, mensagem = STATUS_CANCELADA, "Cancelada pelo operador."
                 resultado.cancelado = True
@@ -480,16 +601,118 @@ def executar_escrituracao_multi_cnpj(
         for empresa in a_processar:
             if empresa.cnpj not in feitas:
                 resultado.empresas.append(ResultadoEmpresa(empresa.cnpj, STATUS_CANCELADA, "Não chegou a ser acessada.", empresa.qtd_notas))
-    elif not modo_validacao:
-        # Tudo concluído: não há mais nada a retomar
+    elif usa_estado:
         if all(r.status in (STATUS_CONCLUIDA, STATUS_JA_CONCLUIDA) for r in resultado.empresas):
-            limpar_estado(caminho_xlsx)
+            log(
+                f"Todas as empresas da competência {competencia} estão concluídas. Para refazer, apague o arquivo "
+                f"{caminho_estado(caminho_xlsx).name} (ele guarda o que já foi escriturado e evita repetir notas)."
+            )
 
     contagem = resultado.contagem()
     resumo = ", ".join(f"{ROTULOS_STATUS[k]}: {v}" for k, v in contagem.items())
     log(f"Resumo — {resumo}." if not resultado.cancelado else f"Execução cancelada. Resumo até aqui — {resumo}.", resultado.cancelado)
     progresso(100, "Cancelado" if resultado.cancelado else "Concluído!")
     return resultado
+
+
+# ---------------------------------------------------------------------------
+# Ligação com o robô de escrituração (escrituracao_multi_robo.py)
+# ---------------------------------------------------------------------------
+
+
+def carregar_documentos_por_empresa(caminho_xlsx: Path) -> dict[str, list[Any]]:
+    """Lê as notas da planilha (colunas do robô) e agrupa por CNPJ_TOMADOR, com a mesma
+    normalização usada para identificar as empresas (`normalizar_cnpj_celula`)."""
+    import escrituracao_multi_robo as robo  # import tardio: traz o Selenium
+
+    grupos: dict[str, list[Any]] = {}
+    for documento in robo.carregar_documentos_xlsx(caminho_xlsx):
+        grupos.setdefault(normalizar_cnpj_celula(documento.cnpj_tomador), []).append(documento)
+    return grupos
+
+
+def criar_analisador_de_empresa(documentos_por_empresa: dict[str, list[Any]]) -> Callable[[EmpresaMultiCnpj], str]:
+    """Pré-análise offline (sem portal): quantas notas seriam escrituradas, ignoradas ou incompletas."""
+    import escrituracao_multi_robo as robo
+
+    def analisar(empresa: EmpresaMultiCnpj) -> str:
+        return robo.analisar_documentos(documentos_por_empresa.get(empresa.cnpj, [])).descricao()
+
+    return analisar
+
+
+def criar_escriturador_de_empresa(
+    documentos_por_empresa: dict[str, list[Any]],
+    competencia: Any,
+    caminho_xlsx: Path,
+    registro: Any,
+    *,
+    simulacao: bool,
+    callback_log: Callable[[str, bool], None],
+    callback_progresso: Optional[Callable[[int, str], None]] = None,
+    callback_evento: Optional[Callable[[str], None]] = None,
+) -> Callable[[EmpresaMultiCnpj, AcessoIss], ResumoEmpresa]:
+    """Monta o gancho `processar_empresa` do orquestrador: leva o navegador (já logado na empresa
+    certa) até "Digitar Documento" e escritura — ou apenas SIMULA — as notas da empresa.
+
+    `competencia` é uma `CompetenciaTrabalho` do robô; `registro`, um `RegistroNotas`. As exceções do
+    robô são traduzidas para as do orquestrador (cancelamento, competência indisponível, sessão expirada).
+    """
+    import escrituracao_multi_robo as robo
+
+    def escriturar(empresa: EmpresaMultiCnpj, acesso: AcessoIss) -> ResumoEmpresa:
+        documentos = documentos_por_empresa.get(empresa.cnpj, [])
+        if not documentos:
+            return ResumoEmpresa("Nenhuma nota desta empresa foi encontrada na planilha.")
+        prefixo = f"[{formatar_cnpj(empresa.cnpj)}] "
+        robo.configurar_saida(
+            lambda mensagem: callback_log(prefixo + mensagem, False),
+            (lambda marco: callback_evento(prefixo + marco)) if callback_evento else None,
+        )
+
+        def progresso_notas(indice: int, total_notas: int) -> None:
+            if callback_progresso and empresa.total_empresas:
+                fracao = (empresa.posicao - 1) + indice / max(total_notas, 1)
+                callback_progresso(
+                    int(fracao / empresa.total_empresas * 100),
+                    f"Empresa {empresa.posicao} de {empresa.total_empresas} — nota {indice}/{total_notas}",
+                )
+
+        ja_escrituradas = set() if simulacao else ler_notas_escrituradas(caminho_xlsx, empresa.cnpj, competencia.rotulo)
+        ao_escriturar = (
+            None
+            if simulacao
+            else (lambda chave: registrar_nota_escriturada(caminho_xlsx, empresa.cnpj, chave, competencia.rotulo))
+        )
+        try:
+            driver = getattr(acesso, "driver")
+            robo.preparar_tela_digitar_documento(driver, competencia)
+            resultado = robo.processar_notas(
+                driver,
+                documentos,
+                competencia,
+                registro,
+                simulacao=simulacao,
+                chaves_ja_escrituradas=ja_escrituradas,
+                ao_escriturar=ao_escriturar,
+                callback_progresso=progresso_notas,
+                sessao_ativa=getattr(acesso, "sessao_ativa", None),
+            )
+        except robo.AutomacaoCanceladaError as erro:
+            raise OperacaoCanceladaError() from erro
+        except robo.CompetenciaSemEscriturarDisponivelError as erro:
+            raise CompetenciaIndisponivelError(str(erro)) from erro
+        except robo.SessaoExpiradaError as erro:
+            raise SessaoExpiradaIssError(str(erro)) from erro
+        finally:
+            robo.configurar_saida()
+        return ResumoEmpresa(
+            descricao=resultado.descricao(simulacao),
+            qtd=resultado.simuladas if simulacao else resultado.escrituradas,
+            pendencias=resultado.erros,
+        )
+
+    return escriturar
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +794,10 @@ class AcessoIssSelenium:
             return bool(self._navegador().find_elements(By.CSS_SELECTOR, 'a[href*="identity.logout"]'))
         except Exception:  # noqa: BLE001
             return False
+
+    def sessao_ativa(self) -> bool:
+        """True se o portal ainda está com a sessão aberta (o link "Sair" do ISS está na tela)."""
+        return self._logado()
 
     def _modal_selecao_visivel(self) -> bool:
         from selenium.webdriver.common.by import By
