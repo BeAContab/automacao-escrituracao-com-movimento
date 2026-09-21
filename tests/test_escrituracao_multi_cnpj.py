@@ -425,6 +425,8 @@ class TestLogoutSelenium(unittest.TestCase):
 
 
 class TestRetomada(unittest.TestCase):
+    COMPETENCIA = "09/2026"
+
     def setUp(self):
         self.pasta = Path(tempfile.mkdtemp(prefix="escmulti_"))
         self.planilha = _planilha(
@@ -434,7 +436,13 @@ class TestRetomada(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.pasta, ignore_errors=True)
 
-    def test_empresas_concluidas_sao_puladas_e_o_estado_some_quando_tudo_termina(self):
+    def _executar(self, processar):
+        return m.executar_escrituracao_multi_cnpj(
+            self.planilha, AcessoFalso, processar_empresa=processar, callback_log=lambda *_: None,
+            competencia=self.COMPETENCIA,
+        )
+
+    def test_empresas_concluidas_sao_puladas_e_o_estado_permanece_ao_terminar(self):
         processadas = []
         falhar_b = {"v": True}
 
@@ -446,16 +454,29 @@ class TestRetomada(unittest.TestCase):
             return empresa.qtd_notas
 
         # 1ª execução: a empresa B falha
-        r1 = m.executar_escrituracao_multi_cnpj(self.planilha, AcessoFalso, processar_empresa=processar, callback_log=lambda *_: None)
+        r1 = self._executar(processar)
         self.assertEqual([r.status for r in r1.empresas], [m.STATUS_CONCLUIDA, m.STATUS_ERRO])
-        self.assertEqual(m.ler_empresas_concluidas(self.planilha), {CNPJ_A})
-        self.assertNotIn("a", m.caminho_estado(self.planilha).read_text(encoding="utf-8").replace("empresas_concluidas", ""))  # sem senha
+        self.assertEqual(m.ler_empresas_concluidas(self.planilha, self.COMPETENCIA), {CNPJ_A})
+        texto_estado = m.caminho_estado(self.planilha).read_text(encoding="utf-8")
+        for segredo in ("11111111111", "22222222222"):
+            self.assertNotIn(segredo, texto_estado)  # nenhum login no estado
 
         # 2ª execução: A é pulada, B é tentada de novo e conclui
-        r2 = m.executar_escrituracao_multi_cnpj(self.planilha, AcessoFalso, processar_empresa=processar, callback_log=lambda *_: None)
+        r2 = self._executar(processar)
         self.assertEqual([r.status for r in r2.empresas], [m.STATUS_JA_CONCLUIDA, m.STATUS_CONCLUIDA])
         self.assertEqual(processadas, [CNPJ_A, CNPJ_B])
-        self.assertFalse(m.caminho_estado(self.planilha).exists())  # terminou tudo: nada a retomar
+
+        # O estado NÃO some ao concluir: uma nova execução por engano não reescritura nada
+        self.assertTrue(m.caminho_estado(self.planilha).exists())
+        r3 = self._executar(processar)
+        self.assertEqual([r.status for r in r3.empresas], [m.STATUS_JA_CONCLUIDA] * 2)
+        self.assertEqual(processadas, [CNPJ_A, CNPJ_B])
+
+    def test_escriturar_de_verdade_exige_competencia(self):
+        with self.assertRaises(ValueError):
+            m.executar_escrituracao_multi_cnpj(
+                self.planilha, AcessoFalso, processar_empresa=lambda e, a: 0, callback_log=lambda *_: None
+            )
 
 
 if __name__ == "__main__":

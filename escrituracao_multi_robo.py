@@ -29,7 +29,7 @@ import threading
 import time
 import unicodedata
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -2270,3 +2270,410 @@ def agrupar_por_tomador(documentos: list[DocumentoPortalISS]) -> dict[str, list[
     for documento in documentos:
         grupos.setdefault(limpar_cnpj_para_digitacao(documento.cnpj_tomador), []).append(documento)
     return grupos
+
+
+# ---------------------------------------------------------------------------
+# Navegação até a tela "Digitar Documento" (trecho do fluxo do original, sem login manual,
+# sem prompt de terminal e sem abrir/fechar navegador)
+# ---------------------------------------------------------------------------
+
+
+def preparar_tela_digitar_documento(
+    driver: WebDriver,
+    competencia: CompetenciaTrabalho,
+    timeout_menu: int = 120,
+    timeout_botao_escriturar: int = 45,
+) -> None:
+    """Do portal logado e com a empresa já selecionada até a tela "Digitar Documento" da aba
+    Serviços Tomados, na competência informada.
+
+    Levanta `CompetenciaSemEscriturarDisponivelError` se a competência não liberar o botão
+    "Escriturar" (o original perguntava outra competência no terminal; aqui a empresa é pulada).
+    Diferença deliberada: o botão Escriturar espera `timeout_botao_escriturar` (45 s) e não 120 s,
+    para uma competência bloqueada não travar cada empresa por dois minutos.
+    """
+
+    _verificar_cancelamento()
+    try:
+        WebDriverWait(driver, timeout_menu).until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//*[contains(text(), 'Escrituração') or contains(text(), 'Escrituracao')]")
+            )
+        )
+    except TimeoutException:
+        registrar_evento_execucao("Timeout ao aguardar menu Escrituração visível", "ISS Fortaleza")
+        _emitir("O menu de Escrituração demorou mais que o esperado para aparecer, mas vou tentar continuar mesmo assim...")
+
+    # Navega para Escrituração > Manter Escrituração
+    _emitir("Entrando em Escrituração > Manter Escrituração...")
+    try:
+        # Busca o menu Escrituração pelo texto para ser resiliente a mudanças na ordem dos menus
+        el_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//a[contains(@class, 'dropdown-toggle') and (contains(., 'Escritura') or contains(., 'Escrituracao'))]")
+            )
+        )
+        el_menu.click()
+    except Exception:
+        # Fallback por índice para compatibilidade com variações do portal
+        menus = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-toggle")
+        if len(menus) > 4:
+            menus[4].click()
+    time.sleep(0.5)
+    _clicar_por_id(driver, "formMenuTopo:menuEscrituracao:j_id80")
+    registrar_evento_execucao("Menu Escrituração acionado", "ISS Fortaleza")
+
+    WebDriverWait(driver, 120).until(
+        EC.element_to_be_clickable((By.ID, "manterEscrituracaoForm:btnConsultar"))
+    )
+    registrar_evento_execucao("Tela Manter Escrituração aberta", "ISS Fortaleza")
+
+    # Seleciona a competência nos calendários De e Até e consulta
+    _emitir(f"Selecionando a competência {competencia.nome_mes} {competencia.ano} na tela de manutenção...")
+    selecionar_competencia_na_tela_richfaces(driver, competencia)
+    _emitir("Consultando no portal a competência escolhida...")
+    _clicar_por_id(driver, "manterEscrituracaoForm:btnConsultar")
+    registrar_evento_execucao("Botão Consultar acionado", "ISS Fortaleza")
+
+    if not aguardar_botao_escriturar(driver, timeout=timeout_botao_escriturar):
+        mensagem = (
+            f"A competência {competencia.rotulo} está desabilitada para escriturar "
+            "(o botão Escriturar não foi liberado pelo portal)."
+        )
+        registrar_evento_execucao(mensagem, "ISS Fortaleza")
+        raise CompetenciaSemEscriturarDisponivelError(mensagem)
+
+    # Abre o formulário de escrituração
+    _emitir("Abrindo a tela de escrituração dessa competência...")
+    _clicar_por_id(driver, "manterEscrituracaoForm:dataTable:0:linkEscriturar")
+    registrar_evento_execucao("Botão Escriturar acionado", "ISS Fortaleza")
+    aguardar_tela_escrituracao_fiscal(driver)
+    registrar_evento_execucao("Tela Escrituração Fiscal aberta", "ISS Fortaleza")
+
+    # Aba Serviços Tomados
+    _emitir("Indo para a aba de Serviços Tomados...")
+    clicar_aba_servicos_tomados(driver)
+    registrar_evento_execucao("Aba Serviços Tomados acionada", "ISS Fortaleza")
+
+    # Botão Digitar Documento
+    WebDriverWait(driver, 120).until(
+        EC.visibility_of_element_located((By.ID, "servico_tomado_form:seamj_id849"))
+    )
+    _emitir("Abrindo a tela para digitar um novo documento...")
+    _clicar_por_id(driver, "servico_tomado_form:seamj_id849")
+    registrar_evento_execucao("Tela Digitar Documento aberta", "ISS Fortaleza")
+    aguardar_tela_digitar_documento(driver)
+    time.sleep(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Registro unificado das notas (um conjunto de arquivos, na pasta da planilha)
+# ---------------------------------------------------------------------------
+
+ARQUIVO_SUCESSO = "log_escrituradas_sucesso.txt"
+ARQUIVO_FORTALEZA = "log_prefeitura_fortaleza.txt"
+ARQUIVO_INCOMPLETAS = "log_notas_incompletas.txt"
+ARQUIVO_DUPLICADAS = "log_notas_duplicadas.txt"
+ARQUIVO_ERROS = "log_notas_com_erro.txt"
+ARQUIVO_SIMULADAS = "log_notas_simuladas.txt"
+
+_INTRODUCAO_DOS_ARQUIVOS = {
+    ARQUIVO_SUCESSO: "As seguintes notas fiscais foram escrituradas e gravadas com sucesso no portal:",
+    ARQUIVO_FORTALEZA: (
+        "As seguintes notas fiscais foram ignoradas por terem sido emitidas por prestadores "
+        "estabelecidos em Fortaleza/CE (não MEI):"
+    ),
+    ARQUIVO_INCOMPLETAS: (
+        "As seguintes notas fiscais foram ignoradas por estarem com campos obrigatórios ausentes na planilha:"
+    ),
+    ARQUIVO_DUPLICADAS: (
+        "As seguintes notas fiscais foram ignoradas porque o portal indicou que já existe documento fiscal "
+        "escriturado com o mesmo CNPJ e número de nota, em outra competência:"
+    ),
+    ARQUIVO_ERROS: "As seguintes notas deram erro ao serem processadas (serão refeitas na próxima execução):",
+    ARQUIVO_SIMULADAS: "SIMULAÇÃO — as notas abaixo tiveram os campos preenchidos e NÃO foram gravadas no portal:",
+}
+
+
+def _rotulo_empresa(documento: DocumentoPortalISS) -> str:
+    cnpj = limpar_cnpj_para_digitacao(documento.cnpj_tomador or "")
+    if len(cnpj) == 14:
+        return f"{cnpj[0:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:14]}"
+    return cnpj or "-"
+
+
+class RegistroNotas:
+    """Grava os arquivos de log das notas, TODOS na mesma pasta (a da planilha), sem subpasta e
+    sem apagar o que já existe: cada execução acrescenta um cabeçalho (data, competência e modo)
+    na primeira vez que escreve em cada arquivo, e cada linha leva o `[CNPJ]` da empresa."""
+
+    def __init__(
+        self,
+        pasta: Path,
+        competencia: str,
+        modo: str,
+        agora: Callable[[], datetime] = datetime.now,
+    ) -> None:
+        self.pasta = Path(pasta)
+        self.competencia = competencia
+        self.modo = modo
+        self._agora = agora
+        self._com_cabecalho: set[str] = set()
+        self._lock = threading.Lock()
+
+    def _escrever(self, arquivo: str, linhas: list[str]) -> None:
+        caminho = self.pasta / arquivo
+        try:
+            with self._lock:
+                self.pasta.mkdir(parents=True, exist_ok=True)
+                novo = not caminho.exists()
+                with caminho.open("a", encoding="utf-8") as f:
+                    if novo:
+                        f.write(_INTRODUCAO_DOS_ARQUIVOS[arquivo] + "\n")
+                    if arquivo not in self._com_cabecalho:
+                        momento = self._agora().strftime("%Y-%m-%d %H:%M:%S")
+                        f.write(f"\n===== Execução {momento} | competência {self.competencia} | modo: {self.modo} =====\n")
+                        self._com_cabecalho.add(arquivo)
+                    for linha in linhas:
+                        f.write(linha + "\n")
+        except Exception as exc:  # noqa: BLE001 — falha de log nunca derruba a escrituração
+            _emitir(f"Não consegui atualizar o arquivo de log {arquivo}: {exc}")
+
+    def _prefixo(self, documento: DocumentoPortalISS) -> str:
+        momento = self._agora().strftime("%Y-%m-%d %H:%M:%S")
+        return f"[{momento}] [{_rotulo_empresa(documento)}]"
+
+    def sucesso(self, doc: DocumentoPortalISS) -> None:
+        self._escrever(ARQUIVO_SUCESSO, [f"{self._prefixo(doc)} {doc.arquivo_pdf} - {doc.cnpj_prestador} - {doc.numero_nf}"])
+
+    def fortaleza(self, doc: DocumentoPortalISS) -> None:
+        self._escrever(
+            ARQUIVO_FORTALEZA,
+            [
+                f"{self._prefixo(doc)} {doc.arquivo_pdf} - CNPJ: {doc.cnpj_prestador} - NF: {doc.numero_nf} "
+                f"- Cidade: {doc.cidade_prestador}"
+            ],
+        )
+
+    def incompleta(self, doc: DocumentoPortalISS, ausentes: list[str]) -> None:
+        self._escrever(
+            ARQUIVO_INCOMPLETAS,
+            [
+                f"{self._prefixo(doc)} PDF: {doc.arquivo_pdf} | CNPJ: {doc.cnpj_prestador} | NF: {doc.numero_nf}",
+                f"  -> Ausente(s): {', '.join(ausentes)}",
+            ],
+        )
+
+    def duplicada(self, doc: DocumentoPortalISS) -> None:
+        self._escrever(ARQUIVO_DUPLICADAS, [f"{self._prefixo(doc)} {doc.arquivo_pdf} - {doc.cnpj_prestador} - {doc.numero_nf}"])
+
+    def erro(self, doc: DocumentoPortalISS, mensagem: str) -> None:
+        self._escrever(
+            ARQUIVO_ERROS,
+            [
+                f"{self._prefixo(doc)} ARQUIVO={doc.arquivo_pdf} | CNPJ_PRESTADOR={doc.cnpj_prestador} | "
+                f"NF={doc.numero_nf} | {mensagem}"
+            ],
+        )
+
+    def simulada(self, doc: DocumentoPortalISS) -> None:
+        self._escrever(ARQUIVO_SIMULADAS, [f"{self._prefixo(doc)} {doc.arquivo_pdf} - {doc.cnpj_prestador} - {doc.numero_nf}"])
+
+
+# ---------------------------------------------------------------------------
+# Laço das notas de uma empresa
+# ---------------------------------------------------------------------------
+
+
+class ModalInesperadoError(RuntimeError):
+    """Um modal de confirmação apareceu onde não era esperado (ex.: ao descartar uma nota simulada).
+    Por segurança o robô NÃO clica em nada e interrompe a empresa."""
+
+
+@dataclass
+class ResultadoNotas:
+    escrituradas: int = 0
+    simuladas: int = 0
+    duplicadas: int = 0
+    ignoradas_fortaleza: int = 0
+    incompletas: int = 0
+    ja_escrituradas: int = 0
+    erros: int = 0
+
+    def descricao(self, simulacao: bool) -> str:
+        partes = []
+        if simulacao:
+            partes.append(f"{self.simuladas} simulada(s) (nada foi gravado)")
+        else:
+            partes.append(f"{self.escrituradas} escriturada(s)")
+        if self.duplicadas:
+            partes.append(f"{self.duplicadas} duplicada(s) (o portal já tinha)")
+        if self.ignoradas_fortaleza:
+            partes.append(f"{self.ignoradas_fortaleza} ignorada(s) (prestador de Fortaleza/CE não MEI)")
+        if self.incompletas:
+            partes.append(f"{self.incompletas} incompleta(s)")
+        if self.ja_escrituradas:
+            partes.append(f"{self.ja_escrituradas} já escriturada(s) antes")
+        if self.erros:
+            partes.append(f"{self.erros} com erro")
+        return ", ".join(partes)
+
+
+def _descartar_nota_e_abrir_nova(driver: WebDriver, competencia: CompetenciaTrabalho, simulacao: bool) -> None:
+    """Clica em "Novo Documento" para limpar o formulário (igual ao original). Na simulação a nota
+    NÃO foi gravada, então isto a descarta; se o portal pedir qualquer confirmação, o robô não
+    clica em nada e interrompe a empresa (`ModalInesperadoError`)."""
+
+    try:
+        _clicar_com_espera(driver, By.XPATH, '//*[@id="j_id165:novo"]', "botão Novo Documento", timeout=15)
+        time.sleep(2)
+    except Exception as exc:
+        if isinstance(exc, AutomacaoCanceladaError):
+            raise
+        _emitir(f"Não consegui clicar em 'Novo documento': {exc}. Vou resetar a tela por precaução antes de continuar.")
+        try:
+            resetar_tela_para_digitar_documento(driver, competencia)
+        except Exception as exc_reset:
+            _emitir(f"O reset de tela também falhou: {exc_reset}. A próxima nota pode não processar corretamente.")
+    if simulacao:
+        modais = [
+            el for el in driver.find_elements(By.XPATH, _XPATH_MODAL_CONFIRMACAO_H3) if el.is_displayed()
+        ]
+        if modais:
+            texto = " ".join((modais[0].text or "").split())[:200]
+            raise ModalInesperadoError(
+                f"O portal abriu uma confirmação ao descartar a nota simulada ('{texto}'). "
+                "Não cliquei em nada; a empresa foi interrompida por segurança."
+            )
+
+
+def processar_notas(
+    driver: WebDriver,
+    documentos: list[DocumentoPortalISS],
+    competencia: CompetenciaTrabalho,
+    registro: RegistroNotas,
+    *,
+    simulacao: bool,
+    chaves_ja_escrituradas: set[str] | None = None,
+    ao_escriturar: Callable[[str], None] | None = None,
+    callback_progresso: Callable[[int, int], None] | None = None,
+    sessao_ativa: Callable[[], bool] | None = None,
+    limite_pausa_s: float = 600.0,
+) -> ResultadoNotas:
+    """Escritura (ou SIMULA) as notas de UMA empresa, com o driver já na tela "Digitar Documento".
+
+    Mesmas regras e mesma ordem de passos do laço da escrituração individual. Diferenças:
+    - `simulacao=True`: preenche tudo exatamente como na escrituração real e PARA antes de gravar;
+      nunca chama a gravação (que, além disso, fica bloqueada por `gravacao_habilitada(False)`);
+    - notas já escrituradas em execução anterior (`chaves_ja_escrituradas`) são puladas;
+    - `ao_escriturar(chave)` é chamado após cada gravação com sucesso (o chamador persiste a retomada);
+    - após uma pausa longa (`limite_pausa_s`), confere a sessão do portal: expirou -> `SessaoExpiradaError`;
+    - falha em uma nota não interrompe as demais (é registrada e contada em `erros`).
+    """
+
+    ja_escrituradas = chaves_ja_escrituradas or set()
+    resultado = ResultadoNotas()
+    total = len(documentos)
+    pausado_sem_checar = 0.0
+
+    with gravacao_habilitada(not simulacao):
+        for indice, candidato in enumerate(documentos, start=1):
+            _verificar_cancelamento()
+
+            pausado_sem_checar += consumir_tempo_pausado()
+            if sessao_ativa is not None and pausado_sem_checar >= limite_pausa_s:
+                pausado_sem_checar = 0.0
+                if not sessao_ativa():
+                    raise SessaoExpiradaError(
+                        "a sessão do portal expirou durante a pausa; esta empresa será refeita "
+                        "(só as notas que faltam) na próxima execução"
+                    )
+
+            if callback_progresso:
+                try:
+                    callback_progresso(indice, total)
+                except Exception:
+                    pass
+
+            chave = chave_da_nota(candidato)
+            if chave in ja_escrituradas:
+                resultado.ja_escrituradas += 1
+                _emitir(f"Pulando a nota {indice}/{total}: já foi escriturada numa execução anterior.")
+                continue
+
+            categoria, campos_ausentes = classificar_documento(candidato)
+            if categoria == CATEGORIA_FORTALEZA:
+                resultado.ignoradas_fortaleza += 1
+                registro.fortaleza(candidato)
+                _emitir(
+                    f"Pulando a nota {indice}/{total}: o prestador é de Fortaleza/CE mas não é MEI, "
+                    "então essa nota não entra na escrituração."
+                )
+                continue
+            if categoria == CATEGORIA_INCOMPLETA:
+                resultado.incompletas += 1
+                registro.incompleta(candidato, campos_ausentes)
+                _emitir(
+                    f"Pulando a nota {indice}/{total}. Motivo: Campos obrigatórios ausentes na planilha: "
+                    f"{', '.join(campos_ausentes)}"
+                )
+                continue
+
+            _emitir(f"Processando linha {indice}/{total}: {candidato.cnpj_prestador} - NF {candidato.numero_nf}")
+            try:
+                # Preenche os dados do prestador manualmente com as informações da planilha,
+                # independentemente de ele estar ou não cadastrado no portal da ISS Fortaleza.
+                preencher_dados_prestador(driver, candidato, depuracao=False)
+            except Exception as exc_prestador:
+                if isinstance(exc_prestador, AutomacaoCanceladaError):
+                    raise
+                resultado.erros += 1
+                registro.erro(candidato, f"ERRO ao preencher dados do prestador: {exc_prestador}")
+                _emitir(
+                    f"Tive um problema ao preencher os dados do prestador {candidato.cnpj_prestador}: "
+                    f"{exc_prestador}. Vou seguir para a próxima nota."
+                )
+                continue
+
+            try:
+                preencher_documento_servico(driver, candidato, depuracao=False)
+
+                if simulacao:
+                    # NUNCA grava: só registra que os campos foram preenchidos.
+                    resultado.simuladas += 1
+                    registro.simulada(candidato)
+                    _emitir(
+                        f"SIMULADO: campos da NF {candidato.numero_nf} preenchidos; a nota NÃO foi gravada."
+                    )
+                else:
+                    # Gravar documento (resolve sozinho os modais de confirmação do portal: nota duplicada
+                    # -> "Não" e desiste da nota; avisos informativos -> "Sim" e tenta gravar de novo).
+                    _emitir("Salvando esse documento no portal...")
+                    registrar_evento_execucao(f"Gravando NF {candidato.numero_nf}", "ISS Fortaleza")
+                    resultado_gravacao = _gravar_documento_com_confirmacoes(driver, candidato.numero_nf, timeout=15)
+
+                    if resultado_gravacao == "duplicata":
+                        resultado.duplicadas += 1
+                        registro.duplicada(candidato)
+                        _emitir(
+                            f"Pulando a nota {indice}/{total}: o portal já tinha essa nota escriturada "
+                            "(mesmo CNPJ e número)."
+                        )
+                    else:
+                        resultado.escrituradas += 1
+                        registrar_evento_execucao(f"Sucesso na gravação da NF {candidato.numero_nf}", "ISS Fortaleza")
+                        registro.sucesso(candidato)
+                        if ao_escriturar is not None:
+                            ao_escriturar(chave)
+            except Exception as exc:
+                if isinstance(exc, AutomacaoCanceladaError):
+                    raise
+                resultado.erros += 1
+                registrar_evento_execucao(f"Falha ao processar NF {candidato.numero_nf}: {exc}", "ISS Fortaleza")
+                registro.erro(candidato, f"ERRO ao processar: {exc}")
+                _emitir(f"Deu um erro ao processar a nota {candidato.numero_nf}: {exc}")
+            finally:
+                # Clica em Novo Documento para limpar o formulário para a próxima linha
+                _descartar_nota_e_abrir_nova(driver, competencia, simulacao)
+
+    return resultado
