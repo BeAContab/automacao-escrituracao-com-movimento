@@ -36,18 +36,67 @@ async function iniciarProcessamentoXML() {
     btnProcessar.disabled = true;
     btnProcessar.innerHTML = '<span class="material-symbols-outlined" style="animation: spin 1s linear infinite; display:inline-block;">progress_activity</span> Processando...';
 
+    xmlPausado = false;
+    redefinirBotaoPausaXml();
+    document.getElementById('controles-xml').classList.remove('hidden');
+
     if (window.pywebview && window.pywebview.api) {
         try {
             await window.pywebview.api.processar_xmls_gui(pasta, tessKey, tessAgent);
         } catch (e) {
             addLogXml('Erro ao chamar processamento de XMLs: ' + e, true);
+            xmlFinalizado();
         }
     }
+    // O botão volta ao normal quando o Python avisa o fim (xmlFinalizado), não aqui:
+    // o processamento roda em segundo plano.
+}
 
-    // Restaura o botão após o processamento
+// ---- Pausar / Continuar / Parar ----
+let xmlPausado = false;
+
+function redefinirBotaoPausaXml() {
+    document.getElementById('lbl-pausar-xml').innerText = 'Pausar';
+    document.getElementById('icone-pausar-xml').innerText = 'pause';
+    document.getElementById('btn-parar-xml').disabled = false;
+}
+
+function alternarPausaXml() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    xmlPausado = !xmlPausado;
+    if (xmlPausado) {
+        window.pywebview.api.pausar_processamento_xml('individual');
+        document.getElementById('lbl-pausar-xml').innerText = 'Continuar';
+        document.getElementById('icone-pausar-xml').innerText = 'play_arrow';
+        addLogXml('Processamento PAUSADO pelo operador (termina o XML em andamento e aguarda).');
+    } else {
+        window.pywebview.api.retomar_processamento_xml('individual');
+        document.getElementById('lbl-pausar-xml').innerText = 'Pausar';
+        document.getElementById('icone-pausar-xml').innerText = 'pause';
+        addLogXml('Processamento RETOMADO pelo operador.');
+    }
+}
+
+function pararProcessamentoXml() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    const confirmado = confirm(
+        'Parar o processamento?\n\nO que já foi processado fica salvo na planilha. ' +
+        'Ao processar a mesma pasta de novo, a planilha será continuada de onde parou.'
+    );
+    if (!confirmado) return;
+    window.pywebview.api.cancelar_processamento_xml('individual');
+    addLogXml('Parada solicitada pelo operador. Finalizando o XML em andamento...', true);
+    document.getElementById('btn-parar-xml').disabled = true;
+}
+
+function xmlFinalizado() {
+    xmlPausado = false;
+    document.getElementById('controles-xml').classList.add('hidden');
+    const btnProcessar = document.getElementById('btn-processar-xml');
     btnProcessar.disabled = false;
     btnProcessar.innerHTML = '<span class="material-symbols-outlined">play_arrow</span> Iniciar Processamento';
 }
+window.xml_finalizado = xmlFinalizado;
 
 function addLogXml(msg, isError = false) {
     const el = document.getElementById('log-xml');

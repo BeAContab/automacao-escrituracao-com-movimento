@@ -52,6 +52,9 @@ COLUNAS_OBRIGATORIAS_AUTOMACAO = {
     "VALOR_DEDUCOES", "DESCONTOS_INCONDICIONADOS", "DESCONTOS_CONDICIONADOS",
     "OUTRAS_RETENCOES", "IR", "PIS_NAO_RETIDO", "COFINS_NAO_RETIDO",
     "CSRF (CSLL + PIS + COFINS RETIDOS)", "INSS",
+    # Colunas exclusivas da planilha Multi-CNPJ (login/logout entre empresas na
+    # escrituração) — ainda não lidas por iss_fortaleza_automacao.py.
+    "CNPJ_TOMADOR", "LOGIN", "SENHA",
 }
 
 def formatar_monetario(valor_str: str) -> str:
@@ -97,18 +100,61 @@ def obter_texto_tag(parent: ET.Element, tag_name: str, padrao: str = "") -> str:
         return elem.text.strip()
     return padrao
 
+class EstadoTess:
+    """Estado da Tess AI durante UMA execução de processamento: conta falhas seguidas
+    e, ao atingir o limite, desliga a Tess para o resto da execução (as notas seguintes
+    usam só a classificação local, sem gastar uma chamada de rede por nota)."""
+
+    MAX_FALHAS_CONSECUTIVAS = 5
+
+    def __init__(self) -> None:
+        self.falhas_consecutivas = 0
+        self.desativada = False
+        self.avisou_sem_workspace = False
+
+
 def resolver_cnae_tess_ai(
     desc_cnae: str,
     descricao_servico: str = "",
     id_cnae: str = "",
     tess_key: str = "",
     tess_agent_id: str = "",
-    caminho_oficial: str = "cnae_oficial.xlsx"
+    caminho_oficial: str = "cnae_oficial.xlsx",
+    callback_log=None,
+    contexto_nota: str = "",
+    estado_tess: "EstadoTess | None" = None,
+    tess_workspace_id: str = "",
 ) -> tuple[str, str]:
-    """Consulta o Tess AI para selecionar o melhor CNAE oficial da planilha oficial."""
-    
+    """Consulta o Tess AI para selecionar o melhor CNAE oficial da planilha oficial.
+
+    `callback_log(msg, is_error)` e `contexto_nota` (texto que identifica a nota, ex.:
+    número e prestador) são opcionais: quando informados, uma falha da Tess é
+    registrada no log da tela/arquivo com a nota afetada e o motivo devolvido pela
+    API, em vez de aparecer só no terminal.
+
+    `estado_tess` (opcional) é compartilhado entre as notas de uma mesma execução:
+    depois de `EstadoTess.MAX_FALHAS_CONSECUTIVAS` falhas seguidas a Tess é desligada
+    e as demais notas usam só a classificação local. O ID do workspace da Tess
+    (cabeçalho `x-workspace-id`, obrigatório na API) vem de `tess_workspace_id` ou da
+    variável de ambiente `TESS_WORKSPACE_ID`.
+    """
+
+    def registrar(msg: str, is_error: bool = False) -> None:
+        if callback_log:
+            callback_log(msg, is_error)
+        else:
+            print(msg, flush=True)
+
     chave = tess_key or os.getenv("TESS_API_KEY", "").strip()
     agente = tess_agent_id or os.getenv("TESS_AGENT_ID", "").strip()
+    workspace = tess_workspace_id or os.getenv("TESS_WORKSPACE_ID", "").strip()
+
+    # A Tess já foi desligada nesta execução (falhas seguidas): vai direto para o local.
+    if estado_tess is not None and estado_tess.desativada:
+        try:
+            return _classificar_localmente(desc_cnae, descricao_servico, id_cnae, carregar_cnaes_oficiais(caminho_oficial))
+        except Exception:
+            return id_cnae.strip(), desc_cnae.strip()
     
     # Validação crítica: caso não existam credenciais do Tess AI, utiliza o fallback local
     if not chave or not agente:
@@ -123,11 +169,24 @@ def resolver_cnae_tess_ai(
         oficiais = carregar_cnaes_oficiais(caminho_oficial)
     except FileNotFoundError:
         return id_cnae.strip(), desc_cnae.strip()
-        
+
+    # A API da Tess exige o cabeçalho x-workspace-id. Sem ele, toda chamada seria
+    # recusada com 422: avisa uma única vez e usa a classificação local.
+    if not workspace:
+        if estado_tess is None or not estado_tess.avisou_sem_workspace:
+            registrar(
+                "[Tess AI] O ID do workspace (TESS_WORKSPACE_ID) não está configurado — a API da Tess "
+                "exige esse dado. Vou classificar os CNAEs só com a classificação local.",
+                True,
+            )
+            if estado_tess is not None:
+                estado_tess.avisou_sem_workspace = True
+        return _classificar_localmente(desc_cnae, descricao_servico, id_cnae, oficiais)
+
     candidatos = _selecionar_candidatos(desc_cnae, descricao_servico, id_cnae, oficiais)
     if not candidatos:
         return id_cnae.strip(), desc_cnae.strip()
-        
+
     # Construção do prompt alinhado para que a IA escolha exclusivamente uma opção do cnae_oficial.xlsx
     prompt = (
         "Você é um especialista em classificação de atividades econômicas (CNAE).\n"
@@ -150,6 +209,7 @@ def resolver_cnae_tess_ai(
     headers = {
         "Authorization": f"Bearer {chave}",
         "Content-Type": "application/json",
+        "x-workspace-id": workspace,
     }
     payload = {
         "temperature": "0",
@@ -162,12 +222,14 @@ def resolver_cnae_tess_ai(
         "waitExecution": True,
     }
     
+    response = None
+    texto_resposta = None
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=60)
         response.raise_for_status()
         dados_resp = response.json()
         texto_resposta = dados_resp["responses"][0]["output"]
-        
+
         if texto_resposta:
             limpo = texto_resposta.strip()
             # Limpa decorações de markdown (```json ... ```) se houver
@@ -180,10 +242,34 @@ def resolver_cnae_tess_ai(
             id_cnae_final = str(resultado.get("id_cnae_final", "")).strip()
             desc_cnae_final = str(resultado.get("desc_cnae_final", "")).strip()
             if id_cnae_final and desc_cnae_final:
+                if estado_tess is not None:
+                    estado_tess.falhas_consecutivas = 0
                 return id_cnae_final, desc_cnae_final
     except Exception as e:
-        print(f"[Tess AI] Erro ao classificar CNAE: {e}. Executando fallback local.", flush=True)
-        
+        # Motivo devolvido pela API (corpo da resposta), quando houver — é onde a
+        # Tess explica um 422/4xx; o texto do erro do `requests` traz só o status.
+        detalhe = ""
+        if response is not None:
+            corpo = (response.text or "").strip().replace("\n", " ")
+            if corpo:
+                detalhe = f" Resposta da Tess (HTTP {response.status_code}): {corpo[:500]}"
+        elif texto_resposta:
+            detalhe = f" Resposta recebida: {str(texto_resposta)[:300]}"
+        msg = (
+            f"[Tess AI] Erro ao classificar o CNAE{f' da {contexto_nota}' if contexto_nota else ''}: "
+            f"{e}.{detalhe} Usei a classificação local no lugar."
+        )
+        registrar(msg, True)
+        if estado_tess is not None:
+            estado_tess.falhas_consecutivas += 1
+            if estado_tess.falhas_consecutivas >= EstadoTess.MAX_FALHAS_CONSECUTIVAS:
+                estado_tess.desativada = True
+                registrar(
+                    f"[Tess AI] A Tess falhou {EstadoTess.MAX_FALHAS_CONSECUTIVAS} vezes seguidas — vou "
+                    "desligá-la e classificar o restante das notas só com a classificação local.",
+                    True,
+                )
+
     return _classificar_localmente(desc_cnae, descricao_servico, id_cnae, oficiais)
 
 def _detectar_layout_xml(root: ET.Element) -> str:
@@ -734,6 +820,37 @@ def _extrair_dados_xml_paraiba(root: ET.Element, caminho_xml: Path) -> dict[str,
     }
 
 
+COLUNAS_MULTI_CNPJ = ("CNPJ_TOMADOR", "LOGIN", "SENHA")
+NOME_PLANILHA_MULTI_CNPJ = "notas_xml_processadas_multi_cnpj.xlsx"
+RE_PASTA_CNPJ = re.compile(r"^[0-9A-Za-z]{14}$")
+
+
+def _chave_arquivo(xml_file: Path, base: Path) -> str:
+    """Identificador estável de um XML para a retomada (caminho relativo à pasta base)."""
+    try:
+        return Path(xml_file).relative_to(base).as_posix()
+    except ValueError:
+        return str(xml_file)
+
+
+def _ler_estado_parcial(caminho: Path) -> set[str]:
+    try:
+        dados = json.loads(caminho.read_text(encoding="utf-8"))
+        return set(dados.get("arquivos_tentados", []))
+    except (OSError, ValueError):
+        return set()
+
+
+def _gravar_estado_parcial(caminho: Path, chaves: set[str]) -> None:
+    try:
+        caminho.write_text(
+            json.dumps({"arquivos_tentados": sorted(chaves)}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
 def processar_pasta_xmls(
     pasta_origem: str,
     tess_key: str = "",
@@ -744,6 +861,11 @@ def processar_pasta_xmls(
     callback_progresso = None,
     checkpoint_a_cada: int = 50,
     arquivos_xml_forcados: list = None,
+    callback_pausa=None,
+    callback_cancelamento=None,
+    caminho_destino_forcado: Path | None = None,
+    cnpj_tomador_por_arquivo: dict | None = None,
+    estado_tess: EstadoTess | None = None,
 ) -> str:
     """Escaneia a pasta recursivamente procurando XMLs, classifica com Tess AI e gera a planilha de saída.
 
@@ -755,6 +877,23 @@ def processar_pasta_xmls(
                                `processar_pasta_xmls_auto` para gerar uma planilha só
                                com os XMLs diretos de uma pasta, sem descer para dentro
                                de subpastas que serão processadas separadamente.
+        callback_pausa: Chamado antes de cada XML como `callback_pausa(ao_pausar)`; pode
+                        bloquear enquanto o operador mantiver o processamento pausado.
+                        Se estiver pausado, deve chamar `ao_pausar()` (que grava a
+                        planilha em disco) antes de começar a aguardar.
+        callback_cancelamento: Retorna True quando o operador pediu para parar. O
+                               processamento termina após o XML em andamento, salva a
+                               planilha parcial e grava um arquivo de retomada
+                               (`<planilha>.parcial.json`): ao processar a mesma pasta
+                               de novo, a MESMA planilha é continuada, pulando os XMLs
+                               já processados. O arquivo de retomada é removido quando
+                               o processamento termina por completo.
+        caminho_destino_forcado: Caminho da planilha de saída (padrão:
+                                 `notas_xml_processadas.xlsx` em `pasta_origem`).
+        cnpj_tomador_por_arquivo: Modo Multi-CNPJ. Mapeia cada XML ao CNPJ da empresa
+                                  (nome da pasta) e adiciona à planilha as colunas
+                                  CNPJ_TOMADOR, LOGIN e SENHA (as duas últimas em
+                                  branco, para o operador preencher depois).
     """
 
     def log(msg: str, is_error: bool = False) -> None:
@@ -780,69 +919,134 @@ def processar_pasta_xmls(
 
     log(f"Encontrei {len(arquivos_xml)} arquivo(s) XML nessa pasta. Vou começar a analisar um por um.")
 
-    # Define o arquivo XLSX resultante no diretório de origem selecionado
-    caminho_destino = caminho_origem / "notas_xml_processadas.xlsx"
+    # Define o arquivo XLSX resultante (padrão: no diretório de origem selecionado)
+    if caminho_destino_forcado is not None:
+        caminho_destino = Path(caminho_destino_forcado)
+    else:
+        caminho_destino = caminho_origem / "notas_xml_processadas.xlsx"
+    caminho_estado_parcial = caminho_destino.with_suffix(".parcial.json")
 
-    # Copia a planilha exemplo modelo para servir de base estrutural exata
-    path_modelo = Path(modelo_planilha)
-    # Se o modelo relativo não for achado, tenta no diretório de recursos do
-    # executável empacotado (PyInstaller) e, por fim, no diretório do script
-    if not path_modelo.exists():
-        import sys
-        if hasattr(sys, "_MEIPASS"):
-            path_modelo = Path(sys._MEIPASS) / modelo_planilha
-        else:
-            path_modelo = Path(__file__).parent / modelo_planilha
+    # Retomada: se um processamento anterior desta mesma planilha foi interrompido
+    # (Parar, ou falha no meio), continua a MESMA planilha e pula os XMLs que ela já
+    # contém — só quando o arquivo de retomada E a planilha existem.
+    tentados_anteriormente: set[str] = set()
+    retomando = False
+    if caminho_estado_parcial.exists() and caminho_destino.exists():
+        tentados_anteriormente = _ler_estado_parcial(caminho_estado_parcial)
+        retomando = bool(tentados_anteriormente)
 
-    if not path_modelo.exists():
-        log(f"Não encontrei o modelo de planilha em '{modelo_planilha}' — preciso dele para montar a planilha final.", True)
-        raise FileNotFoundError(f"Modelo {modelo_planilha} ausente.")
-
-    log(f"Preparando a planilha de destino a partir do modelo: {caminho_destino.name}")
-    shutil.copy(path_modelo, caminho_destino)
-
-    # Abre a planilha de destino usando openpyxl
-    wb = openpyxl.load_workbook(caminho_destino)
-    ws = wb.active
-
-    # Se a segunda coluna for "PREFEITURA", apaga-a dinamicamente para alinhar com o novo modelo
-    if ws.max_column >= 2:
-        col_b_val = str(ws.cell(row=1, column=2).value or "").strip().upper()
-        if col_b_val == "PREFEITURA":
-            ws.delete_cols(2)
-
-    # Adiciona os cabeçalhos REGIME_TRIBUTARIO e TIPO_CLIENTE no final da linha 1,
-    # somente se ainda não existirem (FALHA-02)
-    cabecalhos_existentes = [
-        str(ws.cell(row=1, column=c).value or "").strip().upper()
-        for c in range(1, ws.max_column + 1)
-    ]
-    for cabecalho_novo in ("REGIME_TRIBUTARIO", "TIPO_CLIENTE", "TIPO_TRIBUTACAO"):
-        if cabecalho_novo not in cabecalhos_existentes:
-            ws.cell(row=1, column=ws.max_column + 1).value = cabecalho_novo
-            cabecalhos_existentes.append(cabecalho_novo)
-
-    # Destaca visualmente, com cor de fundo diferente, as colunas de cabeçalho
-    # exigidas pela automação de escrituração (campos_obrigatorios/
-    # validar_campos_obrigatorios em iss_fortaleza_automacao.py — mantido em
-    # sincronia manualmente; processamento_xml.py não importa esse módulo de
-    # propósito, para não puxar a dependência do Selenium só para colorir
-    # cabeçalho).
-    for celula in ws[1]:
-        if str(celula.value or "").strip().upper() in COLUNAS_OBRIGATORIAS_AUTOMACAO:
-            celula.fill = PatternFill("solid", fgColor="FFC000")
-
-    # Garante a limpeza de possíveis linhas remanescentes abaixo do cabeçalho
-    if ws.max_row > 1:
-        for r in range(ws.max_row, 1, -1):
-            ws.delete_rows(r)
-
-    processadas = 0
-    ignoradas = 0
+    chaves_tentadas: set[str] = set(tentados_anteriormente)
     total = len(arquivos_xml)
+    if retomando:
+        arquivos_xml = [f for f in arquivos_xml if _chave_arquivo(f, caminho_origem) not in tentados_anteriormente]
+        pulados = total - len(arquivos_xml)
+        log(
+            f"Encontrei um processamento anterior interrompido desta pasta — vou continuar a "
+            f"mesma planilha ({caminho_destino.name}) e pular os {pulados} XML(s) que ela já tem."
+        )
+        wb = openpyxl.load_workbook(caminho_destino)
+        ws = wb.active
+        processadas = max(0, ws.max_row - 1)
+    else:
+        pulados = 0
+        # Copia a planilha exemplo modelo para servir de base estrutural exata
+        path_modelo = Path(modelo_planilha)
+        # Se o modelo relativo não for achado, tenta no diretório de recursos do
+        # executável empacotado (PyInstaller) e, por fim, no diretório do script
+        if not path_modelo.exists():
+            import sys
+            if hasattr(sys, "_MEIPASS"):
+                path_modelo = Path(sys._MEIPASS) / modelo_planilha
+            else:
+                path_modelo = Path(__file__).parent / modelo_planilha
+
+        if not path_modelo.exists():
+            log(f"Não encontrei o modelo de planilha em '{modelo_planilha}' — preciso dele para montar a planilha final.", True)
+            raise FileNotFoundError(f"Modelo {modelo_planilha} ausente.")
+
+        log(f"Preparando a planilha de destino a partir do modelo: {caminho_destino.name}")
+        shutil.copy(path_modelo, caminho_destino)
+        if caminho_estado_parcial.exists():
+            caminho_estado_parcial.unlink()  # retomada antiga sem planilha correspondente: recomeça do zero
+
+        # Abre a planilha de destino usando openpyxl
+        wb = openpyxl.load_workbook(caminho_destino)
+        ws = wb.active
+
+        # Se a segunda coluna for "PREFEITURA", apaga-a dinamicamente para alinhar com o novo modelo
+        if ws.max_column >= 2:
+            col_b_val = str(ws.cell(row=1, column=2).value or "").strip().upper()
+            if col_b_val == "PREFEITURA":
+                ws.delete_cols(2)
+
+        # Adiciona os cabeçalhos REGIME_TRIBUTARIO e TIPO_CLIENTE no final da linha 1,
+        # somente se ainda não existirem (FALHA-02). No modo Multi-CNPJ, acrescenta
+        # também CNPJ_TOMADOR, LOGIN e SENHA.
+        cabecalhos_novos = ["REGIME_TRIBUTARIO", "TIPO_CLIENTE", "TIPO_TRIBUTACAO"]
+        if cnpj_tomador_por_arquivo is not None:
+            cabecalhos_novos += list(COLUNAS_MULTI_CNPJ)
+        cabecalhos_existentes = [
+            str(ws.cell(row=1, column=c).value or "").strip().upper()
+            for c in range(1, ws.max_column + 1)
+        ]
+        for cabecalho_novo in cabecalhos_novos:
+            if cabecalho_novo not in cabecalhos_existentes:
+                ws.cell(row=1, column=ws.max_column + 1).value = cabecalho_novo
+                cabecalhos_existentes.append(cabecalho_novo)
+
+        # Destaca visualmente, com cor de fundo diferente, as colunas de cabeçalho
+        # exigidas pela automação de escrituração (campos_obrigatorios/
+        # validar_campos_obrigatorios em iss_fortaleza_automacao.py — mantido em
+        # sincronia manualmente; processamento_xml.py não importa esse módulo de
+        # propósito, para não puxar a dependência do Selenium só para colorir
+        # cabeçalho).
+        for celula in ws[1]:
+            if str(celula.value or "").strip().upper() in COLUNAS_OBRIGATORIAS_AUTOMACAO:
+                celula.fill = PatternFill("solid", fgColor="FFC000")
+
+        # Garante a limpeza de possíveis linhas remanescentes abaixo do cabeçalho
+        if ws.max_row > 1:
+            for r in range(ws.max_row, 1, -1):
+                ws.delete_rows(r)
+
+        processadas = 0
+
+    ignoradas = 0
+    interrompido = False
+    if estado_tess is None:
+        estado_tess = EstadoTess()
     cache_cnae: dict[tuple[str, str, str], tuple[str, str]] = {}
 
-    for idx, xml_file in enumerate(arquivos_xml, start=1):
+    def salvar_planilha_e_estado() -> None:
+        wb.save(caminho_destino)
+        _gravar_estado_parcial(caminho_estado_parcial, chaves_tentadas)
+
+    def salvar_ao_pausar() -> None:
+        """Chamado por `callback_pausa` quando o operador pausou, ANTES de aguardar:
+        grava a planilha em disco com tudo o que já foi processado (sem isso o arquivo
+        só teria o último checkpoint). Nunca derruba o processamento."""
+        try:
+            salvar_planilha_e_estado()
+            log(f"Processamento pausado — a planilha foi atualizada com {processadas} nota(s) em {caminho_destino.name}.")
+        except PermissionError:
+            log(
+                f"Processamento pausado, mas não consegui atualizar {caminho_destino.name}: o arquivo parece "
+                "estar aberto no Excel. Feche a planilha para que ela seja atualizada (o que já foi "
+                "processado continua guardado e será gravado nos próximos salvamentos).",
+                True,
+            )
+        except Exception as e_pausa:
+            log(f"Processamento pausado, mas não consegui atualizar a planilha agora ({e_pausa}).", True)
+
+    for idx, xml_file in enumerate(arquivos_xml, start=pulados + 1):
+        # Pausa (bloqueia enquanto pausado) e parada pedidas pelo operador. Ao pausar,
+        # o callback chama `salvar_ao_pausar` antes de aguardar.
+        if callback_pausa:
+            callback_pausa(salvar_ao_pausar)
+        if callback_cancelamento and callback_cancelamento():
+            interrompido = True
+            break
+
         # Emite progresso em tempo real
         pct = int(((idx - 1) / total) * 100)
         if callback_progresso:
@@ -852,6 +1056,7 @@ def processar_pasta_xmls(
         dados, motivo_descarte = extrair_dados_xml(xml_file)
         if dados is None:
             ignoradas += 1
+            chaves_tentadas.add(_chave_arquivo(xml_file, caminho_origem))
             log(f"[{idx}/{total}] Pulando o arquivo {xml_file.name}: {motivo_descarte}")
             continue
 
@@ -877,7 +1082,13 @@ def processar_pasta_xmls(
                     id_cnae=dados["id_cnae"],
                     tess_key=tess_key,
                     tess_agent_id=tess_agent_id,
-                    caminho_oficial=caminho_oficial_cnae
+                    caminho_oficial=caminho_oficial_cnae,
+                    callback_log=log,
+                    estado_tess=estado_tess,
+                    contexto_nota=(
+                        f"NFS-e nº {dados['numero_nf']} do prestador {dados['nome_prestador']} "
+                        f"(arquivo {xml_file.name})"
+                    ),
                 )
                 if id_cnae_final and desc_cnae_final:
                     cache_cnae[chave_cache] = (id_cnae_final, desc_cnae_final)
@@ -941,19 +1152,39 @@ def processar_pasta_xmls(
             dados["tipo_tributacao"],
         ]
 
+        if cnpj_tomador_por_arquivo is not None:
+            # Modo Multi-CNPJ: CNPJ da empresa (pasta) + LOGIN e SENHA em branco
+            linha += [cnpj_tomador_por_arquivo.get(xml_file, ""), "", ""]
+
         ws.append(linha)
         processadas += 1
+        chaves_tentadas.add(_chave_arquivo(xml_file, caminho_origem))
 
         # Checkpoint: salva a planilha parcialmente a cada N notas para não perder progresso (MELHORIA-03)
         if checkpoint_a_cada > 0 and processadas % checkpoint_a_cada == 0:
             try:
-                wb.save(caminho_destino)
+                salvar_planilha_e_estado()
                 log(f"Salvei um checkpoint da planilha com {processadas} nota(s) processada(s) até agora, por segurança.")
             except Exception as e_ckpt:
                 log(f"Não consegui salvar o checkpoint de segurança agora, mas vou continuar processando ({e_ckpt}).", True)
 
     wb.save(caminho_destino)
     wb.close()
+
+    if interrompido:
+        # Guarda o que já foi processado para a próxima execução continuar a MESMA planilha
+        _gravar_estado_parcial(caminho_estado_parcial, chaves_tentadas)
+        if callback_progresso:
+            callback_progresso(int(((len(chaves_tentadas)) / max(total, 1)) * 100), "Interrompido pelo operador")
+        log(
+            f"Processamento interrompido pelo operador. {processadas} nota(s) ficaram salvas em "
+            f"{caminho_destino.name}; ao processar esta pasta de novo, a mesma planilha será continuada."
+        )
+        return str(caminho_destino)
+
+    # Terminou por completo: não há mais nada a retomar
+    if caminho_estado_parcial.exists():
+        caminho_estado_parcial.unlink()
 
     if callback_progresso:
         callback_progresso(100, "Concluído!")
@@ -973,6 +1204,8 @@ def processar_pasta_xmls_auto(
     callback_log = None,
     callback_progresso = None,
     checkpoint_a_cada: int = 50,
+    callback_pausa=None,
+    callback_cancelamento=None,
 ) -> list[str]:
     """Detecta automaticamente a estrutura de `pasta_origem` e gera uma planilha
     para cada "lote" de XMLs encontrado, sem nunca misturar XMLs de locais diferentes
@@ -1014,28 +1247,59 @@ def processar_pasta_xmls_auto(
     resultados: list[str] = []
     subpastas_vazias: list[str] = []
 
+    # Retomada entre lotes: se uma execução anterior foi interrompida, lotes já
+    # concluídos (planilha existente) não são refeitos.
+    estado_tess = EstadoTess()  # compartilhado entre os lotes desta execução
+    caminho_estado_lotes = caminho_origem / ".processar_xmls_lotes.json"
+    lotes_concluidos: set[str] = set()
+    if caminho_estado_lotes.exists():
+        lotes_concluidos = _ler_estado_parcial(caminho_estado_lotes)
+
+    def registrar_lote_concluido(nome_lote: str) -> None:
+        lotes_concluidos.add(nome_lote)
+        _gravar_estado_parcial(caminho_estado_lotes, lotes_concluidos)
+
+    def cancelado() -> bool:
+        return bool(callback_cancelamento and callback_cancelamento())
+
     # Lote 1: XMLs soltos diretamente na pasta selecionada (se houver), escopado
     # apenas a esses arquivos via arquivos_xml_forcados — NÃO usa rglob aqui, para
     # não puxar também o conteúdo das subpastas (que são tratadas à parte abaixo).
     if xmls_diretos:
-        log(f"Encontrei {len(xmls_diretos)} XML(s) direto na pasta selecionada — vou processar todos.")
-        resultado = processar_pasta_xmls(
-            pasta_origem=pasta_origem,
-            tess_key=tess_key,
-            tess_agent_id=tess_agent_id,
-            caminho_oficial_cnae=caminho_oficial_cnae,
-            modelo_planilha=modelo_planilha,
-            callback_log=callback_log,
-            callback_progresso=callback_progresso,
-            checkpoint_a_cada=checkpoint_a_cada,
-            arquivos_xml_forcados=xmls_diretos,
-        )
-        resultados.append(resultado)
-        log(f"Terminei essa pasta! Planilha gerada em: {resultado}")
+        if "." in lotes_concluidos and (caminho_origem / "notas_xml_processadas.xlsx").exists():
+            log("Os XMLs soltos desta pasta já foram processados na execução anterior — vou pular.")
+            resultados.append(str(caminho_origem / "notas_xml_processadas.xlsx"))
+        else:
+            log(f"Encontrei {len(xmls_diretos)} XML(s) direto na pasta selecionada — vou processar todos.")
+            resultado = processar_pasta_xmls(
+                pasta_origem=pasta_origem,
+                tess_key=tess_key,
+                tess_agent_id=tess_agent_id,
+                caminho_oficial_cnae=caminho_oficial_cnae,
+                modelo_planilha=modelo_planilha,
+                callback_log=callback_log,
+                callback_progresso=callback_progresso,
+                checkpoint_a_cada=checkpoint_a_cada,
+                arquivos_xml_forcados=xmls_diretos,
+                callback_pausa=callback_pausa,
+                callback_cancelamento=callback_cancelamento,
+                estado_tess=estado_tess,
+            )
+            resultados.append(resultado)
+            if cancelado():
+                return resultados
+            registrar_lote_concluido(".")
+            log(f"Terminei essa pasta! Planilha gerada em: {resultado}")
 
     # Lote 2+: cada subpasta imediata com XML é um lote independente
     total_sub = len(subpastas)
     for idx, subpasta in enumerate(subpastas, start=1):
+        if cancelado():
+            return resultados
+        if subpasta.name in lotes_concluidos and (subpasta / "notas_xml_processadas.xlsx").exists():
+            log(f"A subpasta '{subpasta.name}' já foi processada na execução anterior — vou pular.")
+            resultados.append(str(subpasta / "notas_xml_processadas.xlsx"))
+            continue
         # Pré-checagem recursiva só para decidir se a subpasta tem conteúdo e poder
         # pular/logar subpastas vazias sem abortar o lote inteiro; o processamento
         # real reaproveita o rglob interno de processar_pasta_xmls.
@@ -1059,8 +1323,14 @@ def processar_pasta_xmls_auto(
             callback_log=callback_log,
             callback_progresso=callback_progresso_sub,
             checkpoint_a_cada=checkpoint_a_cada,
+            callback_pausa=callback_pausa,
+            callback_cancelamento=callback_cancelamento,
+            estado_tess=estado_tess,
         )
         resultados.append(resultado)
+        if cancelado():
+            return resultados
+        registrar_lote_concluido(subpasta.name)
         log(f"Terminei a subpasta '{subpasta.name}'! Planilha gerada em: {resultado}")
 
     if not resultados:
@@ -1073,7 +1343,90 @@ def processar_pasta_xmls_auto(
             callback_progresso(0, "Erro: nenhum XML encontrado.")
         raise FileNotFoundError(msg)
 
+    # Terminou tudo: não há mais nada a retomar
+    if caminho_estado_lotes.exists():
+        caminho_estado_lotes.unlink()
+
     if callback_progresso:
         callback_progresso(100, "Concluído!")
 
     return resultados
+
+
+def processar_pasta_multi_cnpj(
+    pasta_origem: str,
+    tess_key: str = "",
+    tess_agent_id: str = "",
+    caminho_oficial_cnae: str = "cnae_oficial.xlsx",
+    modelo_planilha: str = "EXEMPLOS/planilha exemplo.xlsx",
+    callback_log=None,
+    callback_progresso=None,
+    checkpoint_a_cada: int = 50,
+    callback_pausa=None,
+    callback_cancelamento=None,
+) -> str:
+    """Processa uma pasta que contém várias pastas de CNPJ (ex.: a saída da função
+    "Baixar NFS-e Nacional") e gera UMA única planilha, `notas_xml_processadas_multi_cnpj.xlsx`,
+    na pasta selecionada.
+
+    - Só entram subpastas imediatas cujo nome é um CNPJ de 14 caracteres; as demais
+      são ignoradas com aviso.
+    - De cada pasta de CNPJ entra TUDO (Notas Tomadas, Emitidas, Outras, Eventos, em
+      qualquer subpasta). Os XMLs saem agrupados por CNPJ, na ordem alfabética.
+    - Mesmas colunas da planilha de "Processar XMLs" + CNPJ_TOMADOR (nome da pasta),
+      LOGIN e SENHA (em branco, para o operador preencher depois).
+    - Suporta pausa, parada e retomada da mesma planilha, como `processar_pasta_xmls`.
+    """
+
+    def log(msg: str, is_error: bool = False) -> None:
+        if callback_log:
+            callback_log(msg, is_error)
+        else:
+            print(f"{'[ERRO] ' if is_error else ''}{msg}", flush=True)
+
+    caminho_origem = Path(pasta_origem)
+    if not caminho_origem.exists() or not caminho_origem.is_dir():
+        log(f"Não encontrei a pasta '{pasta_origem}' — verifique se o caminho está certo.", True)
+        raise FileNotFoundError(f"Pasta de origem {pasta_origem} não encontrada.")
+
+    pastas_cnpj: list[Path] = []
+    for subpasta in sorted(p for p in caminho_origem.iterdir() if p.is_dir()):
+        if RE_PASTA_CNPJ.match(subpasta.name):
+            pastas_cnpj.append(subpasta)
+        else:
+            log(f"Ignorando a pasta '{subpasta.name}': o nome não é um CNPJ de 14 caracteres.")
+
+    arquivos_xml: list[Path] = []
+    cnpj_por_arquivo: dict[Path, str] = {}
+    for pasta_cnpj in pastas_cnpj:
+        xmls = sorted(pasta_cnpj.rglob("*.xml"))
+        if not xmls:
+            log(f"A pasta do CNPJ {pasta_cnpj.name} não tem nenhum XML — vou pular.", True)
+            continue
+        log(f"CNPJ {pasta_cnpj.name}: {len(xmls)} XML(s) encontrado(s).")
+        for xml in xmls:
+            arquivos_xml.append(xml)
+            cnpj_por_arquivo[xml] = pasta_cnpj.name.upper()
+
+    if not arquivos_xml:
+        msg = "Nenhum XML encontrado nas pastas de CNPJ da pasta selecionada."
+        log(msg, True)
+        if callback_progresso:
+            callback_progresso(0, "Erro: nenhum XML encontrado.")
+        raise FileNotFoundError(msg)
+
+    return processar_pasta_xmls(
+        pasta_origem=pasta_origem,
+        tess_key=tess_key,
+        tess_agent_id=tess_agent_id,
+        caminho_oficial_cnae=caminho_oficial_cnae,
+        modelo_planilha=modelo_planilha,
+        callback_log=callback_log,
+        callback_progresso=callback_progresso,
+        checkpoint_a_cada=checkpoint_a_cada,
+        arquivos_xml_forcados=arquivos_xml,
+        callback_pausa=callback_pausa,
+        callback_cancelamento=callback_cancelamento,
+        caminho_destino_forcado=caminho_origem / NOME_PLANILHA_MULTI_CNPJ,
+        cnpj_tomador_por_arquivo=cnpj_por_arquivo,
+    )

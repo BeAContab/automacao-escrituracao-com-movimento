@@ -148,7 +148,13 @@ tailwind.config = {
         </a>
         <a id="btn-aba-automacao" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
             <span class="material-symbols-outlined">edit_note</span>
-            <span class="font-label-md text-label-md flex-1">Automação: Escrituração</span>
+            <span class="font-label-md text-label-md flex-1">Escrituração</span>
+        </a>
+
+        <p class="px-lg pt-md pb-1 font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider">Multi-CNPJ</p>
+        <a id="btn-aba-xml-multi" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+            <span class="material-symbols-outlined">groups</span>
+            <span class="font-label-md text-label-md flex-1">Processar XMLs</span>
         </a>
 
         <p class="px-lg pt-md pb-1 font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider">Outras Funções</p>
@@ -188,8 +194,8 @@ tailwind.config = {
             <span class="material-symbols-outlined text-[14px]">save</span>
             Salvar Configuração
         </button>
-        <!-- Mantenha sincronizado com AppVersion/OutputBaseFilename em setup.iss a cada release -->
-        <p class="text-center font-label-md text-[10px] text-secondary-fixed-dim/60 mt-sm">v2.35.0</p>
+        <!-- Versão preenchida ao abrir, a partir do arquivo VERSION (ver shared.js / app.obter_versao) -->
+        <p id="lbl-versao-app" class="text-center font-label-md text-[10px] text-secondary-fixed-dim/60 mt-sm">&nbsp;</p>
     </div>
 </nav>
 
@@ -232,6 +238,16 @@ tailwind.config = {
                             <span class="material-symbols-outlined">play_arrow</span>
                             Iniciar Processamento
                         </button>
+                        <div id="controles-xml" class="hidden grid grid-cols-2 gap-sm">
+                            <button id="btn-pausar-xml" onclick="alternarPausaXml()" class="border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span id="icone-pausar-xml" class="material-symbols-outlined text-[18px]">pause</span>
+                                <span id="lbl-pausar-xml">Pausar</span>
+                            </button>
+                            <button id="btn-parar-xml" onclick="pararProcessamentoXml()" class="border border-error text-error font-label-md text-label-md py-sm rounded-lg hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">stop</span>
+                                Parar
+                            </button>
+                        </div>
                         <div id="container-abrir-planilha" class="hidden">
                             <button id="btn-abrir-planilha" onclick="abrirPlanilhaGerada()" class="w-full border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
                                 <span class="material-symbols-outlined text-[18px]">table_view</span>
@@ -276,11 +292,89 @@ tailwind.config = {
         </div>
     </main>
 
-    <!-- ============ ABA: Automação: Escrituração ============ -->
+    <!-- ============ ABA: Processar XMLs (Multi-CNPJ) ============ -->
+    <main id="aba-xml-multi" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <div class="flex items-center gap-sm">
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">Processar XMLs — Multi-CNPJ</h1>
+                    <span class="flex items-center gap-1.5 px-sm py-1 bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                        Tess AI Ativo
+                    </span>
+                </div>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-xs max-w-[850px]">Processa de uma só vez as pastas de vários CNPJs (como as geradas por <strong class="text-secondary">Baixar NFS-e Nacional</strong>) e gera <strong class="text-secondary">uma única planilha</strong>, com as mesmas colunas de "Processar XMLs" mais <strong class="text-secondary">CNPJ_TOMADOR</strong>, <strong class="text-secondary">LOGIN</strong> e <strong class="text-secondary">SENHA</strong> — as duas últimas ficam em branco para você preencher antes da escrituração.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1 flex flex-col gap-lg">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">folder_open</span>
+                            Pasta que contém as pastas de CNPJ
+                        </h3>
+                        <div id="dropzone-pasta-xml-multi" onclick="selecionarPastaXmlMulti()" class="border-2 border-dashed border-outline-variant rounded-lg p-lg flex flex-col items-center justify-center text-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer">
+                            <span class="material-symbols-outlined text-secondary text-[32px] mb-xs">folder_open</span>
+                            <p id="lbl-pasta-xml-multi" class="font-body-sm text-body-sm text-on-surface-variant break-all">Clique para selecionar a pasta com as pastas de CNPJ...</p>
+                        </div>
+                        <span class="font-body-sm text-body-sm text-on-surface-variant -mt-sm">Só entram subpastas cujo nome é um CNPJ (14 caracteres); de cada uma são lidos todos os XMLs (tomadas, emitidas, outras e eventos).</span>
+                        <button id="btn-processar-xml-multi" onclick="iniciarProcessamentoXmlMulti()" class="w-full bg-primary-container text-white font-label-md text-label-md py-md rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                            Iniciar Processamento
+                        </button>
+                        <div id="controles-xml-multi" class="hidden grid grid-cols-2 gap-sm">
+                            <button id="btn-pausar-xml-multi" onclick="alternarPausaXmlMulti()" class="border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span id="icone-pausar-xml-multi" class="material-symbols-outlined text-[18px]">pause</span>
+                                <span id="lbl-pausar-xml-multi">Pausar</span>
+                            </button>
+                            <button id="btn-parar-xml-multi" onclick="pararProcessamentoXmlMulti()" class="border border-error text-error font-label-md text-label-md py-sm rounded-lg hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">stop</span>
+                                Parar
+                            </button>
+                        </div>
+                        <div id="container-abrir-planilha-multi" class="hidden">
+                            <button onclick="abrirPlanilhaMulti()" class="w-full border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[18px]">table_view</span>
+                                Abrir Planilha Gerada
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-xml-multi" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-xml-multi" class="text-secondary">Aguardando...</span>
+                            <span id="progresso-porcentagem-xml-multi" class="text-secondary">0%</span>
+                        </div>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-xml-multi" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                xml_multi_cnpj_output.log
+                            </span>
+                            <button onclick="limparLogXmlMulti()" title="Limpar terminal" class="flex items-center gap-1 text-secondary-fixed-dim hover:text-white transition-colors text-xs">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-xml-multi" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 420px; max-height: 420px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início do processamento...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ============ ABA: Escrituração ============ -->
     <main id="aba-automacao" class="hidden flex-1 p-margin bg-background">
         <div class="max-w-[1440px] mx-auto space-y-lg">
             <div>
-                <h1 class="font-headline-lg text-headline-lg text-on-surface">Automação: Escrituração</h1>
+                <h1 class="font-headline-lg text-headline-lg text-on-surface">Escrituração</h1>
                 <span class="inline-block px-sm py-1 mt-xs mr-xs bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes</span>
                 <span class="inline-flex items-center gap-1.5 px-sm py-1 mt-xs bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
                     <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
@@ -849,6 +943,7 @@ tailwind.config = {
 <script src="js/shared.js"></script>
 <script src="js/app-shell.js"></script>
 <script src="js/tab-xml.js"></script>
+<script src="js/tab-xml-multi.js"></script>
 <script src="js/tab-automacao.js"></script>
 <script src="js/tab-exportar.js"></script>
 <script src="js/tab-captura-com-movimento.js"></script>

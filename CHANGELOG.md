@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## [2.40.0] - 2026-09-21
+
+### Corrigido
+- **Planilha sem os dados já processados quando o processamento era pausado** (`processamento_xml.py`, `processar_pasta_xmls`; `app.py`, `_ControleProcessamentoXml.aguardar_se_pausado`): a planilha só era gravada em disco a cada 50 notas (checkpoint), ao parar e ao terminar; ao **pausar**, o processamento apenas esperava, então o `.xlsx` no disco tinha só o último checkpoint (ou só o cabeçalho, se ainda não tinha chegado a 50 notas) enquanto os dados já processados ficavam só na memória. Agora, ao pausar, a planilha e o arquivo de retomada são gravados imediatamente, antes de esperar, e o log informa "Processamento pausado — a planilha foi atualizada com N nota(s)". Se o Windows bloquear a gravação (planilha aberta no Excel), o app avisa no log para fechar a planilha e segue pausado, sem derrubar o processamento. Vale para "Processar XMLs" (individual) e "Multi-CNPJ". O contrato de `callback_pausa` mudou para `callback_pausa(ao_pausar)`. Validado com o controle real numa thread (arquivo em disco com 7 linhas durante a pausa; 20 ao final) e com o arquivo bloqueado simulado.
+
+## [2.39.0] - 2026-09-21
+
+### Alterado
+- **Versão do app com uma única fonte, exibida sempre igual na GUI** (novo arquivo `VERSION`; `app.py`; `build.py`; `setup.iss`; `gui/index.html`; `gui/js/shared.js`; `.gitignore`): antes o número da versão era escrito à mão em 4 lugares (`CHANGELOG.md`, `AppVersion` e `OutputBaseFilename` do `setup.iss`, e um texto fixo no rodapé da GUI), e podia ficar desencontrado. Agora o arquivo `VERSION` (só no repositório, não vai para a instalação) é a única fonte: o `setup.iss` o lê na compilação pelo pré-processador do Inno Setup (`AppVersion` e nome do instalador); o `build.py` o embute no executável por um `_versao.py` temporário (mesmo padrão do `default_keys.py`, ignorado pelo git e apagado após o build); e o `app.py` expõe `obter_versao` (usa o `_versao.py` no app instalado e o `VERSION` em desenvolvimento), com o rodapé do menu lateral preenchido ao abrir. O `build.py` também aborta com erro claro se o topo do `CHANGELOG.md` for diferente do `VERSION` (o changelog só é lido no build, não é copiado para a instalação). **A cada mudança, basta atualizar `VERSION` e `CHANGELOG.md`.**
+
+## [2.38.0] - 2026-09-21
+
+### Corrigido
+- **Tess AI recusava todas as chamadas com `422 The x-workspace-id header is required`** (`processamento_xml.py`, `resolver_cnae_tess_ai`; `app.py`; `build.py`; `.env.example`): descoberto pelo novo log de erros da `2.37.0` — em um teste Multi-CNPJ com 20 notas, todas falharam com essa resposta, ou seja, nenhum CNAE veio da IA (tudo caiu na classificação local de reserva). A API da Tess passou a exigir o cabeçalho `x-workspace-id`, que o app não enviava. Agora o ID do workspace é lido de `TESS_WORKSPACE_ID` (arquivo `.env`, na mesma ordem das outras chaves: `.env` do usuário em `%APPDATA%\BeAContab`, `.env` do projeto em desenvolvimento e, por último, o valor embutido no instalador) e enviado no cabeçalho. `build.py` passa a ler `TESS_WORKSPACE_ID` do `.env` do projeto e gravá-lo em `default_keys.py`, junto das outras chaves — o instalador já leva o valor e as máquinas instaladas funcionam sem configurar nada (o `.env` do usuário, se tiver o valor, tem prioridade). O build agora avisa quando o ID está vazio. **Antes de gerar o instalador, é preciso preencher `TESS_WORKSPACE_ID` no `.env` da raiz do projeto.**
+
+### Adicionado
+- **A Tess é desligada depois de 5 falhas seguidas** (`processamento_xml.py`, nova classe `EstadoTess`): a cada execução de processamento, 5 falhas consecutivas da Tess (qualquer erro; um sucesso zera a contagem) desligam a Tess até o fim daquela execução, com um aviso no log; as notas restantes usam só a classificação local, sem gastar uma chamada de rede (~2s) por nota. O estado é compartilhado entre as subpastas/lotes da mesma execução. Se o `TESS_WORKSPACE_ID` não estiver configurado, o app avisa uma única vez e nem tenta a Tess. Validado com a Tess simulada: 20 notas do Multi-CNPJ com falha permanente geram só 5 chamadas.
+
+## [2.37.0] - 2026-09-21
+
+### Adicionado
+- **Erros da Tess AI agora aparecem no log, com a nota afetada e o motivo** (`processamento_xml.py`, `resolver_cnae_tess_ai`, novos parâmetros opcionais `callback_log`/`contexto_nota`; chamada em `processar_pasta_xmls`): reportado um `422 Unprocessable Entity` da Tess durante um processamento Multi-CNPJ, mas a mensagem só saía no terminal (`print`), sem identificar a nota, e o texto do erro do `requests` não traz o motivo (o corpo da resposta era descartado). Agora, quando a Tess falha, o log da tela e o arquivo de log recebem uma linha de erro com "NFS-e nº X do prestador Y (arquivo Z)", o status HTTP e o corpo da resposta da Tess (até 500 caracteres), informando que foi usada a classificação local no lugar. Sem `callback_log`, o comportamento antigo (`print`) é mantido.
+
+### Alterado
+- **Arquivo de log salvo direto na pasta de saída, sem subpasta `log`** (`app.py`, `_abrir_arquivo_log`): o `log_execucao_<data_hora>.txt` passa a ser gravado diretamente na pasta de saída informada, em vez de dentro de uma subpasta `log/`. Vale para todas as funções que salvam log por esse helper (Processar XMLs, Multi-CNPJ, Exportar XML de Prestados, Captura Escrituração, Encerramento ISS e Baixar NFS-e Nacional). Logs antigos que já estejam em subpastas `log/` não são movidos. Efeito colateral positivo: o Multi-CNPJ deixa de avisar "Ignorando a pasta 'log'" em execuções novas.
+
+## [2.36.0] - 2026-09-21
+
+### Adicionado
+- **Processar XMLs — Multi-CNPJ** (`processamento_xml.py`, nova `processar_pasta_multi_cnpj`; `app.py`; `gui/index.html`; novo `gui/js/tab-xml-multi.js`; `gui/js/app-shell.js`): nova aba, em um novo grupo "Multi-CNPJ" do menu (entre "Funções Principais" e "Outras Funções"). O operador seleciona a pasta que contém as pastas de CNPJ (como a saída de "Baixar NFS-e Nacional"); só entram subpastas cujo nome é um CNPJ de 14 caracteres (as demais são ignoradas com aviso) e de cada uma é lido **tudo** (tomadas, emitidas, outras e eventos, em qualquer subpasta). Gera **uma única planilha**, `notas_xml_processadas_multi_cnpj.xlsx`, com as mesmas colunas de "Processar XMLs" mais `CNPJ_TOMADOR` (nome da pasta do CNPJ), `LOGIN` e `SENHA` (as duas últimas em branco, para o operador preencher antes da escrituração multi-empresa, que virá depois); linhas agrupadas por CNPJ. As 3 colunas novas entram no destaque amarelo do cabeçalho. Reaproveita `processar_pasta_xmls` (novos parâmetros `caminho_destino_forcado` e `cnpj_tomador_por_arquivo`), sem duplicar a lógica de CNAE/IA/regras fiscais. Validado com uma cópia de `teste-processar-xml-multi-cnpj` (2 CNPJs, 20 notas).
+- **Pausar, Continuar e Parar em "Processar XMLs" (individual e Multi-CNPJ)** (`processamento_xml.py`, novos `callback_pausa`/`callback_cancelamento`; `app.py`, controles `_ControleProcessamentoXml` e métodos `pausar/retomar/cancelar_processamento_xml`; `gui/js/tab-xml.js`, `tab-xml-multi.js`): botões que aparecem durante o processamento; a pausa/parada é verificada a cada XML (termina o XML em andamento). Ao **Parar**, a planilha parcial fica salva e um arquivo de retomada (`<planilha>.parcial.json`, e `.processar_xmls_lotes.json` quando há várias subpastas) guarda o que já foi processado: ao processar a mesma pasta de novo, a **mesma planilha é continuada**, pulando os XMLs já processados (e as subpastas já concluídas). Os arquivos de retomada são removidos quando o processamento termina por completo; apagar a planilha faz recomeçar do zero. Validado com testes de parada/retomada no individual (2 subpastas) e no Multi-CNPJ.
+
+### Alterado
+- **"Automação: Escrituração" renomeada para "Escrituração"** na GUI (item do menu, título do cabeçalho e título da página). Textos internos de log, README e manual não foram alterados.
+- O botão "Iniciar Processamento" de "Processar XMLs" agora só volta ao normal quando o Python avisa o fim (antes voltava imediatamente, pois o processamento roda em segundo plano), e há proteção contra iniciar duas execuções ao mesmo tempo.
+
 ## [2.35.1] - 2026-09-18
 
 ### Corrigido

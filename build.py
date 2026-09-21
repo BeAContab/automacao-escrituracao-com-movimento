@@ -9,24 +9,75 @@ def gerar_chaves_padrao():
     env_path = ".env"
     tess_api_key = ""
     tess_agent_id = ""
-    
+    tess_workspace_id = ""
+
     if os.path.exists(env_path):
         with open(env_path, "r", encoding="utf-8") as f:
             conteudo = f.read()
             match_key = re.search(r"^TESS_API_KEY\s*=\s*(.*)$", conteudo, re.MULTILINE)
             match_agent = re.search(r"^TESS_AGENT_ID\s*=\s*(.*)$", conteudo, re.MULTILINE)
+            match_workspace = re.search(r"^TESS_WORKSPACE_ID\s*=\s*(.*)$", conteudo, re.MULTILINE)
             if match_key:
                 tess_api_key = match_key.group(1).strip()
             if match_agent:
                 tess_agent_id = match_agent.group(1).strip()
-                
+            if match_workspace:
+                tess_workspace_id = match_workspace.group(1).strip()
+
     with open("default_keys.py", "w", encoding="utf-8") as f:
         f.write("# Este arquivo é gerado temporariamente durante o build pelo script build.py\n")
         f.write("# NÃO ADICIONE SUAS CHAVES AQUI MANUALMENTE E NÃO COMITE ESTE ARQUIVO\n\n")
         f.write(f'TESS_API_KEY = "{tess_api_key}"\n')
         f.write(f'TESS_AGENT_ID = "{tess_agent_id}"\n')
-    
-    print(f"Gerado default_keys.py com TESS_API_KEY={'***' if tess_api_key else 'vazio'} e TESS_AGENT_ID={tess_agent_id}")
+        f.write(f'TESS_WORKSPACE_ID = "{tess_workspace_id}"\n')
+
+    print(
+        f"Gerado default_keys.py com TESS_API_KEY={'***' if tess_api_key else 'vazio'}, "
+        f"TESS_AGENT_ID={tess_agent_id} e TESS_WORKSPACE_ID={'***' if tess_workspace_id else 'VAZIO (a Tess será recusada pela API)'}"
+    )
+
+PASTA_PROJETO = os.path.dirname(os.path.abspath(__file__))
+
+
+def ler_versao_do_arquivo():
+    """Lê a versão do app do arquivo VERSION (única fonte da versão)."""
+    with open(os.path.join(PASTA_PROJETO, "VERSION"), "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def verificar_versao_no_changelog(versao):
+    """Aborta o build se o topo do CHANGELOG.md não for a mesma versão do arquivo VERSION.
+
+    O CHANGELOG só é lido aqui, no build — ele não vai para a instalação.
+    """
+    with open(os.path.join(PASTA_PROJETO, "CHANGELOG.md"), "r", encoding="utf-8") as f:
+        match = re.search(r"^## \[(\d+\.\d+\.\d+)\]", f.read(), re.MULTILINE)
+    versao_changelog = match.group(1) if match else "(nenhuma)"
+    if versao_changelog != versao:
+        print("=" * 80)
+        print(f"ERRO: versão divergente — VERSION diz {versao}, mas o topo do CHANGELOG.md é {versao_changelog}.")
+        print("Atualize os dois para a mesma versão antes de gerar o instalador.")
+        print("=" * 80)
+        sys.exit(1)
+
+
+def gerar_arquivo_versao(versao):
+    """Gera o _versao.py temporário com a versão embutida no executável (mesmo padrão do
+    default_keys.py): o app instalado mostra esse número na tela, sem arquivo solto."""
+    with open("_versao.py", "w", encoding="utf-8") as f:
+        f.write("# Gerado temporariamente pelo build.py a partir do arquivo VERSION — não edite nem comite.\n")
+        f.write(f'VERSAO = "{versao}"\n')
+    print(f"Gerado _versao.py com VERSAO={versao}")
+
+
+def limpar_arquivo_versao():
+    if os.path.exists("_versao.py"):
+        try:
+            os.remove("_versao.py")
+            print("Limpou o arquivo temporário _versao.py com sucesso.")
+        except Exception as e:
+            print(f"Erro ao deletar _versao.py: {e}")
+
 
 def limpar_chaves_padrao():
     """Remove o default_keys.py após a compilação para não deixar segredos no diretório do projeto."""
@@ -39,10 +90,16 @@ def limpar_chaves_padrao():
 
 def main():
     print("Iniciando processo de compilação do BeAContab...")
-    
-    # Gera o arquivo com chaves padrão do Tess para embutir no .exe
+
+    # A versão vem do arquivo VERSION e precisa bater com o topo do CHANGELOG.md
+    versao = ler_versao_do_arquivo()
+    verificar_versao_no_changelog(versao)
+    print(f"Versão do app: {versao}")
+
+    # Gera o arquivo com a versão e o de chaves padrão do Tess para embutir no .exe
+    gerar_arquivo_versao(versao)
     gerar_chaves_padrao()
-    
+
     try:
         # 1. Garante que o PyInstaller está instalado
         try:
@@ -133,8 +190,9 @@ def main():
             sys.exit(1)
             
     finally:
-        # Garante que o arquivo com as chaves seja deletado sempre, mesmo se houver erro
+        # Garante que os arquivos temporários (chaves e versão) sejam deletados sempre, mesmo se houver erro
         limpar_chaves_padrao()
+        limpar_arquivo_versao()
 
 if __name__ == "__main__":
     main()
