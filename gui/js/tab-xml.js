@@ -68,12 +68,10 @@ function alternarPausaXml() {
         window.pywebview.api.pausar_processamento_xml('individual');
         document.getElementById('lbl-pausar-xml').innerText = 'Continuar';
         document.getElementById('icone-pausar-xml').innerText = 'play_arrow';
-        addLogXml('Processamento PAUSADO pelo operador (termina o XML em andamento e aguarda).');
     } else {
         window.pywebview.api.retomar_processamento_xml('individual');
         document.getElementById('lbl-pausar-xml').innerText = 'Pausar';
         document.getElementById('icone-pausar-xml').innerText = 'pause';
-        addLogXml('Processamento RETOMADO pelo operador.');
     }
 }
 
@@ -85,7 +83,6 @@ function pararProcessamentoXml() {
     );
     if (!confirmado) return;
     window.pywebview.api.cancelar_processamento_xml('individual');
-    addLogXml('Parada solicitada pelo operador. Finalizando o XML em andamento...', true);
     document.getElementById('btn-parar-xml').disabled = true;
 }
 

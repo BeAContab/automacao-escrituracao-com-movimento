@@ -18,6 +18,7 @@ from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competen
 from exportador_xml_prestados import executar_exportacao_xml_prestados
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
 from processamento_xml import processar_pasta_xmls_auto, processar_pasta_multi_cnpj
+from escrituracao_multi_cnpj import executar_escrituracao_multi_cnpj, AcessoIssSelenium
 from core.captura_escrituracao_com_movimento.procedures import baixar_certificado_escrituracao_empresas_iss
 from core.captura_escrituracao_com_movimento.classes import ThreadStoppedException as CapturaThreadStoppedException
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
@@ -83,10 +84,19 @@ class _ControleProcessamentoXml:
         self.cancelar = threading.Event()
         self.em_execucao = False
         self.lock = threading.Lock()
+        self.log = None  # callback (msg, is_error) do log da execução em andamento (tela + arquivo)
 
     def reiniciar(self):
         self.pausa.set()
         self.cancelar.clear()
+
+    def avisar(self, mensagem: str, erro: bool = False):
+        """Registra no log da execução em andamento (tela e arquivo); sem execução, não faz nada."""
+        if self.log is not None:
+            try:
+                self.log(mensagem, erro)
+            except Exception:
+                pass
 
     def aguardar_se_pausado(self, ao_pausar=None):
         """Bloqueia enquanto estiver pausado. Se estiver pausado, chama `ao_pausar()` (que
@@ -106,6 +116,7 @@ class BeAContabAPI:
         self._controles_xml = {
             "individual": _ControleProcessamentoXml(),
             "multi": _ControleProcessamentoXml(),
+            "esc_multi": _ControleProcessamentoXml(),  # Escrituração Multi-CNPJ
         }
         self._pausa_event = threading.Event()
         self._pausa_event.set()
@@ -525,17 +536,114 @@ class BeAContabAPI:
         controle.reiniciar()
         threading.Thread(target=alvo, args=args, daemon=True).start()
 
+    _MENSAGENS_PAUSA = {
+        "individual": "termina o XML em andamento e aguarda",
+        "multi": "termina o XML em andamento e aguarda",
+        "esc_multi": "termina a empresa em andamento (login, conferência e logout) e pausa antes da próxima",
+    }
+    _MENSAGENS_PARADA = {
+        "individual": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
+        "multi": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
+        "esc_multi": "finalizando a etapa em andamento, fazendo logout e fechando o navegador",
+    }
+
     def pausar_processamento_xml(self, modo: str = "individual"):
-        self._controles_xml[modo].pausa.clear()
+        controle = self._controles_xml[modo]
+        ja_pausado = not controle.pausa.is_set()
+        controle.pausa.clear()
+        if not ja_pausado:
+            controle.avisar(f"PAUSA solicitada pelo operador — {self._MENSAGENS_PAUSA.get(modo, 'aguardando')}. "
+                            "Clique em Continuar para seguir.")
 
     def retomar_processamento_xml(self, modo: str = "individual"):
-        self._controles_xml[modo].pausa.set()
+        controle = self._controles_xml[modo]
+        estava_pausado = not controle.pausa.is_set()
+        controle.pausa.set()
+        if estava_pausado:
+            controle.avisar("RETOMADA pelo operador — continuando a execução.")
 
     def cancelar_processamento_xml(self, modo: str = "individual"):
         """Pede a parada; libera uma pausa em andamento para a parada poder ser percebida."""
         controle = self._controles_xml[modo]
+        ja_cancelado = controle.cancelar.is_set()
         controle.cancelar.set()
         controle.pausa.set()
+        if not ja_cancelado:
+            controle.avisar(f"PARADA solicitada pelo operador — {self._MENSAGENS_PARADA.get(modo, 'finalizando')}.", True)
+
+    def iniciar_escrituracao_multi_gui(self, planilha: str):
+        """Inicia a Escrituração Multi-CNPJ (Etapa 1: apenas valida os acessos de cada empresa)."""
+        controle = self._controles_xml["esc_multi"]
+        if not planilha or not Path(planilha).is_file():
+            self.window.evaluate_js("window.log_esc_multi('Selecione a planilha do Multi-CNPJ.', true)")
+            self.window.evaluate_js("window.esc_multi_finalizado()")
+            return
+        with controle.lock:
+            if controle.em_execucao:
+                self.window.evaluate_js("window.log_esc_multi('A Escrituração Multi-CNPJ já está em andamento!', true)")
+                return
+            controle.em_execucao = True
+        # Compartilha a trava da Escrituração comum: os dois robôs abrem o portal ISS e não
+        # devem rodar ao mesmo tempo.
+        with self._lock_automacao:
+            if self._automacao_em_execucao:
+                with controle.lock:
+                    controle.em_execucao = False
+                self.window.evaluate_js(
+                    "window.log_esc_multi('Outra automação de escrituração já está em andamento. Aguarde terminar.', true)"
+                )
+                self.window.evaluate_js("window.esc_multi_finalizado()")
+                return
+            self._automacao_em_execucao = True
+        controle.reiniciar()
+        threading.Thread(target=self._executar_escrituracao_multi, args=(planilha,), daemon=True).start()
+
+    def _executar_escrituracao_multi(self, planilha: str):
+        """Thread da Escrituração Multi-CNPJ. O log único fica na mesma pasta da planilha."""
+        caminho_log = self._abrir_arquivo_log(Path(planilha).parent)
+        log_gui = self._criar_log_gui("log_esc_multi", caminho_log)
+
+        def callback_progresso(porcentagem: int, status: str) -> None:
+            try:
+                self.window.evaluate_js(f"window.update_progresso_esc_multi({porcentagem}, {json.dumps(status)})")
+            except Exception:
+                pass
+
+        controle = self._controles_xml["esc_multi"]
+        controle.log = log_gui
+
+        def aguardar_pausa() -> None:
+            # A pausa vale entre empresas: a anterior já fez logout e a próxima ainda não começou.
+            if not controle.pausa.is_set():
+                log_gui("Execução PAUSADA antes da próxima empresa (a anterior já fez logout). "
+                        "Clique em Continuar para seguir ou em Parar para encerrar.")
+            controle.pausa.wait()
+
+        try:
+            resultado = executar_escrituracao_multi_cnpj(
+                Path(planilha),
+                criar_acesso=lambda: AcessoIssSelenium(
+                    callback_log=log_gui, callback_cancelamento=controle.cancelado
+                ),
+                callback_log=log_gui,
+                callback_progresso=callback_progresso,
+                callback_pausa=aguardar_pausa,
+                callback_cancelamento=controle.cancelado,
+            )
+            try:
+                self.window.evaluate_js(f"window.mostrar_resumo_esc_multi({json.dumps(resultado.para_json())})")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[ERRO INTERNO ESCRITURAÇÃO MULTI-CNPJ] {traceback.format_exc()}")
+            log_gui(f"Erro crítico na Escrituração Multi-CNPJ: {e}", is_error=True)
+            self.window.evaluate_js("window.update_progresso_esc_multi(100, 'Falha na execução')")
+        finally:
+            if not controle.pausa.is_set():
+                log_gui("A pausa solicitada não chegou a valer: a execução terminou antes de haver uma próxima empresa.")
+            with self._lock_automacao:
+                self._automacao_em_execucao = False
+            self._finalizar_processamento_xml("esc_multi", "window.esc_multi_finalizado()")
 
     def iniciar_exportacao_xml_gui(self, pasta_destino: str, competencia_str: str):
         """Dispara a automação de exportação de XMLs de Serviços Prestados em uma thread separada."""
@@ -560,6 +668,7 @@ class BeAContabAPI:
                 pass
 
         controle = self._controles_xml["individual"]
+        controle.log = log_gui
         try:
             log_gui("Iniciando varredura e importação de XMLs...")
 
@@ -621,6 +730,7 @@ class BeAContabAPI:
                 pass
 
         controle = self._controles_xml["multi"]
+        controle.log = log_gui
         try:
             log_gui("Iniciando processamento Multi-CNPJ...")
             caminho = processar_pasta_multi_cnpj(
@@ -653,6 +763,7 @@ class BeAContabAPI:
 
     def _finalizar_processamento_xml(self, modo: str, js_finalizado: str):
         controle = self._controles_xml[modo]
+        controle.log = None
         with controle.lock:
             controle.em_execucao = False
         try:
@@ -998,6 +1109,7 @@ if __name__ == '__main__':
         api.pausar_processamento_xml,
         api.retomar_processamento_xml,
         api.cancelar_processamento_xml,
+        api.iniciar_escrituracao_multi_gui,
         api.iniciar_exportacao_xml_gui,
         api.confirmar_login_exportacao,
         api.iniciar_captura_com_movimento_gui,
