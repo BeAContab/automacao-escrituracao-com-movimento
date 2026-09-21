@@ -1,19 +1,25 @@
 ; Script de Configuração do Inno Setup para o BeAContab
 ; Compila o executável gerado pelo PyInstaller e seus recursos em um instalador profissional do Windows.
 
+; A versão do app vem do arquivo VERSION (única fonte da versão), lido na compilação
+; pelo pré-processador do Inno Setup — não edite o número aqui.
+#define ArquivoVersao FileOpen(SourcePath + "VERSION")
+#define VersaoApp FileRead(ArquivoVersao)
+#expr FileClose(ArquivoVersao)
+
 [Setup]
 ; AppId único para identificar esta aplicação no Windows (gerado para controle de atualização/desinstalação)
 ; Mantido igual à versão anterior de propósito: garante que instalações existentes de
 ; "Automação ISS Fortaleza" sejam atualizadas in-place, mesmo com o nome/pasta mudando.
 AppId={{54DA395C-DA64-4ABE-938A-2E5061AE3821}
 AppName=Automações ISS
-AppVersion=2.35.1
+AppVersion={#VersaoApp}
 AppPublisher=Barreira & Associados
 DefaultDirName={autopf}\Automações ISS
 DisableProgramGroupPage=yes
 ; Local e nome do instalador gerado
 OutputDir=installer_output
-OutputBaseFilename=Setup_Automacoes_ISS_v2.35.1
+OutputBaseFilename=Setup_Automacoes_ISS_v{#VersaoApp}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

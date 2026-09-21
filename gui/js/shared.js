@@ -63,7 +63,20 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (window.pywebview && window.pywebview.api) {
         carregarChavesAPI();
+        carregarVersaoApp();
     } else {
         window.addEventListener('pywebviewready', carregarChavesAPI);
+        window.addEventListener('pywebviewready', carregarVersaoApp);
     }
 });
+
+// Rodapé do menu lateral: mostra a versão real do app (arquivo VERSION / _versao.py do build)
+async function carregarVersaoApp() {
+    try {
+        const versao = await window.pywebview.api.obter_versao();
+        const el = document.getElementById('lbl-versao-app');
+        if (el && versao) el.innerText = 'v' + versao;
+    } catch (e) {
+        console.error("Erro ao carregar a versão do app:", e);
+    }
+}

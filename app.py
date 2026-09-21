@@ -17,7 +17,7 @@ from loguru import logger
 from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia, AutomacaoCanceladaError
 from exportador_xml_prestados import executar_exportacao_xml_prestados
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
-from processamento_xml import processar_pasta_xmls_auto
+from processamento_xml import processar_pasta_xmls_auto, processar_pasta_multi_cnpj
 from core.captura_escrituracao_com_movimento.procedures import baixar_certificado_escrituracao_empresas_iss
 from core.captura_escrituracao_com_movimento.classes import ThreadStoppedException as CapturaThreadStoppedException
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
@@ -60,9 +60,53 @@ class GUIStdoutWrapper:
     def flush(self):
         self.original_stdout.flush()
 
+def _ler_versao_app() -> str:
+    """Versão do app: no executável instalado vem do `_versao.py` embutido no build;
+    em desenvolvimento, direto do arquivo VERSION (única fonte da versão)."""
+    try:
+        import _versao
+        return str(_versao.VERSAO).strip()
+    except ImportError:
+        pass
+    try:
+        return (Path(__file__).parent / "VERSION").read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+class _ControleProcessamentoXml:
+    """Estado de pausa/parada de uma execução de "Processar XMLs" (individual ou Multi-CNPJ)."""
+
+    def __init__(self):
+        self.pausa = threading.Event()
+        self.pausa.set()  # set = rodando; clear = pausado
+        self.cancelar = threading.Event()
+        self.em_execucao = False
+        self.lock = threading.Lock()
+
+    def reiniciar(self):
+        self.pausa.set()
+        self.cancelar.clear()
+
+    def aguardar_se_pausado(self, ao_pausar=None):
+        """Bloqueia enquanto estiver pausado. Se estiver pausado, chama `ao_pausar()` (que
+        grava a planilha com o que já foi processado) antes de começar a esperar."""
+        if not self.pausa.is_set() and ao_pausar is not None:
+            ao_pausar()
+        self.pausa.wait()
+
+    def cancelado(self) -> bool:
+        return self.cancelar.is_set()
+
+
 class BeAContabAPI:
     def __init__(self, window):
         self.window = window
+        # Controles das duas telas de processamento de XML
+        self._controles_xml = {
+            "individual": _ControleProcessamentoXml(),
+            "multi": _ControleProcessamentoXml(),
+        }
         self._pausa_event = threading.Event()
         self._pausa_event.set()
         self._pausa_automacao_event = threading.Event()
@@ -99,21 +143,28 @@ class BeAContabAPI:
                 os.environ["TESS_API_KEY"] = chaves["tess_key"]
             if chaves.get("tess_agent_id"):
                 os.environ["TESS_AGENT_ID"] = chaves["tess_agent_id"]
+            if chaves.get("tess_workspace_id"):
+                os.environ["TESS_WORKSPACE_ID"] = chaves["tess_workspace_id"]
         except Exception as e:
             print(f"Erro ao carregar chaves na inicialização: {e}")
 
+    def obter_versao(self):
+        """Versão atual do app, exibida no rodapé do menu lateral."""
+        return _ler_versao_app()
+
     def _abrir_arquivo_log(self, pasta_saida):
-        """Cria (se necessário) uma subpasta "log" dentro da pasta que o usuário informou
-        para esta execução e retorna o caminho de um arquivo de log novo.
+        """Retorna o caminho de um arquivo de log novo (`log_execucao_<data_hora>.txt`),
+        salvo DIRETAMENTE na pasta que o usuário informou para esta execução (sem
+        subpasta "log").
 
         Se a pasta for inválida ou não houver permissão de escrita, retorna None —
         o log continua aparecendo normalmente na tela, só não é salvo em disco.
         """
         try:
-            pasta_log = Path(pasta_saida) / "log"
-            pasta_log.mkdir(parents=True, exist_ok=True)
+            pasta = Path(pasta_saida)
+            pasta.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            return pasta_log / f"log_execucao_{timestamp}.txt"
+            return pasta / f"log_execucao_{timestamp}.txt"
         except Exception:
             return None
 
@@ -217,7 +268,7 @@ class BeAContabAPI:
 
     def obter_chaves_salvas(self):
         """Retorna as chaves do Tess AI salvas no arquivo .env do usuário."""
-        chaves = {"tess_key": "", "tess_agent_id": ""}
+        chaves = {"tess_key": "", "tess_agent_id": "", "tess_workspace_id": ""}
         
         # 1. Tenta obter da pasta AppData do usuário
         env_path = self.obter_caminho_config()
@@ -233,16 +284,19 @@ class BeAContabAPI:
                 conteudo = env_path.read_text(encoding="utf-8")
                 match_tess_key = re.search(r"^TESS_API_KEY\s*=\s*(.*)$", conteudo, re.MULTILINE)
                 match_tess_agent = re.search(r"^TESS_AGENT_ID\s*=\s*(.*)$", conteudo, re.MULTILINE)
+                match_tess_workspace = re.search(r"^TESS_WORKSPACE_ID\s*=\s*(.*)$", conteudo, re.MULTILINE)
                 if match_tess_key:
                     chaves["tess_key"] = match_tess_key.group(1).strip()
                 if match_tess_agent:
                     chaves["tess_agent_id"] = match_tess_agent.group(1).strip()
+                if match_tess_workspace:
+                    chaves["tess_workspace_id"] = match_tess_workspace.group(1).strip()
             except Exception as e:
                 print(f"Erro ao ler .env: {e}")
                 
         # 3. Fallback: Se não encontrou chaves da Tess no .env (ou o .env não existe/está vazio),
         # tenta carregar as chaves padrões injetadas durante o processo de build.
-        if not chaves.get("tess_key") or not chaves.get("tess_agent_id"):
+        if not chaves.get("tess_key") or not chaves.get("tess_agent_id") or not chaves.get("tess_workspace_id"):
             try:
                 # BUG-01 corrigido: removido espaço indevido entre 'default_' e 'keys'
                 import default_keys
@@ -250,6 +304,8 @@ class BeAContabAPI:
                     chaves["tess_key"] = default_keys.TESS_API_KEY
                 if not chaves.get("tess_agent_id") and getattr(default_keys, "TESS_AGENT_ID", ""):
                     chaves["tess_agent_id"] = default_keys.TESS_AGENT_ID
+                if not chaves.get("tess_workspace_id") and getattr(default_keys, "TESS_WORKSPACE_ID", ""):
+                    chaves["tess_workspace_id"] = default_keys.TESS_WORKSPACE_ID
             except ImportError:
                 pass
                 
@@ -452,11 +508,34 @@ class BeAContabAPI:
         Inicia o processamento de XMLs com classificação de CNAE via Tess AI
         e gravação na planilha a partir de uma thread.
         """
-        threading.Thread(
-            target=self._processar_xmls,
-            args=(pasta_origem, tess_key, tess_agent_id),
-            daemon=True
-        ).start()
+        self._iniciar_thread_xml("individual", self._processar_xmls, pasta_origem, tess_key, tess_agent_id)
+
+    def processar_xmls_multi_cnpj_gui(self, pasta_origem: str, tess_key: str = "", tess_agent_id: str = ""):
+        """Inicia o processamento Multi-CNPJ (uma planilha para várias pastas de CNPJ)."""
+        self._iniciar_thread_xml("multi", self._processar_xmls_multi_cnpj, pasta_origem, tess_key, tess_agent_id)
+
+    def _iniciar_thread_xml(self, modo, alvo, *args):
+        controle = self._controles_xml[modo]
+        with controle.lock:
+            if controle.em_execucao:
+                nome_js = "log_xml" if modo == "individual" else "log_xml_multi"
+                self.window.evaluate_js(f"window.{nome_js}('O processamento já está em andamento!', true)")
+                return
+            controle.em_execucao = True
+        controle.reiniciar()
+        threading.Thread(target=alvo, args=args, daemon=True).start()
+
+    def pausar_processamento_xml(self, modo: str = "individual"):
+        self._controles_xml[modo].pausa.clear()
+
+    def retomar_processamento_xml(self, modo: str = "individual"):
+        self._controles_xml[modo].pausa.set()
+
+    def cancelar_processamento_xml(self, modo: str = "individual"):
+        """Pede a parada; libera uma pausa em andamento para a parada poder ser percebida."""
+        controle = self._controles_xml[modo]
+        controle.cancelar.set()
+        controle.pausa.set()
 
     def iniciar_exportacao_xml_gui(self, pasta_destino: str, competencia_str: str):
         """Dispara a automação de exportação de XMLs de Serviços Prestados em uma thread separada."""
@@ -480,6 +559,7 @@ class BeAContabAPI:
             except Exception:
                 pass
 
+        controle = self._controles_xml["individual"]
         try:
             log_gui("Iniciando varredura e importação de XMLs...")
 
@@ -488,14 +568,22 @@ class BeAContabAPI:
                 tess_key=tess_key,
                 tess_agent_id=tess_agent_id,
                 callback_log=log_gui,
-                callback_progresso=callback_progresso
+                callback_progresso=callback_progresso,
+                callback_pausa=controle.aguardar_se_pausado,
+                callback_cancelamento=controle.cancelado,
             )
-            log_gui("Processamento concluído com sucesso!")
+            if controle.cancelado():
+                log_gui("Processamento parado pelo operador. O que já foi processado ficou salvo; "
+                        "ao processar a mesma pasta de novo, a planilha será continuada.", True)
+            else:
+                log_gui("Processamento concluído com sucesso!")
+                self.window.evaluate_js("window.update_progresso_xml(100, 'Concluído!')")
             for caminho in caminhos_resultado:
                 log_gui(f"Planilha gerada em: {caminho}")
-            self.window.evaluate_js("window.update_progresso_xml(100, 'Concluído!')")
 
-            if len(caminhos_resultado) == 1:
+            if not caminhos_resultado:
+                pass
+            elif len(caminhos_resultado) == 1:
                 # MELHORIA-05: Envia o caminho da planilha para a GUI exibir o botão "Abrir Planilha Gerada"
                 caminho_js = json.dumps(str(caminhos_resultado[0]))
                 try:
@@ -517,6 +605,60 @@ class BeAContabAPI:
             print(f"[ERRO INTERNO XML] {tb}")
             log_gui(f"Erro crítico no processamento de XMLs: {e}", is_error=True)
             self.window.evaluate_js("window.update_progresso_xml(100, 'Falha no processamento')")
+        finally:
+            self._finalizar_processamento_xml("individual", "window.xml_finalizado()")
+
+    def _processar_xmls_multi_cnpj(self, pasta_origem: str, tess_key: str = "", tess_agent_id: str = ""):
+        """Thread que executa o processamento Multi-CNPJ (uma única planilha)."""
+        caminho_log = self._abrir_arquivo_log(pasta_origem)
+        log_gui = self._criar_log_gui("log_xml_multi", caminho_log)
+
+        def callback_progresso(porcentagem: int, status: str) -> None:
+            try:
+                status_js = json.dumps(status)
+                self.window.evaluate_js(f"window.update_progresso_xml_multi({porcentagem}, {status_js})")
+            except Exception:
+                pass
+
+        controle = self._controles_xml["multi"]
+        try:
+            log_gui("Iniciando processamento Multi-CNPJ...")
+            caminho = processar_pasta_multi_cnpj(
+                pasta_origem=pasta_origem,
+                tess_key=tess_key,
+                tess_agent_id=tess_agent_id,
+                callback_log=log_gui,
+                callback_progresso=callback_progresso,
+                callback_pausa=controle.aguardar_se_pausado,
+                callback_cancelamento=controle.cancelado,
+            )
+            if controle.cancelado():
+                log_gui("Processamento parado pelo operador. O que já foi processado ficou salvo; "
+                        "ao processar a mesma pasta de novo, a planilha será continuada.", True)
+            else:
+                log_gui("Processamento Multi-CNPJ concluído com sucesso!")
+                self.window.evaluate_js("window.update_progresso_xml_multi(100, 'Concluído!')")
+            log_gui(f"Planilha gerada em: {caminho}")
+            try:
+                self.window.evaluate_js(f"window.mostrar_botao_planilha_multi({json.dumps(str(caminho))})")
+            except Exception:
+                pass
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO XML MULTI-CNPJ] {tb}")
+            log_gui(f"Erro crítico no processamento Multi-CNPJ: {e}", is_error=True)
+            self.window.evaluate_js("window.update_progresso_xml_multi(100, 'Falha no processamento')")
+        finally:
+            self._finalizar_processamento_xml("multi", "window.xml_multi_finalizado()")
+
+    def _finalizar_processamento_xml(self, modo: str, js_finalizado: str):
+        controle = self._controles_xml[modo]
+        with controle.lock:
+            controle.em_execucao = False
+        try:
+            self.window.evaluate_js(js_finalizado)
+        except Exception:
+            pass
 
     def _executar_exportacao_xml(self, pasta_destino: str, competencia_str: str):
         """Thread que executa a exportação de XMLs de Serviços Prestados."""
@@ -845,12 +987,17 @@ if __name__ == '__main__':
         api.fechar_app,
         api.abrir_link,
         api.obter_chaves_salvas,
+        api.obter_versao,
         api.salvar_chaves,
         api.confirmar_login_feito,
         api.pausar_automacao,
         api.retomar_automacao,
         api.cancelar_automacao,
         api.processar_xmls_gui,
+        api.processar_xmls_multi_cnpj_gui,
+        api.pausar_processamento_xml,
+        api.retomar_processamento_xml,
+        api.cancelar_processamento_xml,
         api.iniciar_exportacao_xml_gui,
         api.confirmar_login_exportacao,
         api.iniciar_captura_com_movimento_gui,

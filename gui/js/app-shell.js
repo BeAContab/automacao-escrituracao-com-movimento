@@ -2,7 +2,8 @@
 
 const TABS = [
     { id: 'xml', btnId: 'btn-aba-xml', mainId: 'aba-xml', title: 'Processamento de XMLs' },
-    { id: 'automacao', btnId: 'btn-aba-automacao', mainId: 'aba-automacao', title: 'Automação: Escrituração' },
+    { id: 'automacao', btnId: 'btn-aba-automacao', mainId: 'aba-automacao', title: 'Escrituração' },
+    { id: 'xml-multi', btnId: 'btn-aba-xml-multi', mainId: 'aba-xml-multi', title: 'Processar XMLs — Multi-CNPJ' },
     { id: 'exportar', btnId: 'btn-aba-exportar', mainId: 'aba-exportar', title: 'Exportar XML de Prestados' },
     { id: 'captura-movimento', btnId: 'btn-aba-captura-movimento', mainId: 'aba-captura-movimento', title: 'Captura Escrituração (Com Movimento)' },
     { id: 'encerramento-sem-movimento', btnId: 'btn-aba-encerramento-sem-movimento', mainId: 'aba-encerramento-sem-movimento', title: 'Encerramento ISS (Sem Movimento)' },

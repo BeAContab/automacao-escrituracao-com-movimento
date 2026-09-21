@@ -10,6 +10,7 @@ nf_compilado.xlsx
 iss_extracao.xlsx
 .env
 default_keys.py
+_versao.py
 log_erro.txt
 log_execucao.txt
 *.xlsx
