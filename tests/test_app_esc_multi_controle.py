@@ -63,7 +63,7 @@ class TestControleEscrituracaoMulti(unittest.TestCase):
 
         log = self._log_em_arquivo()
         self.assertIn("PAUSA solicitada pelo operador", log)
-        self.assertIn("Execução PAUSADA antes da próxima empresa", log)
+        self.assertIn("Execução PAUSADA no ponto em que estava", log)
         self.assertIn("RETOMADA pelo operador", log)
         self.assertTrue(any("PAUSA solicitada" in c for c in self.janela.js))  # também na tela
         self.assertFalse(controle.em_execucao)

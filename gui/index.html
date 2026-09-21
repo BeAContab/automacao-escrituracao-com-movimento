@@ -379,8 +379,8 @@ tailwind.config = {
         <div class="max-w-[1440px] mx-auto space-y-lg">
             <div>
                 <h1 class="font-headline-lg text-headline-lg text-on-surface">Escrituração — Multi-CNPJ</h1>
-                <span class="inline-block px-sm py-1 mt-xs mr-xs bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes — Etapa 1</span>
-                <p class="font-body-md text-body-md text-on-surface-variant mt-xs max-w-[850px]">Usa a planilha gerada em <strong class="text-secondary">Processar XMLs — Multi-CNPJ</strong> (com <strong class="text-secondary">CNPJ_TOMADOR</strong>, <strong class="text-secondary">LOGIN</strong> e <strong class="text-secondary">SENHA</strong> preenchidos). Nesta etapa o robô apenas <strong class="text-secondary">valida os acessos</strong>: para cada empresa faz login no portal ISS, seleciona e confere o CNPJ e faz logout — <strong class="text-secondary">nenhuma nota é escriturada</strong>. Empresa com problema é pulada e o robô segue para a próxima.</p>
+                <span class="inline-block px-sm py-1 mt-xs mr-xs bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes — Etapa 2</span>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-xs max-w-[850px]">Usa a planilha gerada em <strong class="text-secondary">Processar XMLs — Multi-CNPJ</strong> (com <strong class="text-secondary">CNPJ_TOMADOR</strong>, <strong class="text-secondary">LOGIN</strong> e <strong class="text-secondary">SENHA</strong> preenchidos). Para cada empresa o robô faz login no portal ISS, seleciona e confere o CNPJ, <strong class="text-secondary">escritura as notas</strong> da competência escolhida e faz logout. Empresa com problema é pulada e o robô segue para a próxima. Comece sempre por <strong class="text-secondary">validar os acessos</strong> e depois <strong class="text-secondary">simular</strong> (preenche os campos e <strong class="text-secondary">não grava nada</strong>).</p>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
@@ -394,11 +394,44 @@ tailwind.config = {
                             <span class="material-symbols-outlined text-secondary text-[32px] mb-xs">upload_file</span>
                             <p id="lbl-planilha-esc-multi" class="font-body-sm text-body-sm text-on-surface-variant break-all">Clique para selecionar a planilha (.xlsx)...</p>
                         </div>
-                        <label class="flex items-start gap-sm text-on-surface-variant">
-                            <input id="chk-apenas-validar-esc-multi" type="checkbox" checked disabled class="mt-1">
-                            <span class="font-body-sm text-body-sm"><strong class="text-secondary">Apenas validar acessos</strong> (login, seleção do CNPJ e logout, sem escriturar). A escrituração das notas chega na próxima etapa.</span>
+                        <label class="flex items-start gap-sm text-on-surface-variant cursor-pointer">
+                            <input id="chk-apenas-validar-esc-multi" type="checkbox" checked onchange="atualizarModoEscMulti()" class="mt-1">
+                            <span class="font-body-sm text-body-sm"><strong class="text-secondary">Apenas validar acessos</strong> (login, seleção do CNPJ e logout, sem preencher nem escriturar nenhuma nota). Desmarque para simular ou escriturar.</span>
                         </label>
-                        <span class="font-body-sm text-body-sm text-on-surface-variant">O log da execução é salvo na mesma pasta da planilha. Por segurança, as senhas nunca são gravadas nem exibidas no log.</span>
+
+                        <div id="bloco-modo-esc-multi" class="hidden flex flex-col gap-md p-md rounded-lg border border-outline-variant bg-surface-container-low">
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Mês Competência</label>
+                                    <select id="select-mes-esc-multi" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="">Selecione…</option>
+                                        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+                                        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+                                        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+                                        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Ano Competência</label>
+                                    <select id="select-ano-esc-multi" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="">Selecione…</option>
+                                        <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <span class="font-body-sm text-body-sm text-on-surface-variant -mt-xs">A competência vale para todas as empresas da planilha.</span>
+
+                            <label class="flex items-start gap-sm cursor-pointer">
+                                <input type="radio" name="modo-esc-multi" value="simular" checked onchange="atualizarModoEscMulti()" class="mt-1">
+                                <span class="font-body-sm text-body-sm text-on-surface-variant"><strong class="text-secondary">Simular (não grava)</strong> — preenche os campos exatamente como na escrituração real e <strong>para antes de "Gravar"</strong>. Nada é gravado no portal. Recomendado antes de escriturar.</span>
+                            </label>
+                            <label class="flex items-start gap-sm cursor-pointer">
+                                <input type="radio" name="modo-esc-multi" value="escriturar" onchange="atualizarModoEscMulti()" class="mt-1">
+                                <span class="font-body-sm text-body-sm text-on-surface-variant"><strong class="text-error">Escriturar de verdade</strong> — <strong>grava as notas no portal ISS</strong>. Pede confirmação antes de começar. Ao repetir, notas e empresas já escrituradas nesta competência são puladas.</span>
+                            </label>
+                        </div>
+
+                        <span class="font-body-sm text-body-sm text-on-surface-variant">O log da execução e os logs das notas ficam na mesma pasta da planilha (sem subpastas, com o CNPJ em cada linha, sem apagar os anteriores). Por segurança, as senhas nunca são gravadas nem exibidas.</span>
                         <button id="btn-iniciar-esc-multi" onclick="iniciarEscrituracaoMulti()" class="w-full bg-primary-container text-white font-label-md text-label-md py-md rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
                             <span class="material-symbols-outlined">verified_user</span>
                             Validar Acessos

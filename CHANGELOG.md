@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [2.45.0] - 2026-09-21
+
+### Adicionado
+- **Tela da Escrituração — Multi-CNPJ com os três modos** (`gui/index.html`, `gui/js/tab-esc-multi.js`; `app.py`, `iniciar_escrituracao_multi_gui`/`_executar_escrituracao_multi`; `tests/test_app_esc_multi_etapa2.py`): passo 3 da Etapa 2. A caixa **"Apenas validar acessos" vem marcada por padrão** (como na Etapa 1). Ao desmarcá-la aparecem o **mês/ano da competência** (uma só para todas as empresas; sem valor pré-selecionado, para a escolha ser consciente) e a escolha entre **"Simular (não grava)"** — já selecionada por padrão — e **"Escriturar de verdade"**. O botão principal muda de texto e de cor conforme o modo (vermelho ao escriturar) e as opções ficam travadas durante a execução.
+- **Escriturar de verdade nunca começa sem confirmação**: a tela mostra a planilha e a competência, avisa que **grava no portal** e pergunta se a simulação já foi conferida; se o operador recusar, nada é feito. Como defesa em profundidade, o backend recusa o modo "escriturar" se não receber a confirmação (aceita só o valor booleano `True`) e recusa competência inválida/vazia, modo desconhecido, planilha inexistente ou outra escrituração já em andamento (trava compartilhada com a Escrituração comum).
+- **Pausar vale dentro da empresa**: o robô consulta a pausa a cada clique (ligação com o controle próprio do robô, zerado ao terminar), então "Pausar" para no próximo ponto seguro, mesmo no meio de uma empresa; o log explica que a sessão do portal expira após ~20 min sem ação e que, se a pausa passar disso, a empresa em andamento será refeita depois (só as notas que faltam). "Parar" interrompe a empresa em andamento, faz logout, fecha o navegador e mantém salvo o que já foi escriturado.
+- **Log**: o log da execução (`log_execucao_<data_hora>.txt`, na pasta da planilha) traz o CNPJ nas linhas do robô e a pré-análise por empresa; os **marcos internos do robô vão só para o arquivo** (linhas `[detalhe]`), deixando a tela limpa.
+- **Pré-análise e leitura das notas**: em "validar acessos" a pré-análise é opcional (se a planilha não tiver as colunas do robô, avisa e segue só com a validação); em simular/escriturar a planilha precisa ter as colunas do robô, senão a execução para antes de abrir o navegador.
+- 13 testes novos no nível do `app.py` (recusas, simulação e escrituração de ponta a ponta com o robô dublado, retomada, pausa no meio da empresa, parada) e a tela foi exercitada no navegador embutido com uma API falsa (modos, competência obrigatória, confirmação, travas e resumo com os novos status). Nenhum teste grava nota nem toca o portal.
+
+### Alterado
+- Textos de pausa/parada da Escrituração Multi-CNPJ atualizados para o novo comportamento (pausa dentro da empresa; parada interrompe a empresa em andamento).
+
 ## [2.44.0] - 2026-09-21
 
 ### Adicionado

@@ -1,5 +1,6 @@
 // ---- Escrituração — Multi-CNPJ ----
-// Etapa 1: apenas valida o acesso de cada empresa (login, seleção/conferência do CNPJ, logout).
+// Três modos: validar acessos (login, seleção/conferência do CNPJ e logout), simular (preenche os campos
+// e NÃO grava) e escriturar de verdade (grava no portal — sempre com confirmação do operador).
 
 let escMultiPausado = false;
 
@@ -13,11 +14,73 @@ async function selecionarPlanilhaEscMulti() {
     }
 }
 
+// Modo escolhido na tela: 'validar' | 'simular' | 'escriturar'
+function modoEscMulti() {
+    if (document.getElementById('chk-apenas-validar-esc-multi').checked) return 'validar';
+    const escolhido = document.querySelector('input[name="modo-esc-multi"]:checked');
+    return escolhido ? escolhido.value : 'simular';
+}
+
+const TEXTOS_MODO_ESC_MULTI = {
+    validar: { icone: 'verified_user', rotulo: 'Validar Acessos', perigo: false },
+    simular: { icone: 'science', rotulo: 'Simular Escrituração (não grava)', perigo: false },
+    escriturar: { icone: 'edit_note', rotulo: 'Escriturar de Verdade', perigo: true },
+};
+
+// Ajusta a tela ao modo: mostra/oculta competência e opções, e troca o texto/cor do botão principal.
+function atualizarModoEscMulti() {
+    const modo = modoEscMulti();
+    document.getElementById('bloco-modo-esc-multi').classList.toggle('hidden', modo === 'validar');
+    const btn = document.getElementById('btn-iniciar-esc-multi');
+    if (btn.disabled) return;  // em execução: o botão mostra "Executando..."
+    const t = TEXTOS_MODO_ESC_MULTI[modo];
+    btn.innerHTML = `<span class="material-symbols-outlined">${t.icone}</span> ${t.rotulo}`;
+    btn.classList.toggle('bg-primary-container', !t.perigo);
+    btn.classList.toggle('bg-error', t.perigo);
+}
+
+// Trava/destrava as opções enquanto a execução está em andamento.
+function bloquearOpcoesEscMulti(bloquear) {
+    ['chk-apenas-validar-esc-multi', 'select-mes-esc-multi', 'select-ano-esc-multi'].forEach(id => {
+        document.getElementById(id).disabled = bloquear;
+    });
+    document.querySelectorAll('input[name="modo-esc-multi"]').forEach(r => { r.disabled = bloquear; });
+}
+
 async function iniciarEscrituracaoMulti() {
     const planilha = (window._planilhaEscMulti || '').trim();
     if (!planilha) {
         addLogEscMulti('Selecione a planilha do Multi-CNPJ (com CNPJ_TOMADOR, LOGIN e SENHA preenchidos).', true);
         return;
+    }
+
+    const modo = modoEscMulti();
+    let competencia = '';
+    if (modo !== 'validar') {
+        const mes = document.getElementById('select-mes-esc-multi').value;
+        const ano = document.getElementById('select-ano-esc-multi').value;
+        if (!mes || !ano) {
+            addLogEscMulti('Selecione o mês e o ano da competência.', true);
+            return;
+        }
+        competencia = `${mes}/${ano}`;
+    }
+
+    // Escriturar de verdade GRAVA no portal: nunca começa sem a confirmação explícita do operador.
+    let confirmado = false;
+    if (modo === 'escriturar') {
+        confirmado = confirm(
+            'ESCRITURAR DE VERDADE\n\n' +
+            'O robô vai GRAVAR as notas da planilha no portal ISS, empresa por empresa.\n\n' +
+            `Planilha: ${planilha}\n` +
+            `Competência: ${competencia} (para todas as empresas)\n\n` +
+            'Você já fez a simulação e conferiu o resultado?\n\n' +
+            'Deseja realmente começar a escriturar?'
+        );
+        if (!confirmado) {
+            addLogEscMulti('Escrituração cancelada antes de começar. Nada foi feito.');
+            return;
+        }
     }
 
     document.getElementById('log-esc-multi').innerHTML = '';
@@ -28,6 +91,7 @@ async function iniciarEscrituracaoMulti() {
     const btn = document.getElementById('btn-iniciar-esc-multi');
     btn.disabled = true;
     btn.innerHTML = '<span class="material-symbols-outlined" style="animation: spin 1s linear infinite; display:inline-block;">progress_activity</span> Executando...';
+    bloquearOpcoesEscMulti(true);
 
     escMultiPausado = false;
     document.getElementById('lbl-pausar-esc-multi').innerText = 'Pausar';
@@ -37,7 +101,7 @@ async function iniciarEscrituracaoMulti() {
 
     if (window.pywebview && window.pywebview.api) {
         try {
-            await window.pywebview.api.iniciar_escrituracao_multi_gui(planilha);
+            await window.pywebview.api.iniciar_escrituracao_multi_gui(planilha, modo, competencia, confirmado);
         } catch (e) {
             addLogEscMulti('Erro ao iniciar a Escrituração Multi-CNPJ: ' + e, true);
             escMultiFinalizado();
@@ -63,7 +127,8 @@ function alternarPausaEscMulti() {
 function pararEscrituracaoMulti() {
     if (!window.pywebview || !window.pywebview.api) return;
     const confirmado = confirm(
-        'Parar a execução?\n\nO robô conclui a etapa em andamento, faz logout do portal e fecha o navegador. ' +
+        'Parar a execução?\n\nO robô interrompe a empresa em andamento, faz logout do portal e fecha o navegador. ' +
+        'Notas já escrituradas ficam salvas (não serão repetidas ao executar de novo). ' +
         'As empresas que ainda não foram acessadas ficam como "Cancelada".'
     );
     if (!confirmado) return;
@@ -76,7 +141,8 @@ function escMultiFinalizado() {
     document.getElementById('controles-esc-multi').classList.add('hidden');
     const btn = document.getElementById('btn-iniciar-esc-multi');
     btn.disabled = false;
-    btn.innerHTML = '<span class="material-symbols-outlined">verified_user</span> Validar Acessos';
+    bloquearOpcoesEscMulti(false);
+    atualizarModoEscMulti();
 }
 window.esc_multi_finalizado = escMultiFinalizado;
 

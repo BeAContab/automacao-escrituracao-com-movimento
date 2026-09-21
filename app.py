@@ -18,7 +18,14 @@ from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competen
 from exportador_xml_prestados import executar_exportacao_xml_prestados
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
 from processamento_xml import processar_pasta_xmls_auto, processar_pasta_multi_cnpj
-from escrituracao_multi_cnpj import executar_escrituracao_multi_cnpj, AcessoIssSelenium
+import escrituracao_multi_robo
+from escrituracao_multi_cnpj import (
+    executar_escrituracao_multi_cnpj,
+    AcessoIssSelenium,
+    carregar_documentos_por_empresa,
+    criar_analisador_de_empresa,
+    criar_escriturador_de_empresa,
+)
 from core.captura_escrituracao_com_movimento.procedures import baixar_certificado_escrituracao_empresas_iss
 from core.captura_escrituracao_com_movimento.classes import ThreadStoppedException as CapturaThreadStoppedException
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
@@ -546,12 +553,12 @@ class BeAContabAPI:
     _MENSAGENS_PAUSA = {
         "individual": "termina o XML em andamento e aguarda",
         "multi": "termina o XML em andamento e aguarda",
-        "esc_multi": "termina a empresa em andamento (login, conferência e logout) e pausa antes da próxima",
+        "esc_multi": "o robô pausa no próximo ponto seguro (pode ser no meio de uma empresa; a sessão do portal expira após ~20 min sem ação)",
     }
     _MENSAGENS_PARADA = {
         "individual": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
         "multi": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
-        "esc_multi": "finalizando a etapa em andamento, fazendo logout e fechando o navegador",
+        "esc_multi": "interrompendo a empresa em andamento, fazendo logout e fechando o navegador",
     }
 
     def pausar_processamento_xml(self, modo: str = "individual"):
@@ -580,13 +587,39 @@ class BeAContabAPI:
         controle.cancelar.set()
         controle.pausa.set()
 
-    def iniciar_escrituracao_multi_gui(self, planilha: str):
-        """Inicia a Escrituração Multi-CNPJ (Etapa 1: apenas valida os acessos de cada empresa)."""
+    _MODOS_ESCRITURACAO_MULTI = {
+        "validar": "Apenas validar acessos",
+        "simular": "Simulação (nada é gravado)",
+        "escriturar": "Escriturar de verdade",
+    }
+
+    def iniciar_escrituracao_multi_gui(
+        self, planilha: str, modo: str = "validar", competencia: str = "", confirmado: bool = False
+    ):
+        """Inicia a Escrituração Multi-CNPJ.
+
+        `modo`: "validar" (só login/empresa/CNPJ/logout), "simular" (preenche os campos e NÃO grava) ou
+        "escriturar" (grava no portal — exige `confirmado=True`, dado só depois da confirmação na tela).
+        Simular e escriturar exigem a `competencia` no formato MM/AAAA.
+        """
         controle = self._controles_xml["esc_multi"]
-        if not planilha or not Path(planilha).is_file():
-            self.window.evaluate_js("window.log_esc_multi('Selecione a planilha do Multi-CNPJ.', true)")
+
+        def recusar(mensagem: str) -> None:
+            self.window.evaluate_js(f"window.log_esc_multi({json.dumps(mensagem)}, true)")
             self.window.evaluate_js("window.esc_multi_finalizado()")
-            return
+
+        if not planilha or not Path(planilha).is_file():
+            return recusar("Selecione a planilha do Multi-CNPJ.")
+        if modo not in self._MODOS_ESCRITURACAO_MULTI:
+            return recusar(f"Modo desconhecido: {modo!r}.")
+        if modo == "escriturar" and confirmado is not True:
+            # Defesa em profundidade: a tela já pede confirmação, mas gravar no portal nunca é implícito.
+            return recusar("Escriturar de verdade exige a confirmação do operador. Nada foi feito.")
+        if modo != "validar":
+            try:
+                escrituracao_multi_robo.interpretar_competencia(competencia or "")
+            except ValueError as erro:
+                return recusar(f"Competência inválida: {erro}")
         with controle.lock:
             if controle.em_execucao:
                 self.window.evaluate_js("window.log_esc_multi('A Escrituração Multi-CNPJ já está em andamento!', true)")
@@ -598,19 +631,28 @@ class BeAContabAPI:
             if self._automacao_em_execucao:
                 with controle.lock:
                     controle.em_execucao = False
-                self.window.evaluate_js(
-                    "window.log_esc_multi('Outra automação de escrituração já está em andamento. Aguarde terminar.', true)"
-                )
-                self.window.evaluate_js("window.esc_multi_finalizado()")
-                return
+                return recusar("Outra automação de escrituração já está em andamento. Aguarde terminar.")
             self._automacao_em_execucao = True
         controle.reiniciar()
-        threading.Thread(target=self._executar_escrituracao_multi, args=(planilha,), daemon=True).start()
+        threading.Thread(
+            target=self._executar_escrituracao_multi, args=(planilha, modo, competencia), daemon=True
+        ).start()
 
-    def _executar_escrituracao_multi(self, planilha: str):
+    def _executar_escrituracao_multi(self, planilha: str, modo: str = "validar", competencia_texto: str = ""):
         """Thread da Escrituração Multi-CNPJ. O log único fica na mesma pasta da planilha."""
-        caminho_log = self._abrir_arquivo_log(Path(planilha).parent)
+        pasta_planilha = Path(planilha).parent
+        caminho_log = self._abrir_arquivo_log(pasta_planilha)
         log_gui = self._criar_log_gui("log_esc_multi", caminho_log)
+
+        def log_marco(mensagem: str) -> None:
+            """Marcos internos do robô: só no arquivo de log (a tela fica limpa)."""
+            if caminho_log:
+                try:
+                    with _LOCK_ARQUIVO_LOG:
+                        with caminho_log.open("a", encoding="utf-8") as arquivo:
+                            arquivo.write(f"[{datetime.now().strftime('%H:%M:%S')}] [detalhe] {mensagem}\n")
+                except Exception:
+                    pass
 
         def callback_progresso(porcentagem: int, status: str) -> None:
             try:
@@ -622,22 +664,58 @@ class BeAContabAPI:
         controle.log = log_gui
 
         def aguardar_pausa() -> None:
-            # A pausa vale entre empresas: a anterior já fez logout e a próxima ainda não começou.
+            # Chamado a cada clique do robô e entre as empresas: só registra e espera quando estiver pausado.
             if not controle.pausa.is_set():
-                log_gui("Execução PAUSADA antes da próxima empresa (a anterior já fez logout). "
-                        "Clique em Continuar para seguir ou em Parar para encerrar.")
+                log_gui("Execução PAUSADA no ponto em que estava. A sessão do portal expira após ~20 min sem "
+                        "ação: se a pausa passar disso, a empresa em andamento será refeita depois (só as notas "
+                        "que faltam). Clique em Continuar para seguir ou em Parar para encerrar.")
             controle.pausa.wait()
 
+        simulacao = modo == "simular"
+        usa_robo = modo != "validar"
         try:
+            processar_empresa = None
+            analisar_empresa = None
+            competencia_rotulo = None
+            competencia = None
+            try:
+                documentos = carregar_documentos_por_empresa(Path(planilha))
+            except Exception as erro:
+                if usa_robo:
+                    log_gui(f"Não consegui ler as notas da planilha: {erro}", True)
+                    self.window.evaluate_js("window.update_progresso_esc_multi(100, 'Planilha inválida')")
+                    return
+                documentos = None
+                log_gui(f"Pré-análise das notas indisponível ({erro}); seguindo só com a validação de acessos.")
+            if documentos is not None:
+                analisar_empresa = criar_analisador_de_empresa(documentos)
+            if usa_robo:
+                competencia = escrituracao_multi_robo.interpretar_competencia(competencia_texto)
+                competencia_rotulo = competencia.rotulo
+                log_gui(f"Competência: {competencia.rotulo}. Modo: {self._MODOS_ESCRITURACAO_MULTI[modo]}. "
+                        f"Os logs das notas ficam na pasta da planilha: {pasta_planilha}")
+                registro = escrituracao_multi_robo.RegistroNotas(
+                    pasta_planilha, competencia.rotulo, self._MODOS_ESCRITURACAO_MULTI[modo]
+                )
+                processar_empresa = criar_escriturador_de_empresa(
+                    documentos, competencia, Path(planilha), registro, simulacao=simulacao,
+                    callback_log=log_gui, callback_progresso=callback_progresso, callback_evento=log_marco,
+                )
+                escrituracao_multi_robo.configurar_controle(aguardar_pausa, controle.cancelado)
+
             resultado = executar_escrituracao_multi_cnpj(
                 Path(planilha),
                 criar_acesso=lambda: AcessoIssSelenium(
                     callback_log=log_gui, callback_cancelamento=controle.cancelado
                 ),
+                processar_empresa=processar_empresa,
                 callback_log=log_gui,
                 callback_progresso=callback_progresso,
                 callback_pausa=aguardar_pausa,
                 callback_cancelamento=controle.cancelado,
+                simulacao=simulacao,
+                competencia=competencia_rotulo,
+                analisar_empresa=analisar_empresa,
             )
             try:
                 self.window.evaluate_js(f"window.mostrar_resumo_esc_multi({json.dumps(resultado.para_json())})")
@@ -648,11 +726,15 @@ class BeAContabAPI:
             log_gui(f"Erro crítico na Escrituração Multi-CNPJ: {e}", is_error=True)
             self.window.evaluate_js("window.update_progresso_esc_multi(100, 'Falha na execução')")
         finally:
+            if usa_robo:
+                escrituracao_multi_robo.configurar_controle()
+                escrituracao_multi_robo.configurar_saida()
             if not controle.pausa.is_set():
-                log_gui("A pausa solicitada não chegou a valer: a execução terminou antes de haver uma próxima empresa.")
+                log_gui("A pausa solicitada não chegou a valer: a execução terminou antes do próximo ponto de pausa.")
             with self._lock_automacao:
                 self._automacao_em_execucao = False
             self._finalizar_processamento_xml("esc_multi", "window.esc_multi_finalizado()")
+
 
     def iniciar_exportacao_xml_gui(self, pasta_destino: str, competencia_str: str):
         """Dispara a automação de exportação de XMLs de Serviços Prestados em uma thread separada."""
