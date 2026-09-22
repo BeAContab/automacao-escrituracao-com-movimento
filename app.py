@@ -29,6 +29,9 @@ from escrituracao_multi_cnpj import (
 from core.captura_escrituracao_com_movimento.procedures import baixar_certificado_escrituracao_empresas_iss
 from core.captura_escrituracao_com_movimento.classes import ThreadStoppedException as CapturaThreadStoppedException
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
+from core.encerramento_iss_sem_movimento.controladores.encerramento_iss_multi_periodo import (
+    ControladorEncerramentoISSMultiPeriodo,
+)
 from core.encerramento_iss_sem_movimento.iss.credenciais import CredenciaisISSFortaleza
 from core.encerramento_iss_sem_movimento.utils.classes import UserStoppedThreadException
 from nfse_nacional_downloader import (
@@ -154,6 +157,12 @@ class BeAContabAPI:
         self._encerramento_sem_movimento_em_execucao = False
         self._lock_encerramento_sem_movimento = threading.Lock()
         self._cancelar_encerramento_sem_movimento_event = threading.Event()
+
+        # Idem para a aba "Encerramento ISS — Múltiplos Meses" (robô independente do de cima:
+        # ver core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py)
+        self._encerramento_multi_periodo_em_execucao = False
+        self._lock_encerramento_multi_periodo = threading.Lock()
+        self._cancelar_encerramento_multi_periodo_event = threading.Event()
 
         # Idem para a aba "Baixar NFS-e (Portal Nacional)"
         self._nfse_nacional_em_execucao = False
@@ -1055,6 +1064,78 @@ class BeAContabAPI:
             with self._lock_encerramento_sem_movimento:
                 self._encerramento_sem_movimento_em_execucao = False
 
+    def iniciar_encerramento_multi_periodo_gui(self, planilha_path, saida_dir, competencias_lista,
+                                                chrome_path, url_portal, cpf, senha):
+        """Dispara o Encerramento ISS — Múltiplos Meses em uma thread separada. `competencias_lista`
+        é uma lista de strings "MM/AAAA" (a competência única da função de cima vira uma lista aqui)."""
+        with self._lock_encerramento_multi_periodo:
+            if self._encerramento_multi_periodo_em_execucao:
+                self.window.evaluate_js("window.log_encerramento_multi('Erro: o encerramento já está em andamento!', true)")
+                return
+            self._encerramento_multi_periodo_em_execucao = True
+
+        self._cancelar_encerramento_multi_periodo_event.clear()
+        threading.Thread(
+            target=self._processar_encerramento_multi_periodo,
+            args=(planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha),
+            daemon=True
+        ).start()
+
+    def cancelar_encerramento_multi_periodo(self):
+        self._cancelar_encerramento_multi_periodo_event.set()
+
+    def _processar_encerramento_multi_periodo(self, planilha_path, saida_dir, competencias_lista,
+                                               chrome_path, url_portal, cpf, senha):
+        caminho_log = self._abrir_arquivo_log(saida_dir)
+        log_gui = self._criar_log_gui("log_encerramento_multi", caminho_log)
+
+        def sink_loguru(mensagem):
+            registro = mensagem.record
+            log_gui(registro["message"], registro["level"].name in ("ERROR", "CRITICAL"))
+
+        # Mesmo adaptador de cancelamento usado na Captura Escrituração/Encerramento (ver comentário lá).
+        def check_thread_stopped_cb():
+            if self._cancelar_encerramento_multi_periodo_event.is_set():
+                raise UserStoppedThreadException()
+
+        sink_id = logger.add(sink_loguru, level="INFO", enqueue=True)
+        try:
+            competencias = []
+            for competencia_str in competencias_lista:
+                mes_str, ano_str = competencia_str.split("/")
+                competencias.append(date(int(ano_str), int(mes_str), 1))
+            caminho_template = Path(obter_caminho_recurso("core/templates/template_relatorio_execucao.xlsx"))
+
+            controlador = ControladorEncerramentoISSMultiPeriodo(
+                caminho_planilha=Path(planilha_path),
+                caminho_saida=Path(saida_dir),
+                caminho_webdriver=Path(chrome_path),
+                url_iss_fortaleza=url_portal,
+                credenciais=CredenciaisISSFortaleza(cpf=SecretStr(cpf), senha=SecretStr(senha)),
+                competencias=competencias,
+                caminho_template_relatorio=caminho_template,
+                check_thread_stopped_callback=check_thread_stopped_cb,
+            )
+            resultado = controlador.executar_processo()
+
+            resumo = json.dumps({
+                "processadas": resultado.processadas,
+                "encerradas": resultado.encerradas,
+                "problemas": resultado.problemas,
+                "report_paths": [str(p) for p in resultado.report_paths],
+                "pasta_saida": str(saida_dir),
+            })
+            self.window.evaluate_js(f"window.mostrar_resumo_encerramento_multi({resumo})")
+            log_gui("Encerramento ISS — Múltiplos Meses concluído.")
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO ENCERRAMENTO MULTI-PERÍODO] {tb}")
+            log_gui(f"Erro crítico no encerramento: {e}", True)
+        finally:
+            logger.remove(sink_id)
+            with self._lock_encerramento_multi_periodo:
+                self._encerramento_multi_periodo_em_execucao = False
+
     def selecionar_certificado_windows_gui(self):
         """Abre o seletor nativo do Windows para escolher um certificado já instalado
         no repositório 'Pessoal' do usuário atual. Retorna {"thumbprint", "subject"}
@@ -1207,6 +1288,8 @@ if __name__ == '__main__':
         api.cancelar_captura_com_movimento,
         api.iniciar_encerramento_sem_movimento_gui,
         api.cancelar_encerramento_sem_movimento,
+        api.iniciar_encerramento_multi_periodo_gui,
+        api.cancelar_encerramento_multi_periodo,
         api.selecionar_arquivo_certificado,
         api.selecionar_certificado_windows_gui,
         api.obter_ultimo_certificado_nfse_nacional,

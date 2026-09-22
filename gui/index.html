@@ -180,6 +180,11 @@ tailwind.config = {
                 <span class="font-label-md text-label-md flex-1">Encerramento ISS</span>
                 <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
             </a>
+            <a id="btn-aba-encerramento-multi-periodo" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+                <span class="material-symbols-outlined">event_repeat</span>
+                <span class="font-label-md text-label-md flex-1">Encerramento ISS — Múltiplos Meses</span>
+                <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+            </a>
         </div>
     </div>
 
@@ -936,6 +941,128 @@ tailwind.config = {
         </div>
     </main>
 
+    <!-- ============ ABA: Encerramento ISS — Múltiplos Meses ============ -->
+    <main id="aba-encerramento-multi-periodo" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <div class="flex items-center gap-sm">
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">Encerramento ISS — Múltiplos Meses</h1>
+                    <span class="px-sm py-1 bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes</span>
+                    <span class="inline-flex items-center gap-1.5 px-sm py-1 bg-primary-container/15 text-primary-container rounded-full text-[10px] font-bold uppercase tracking-wider">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary-container blink"></span>
+                        Robô de Encerramento
+                    </span>
+                </div>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Mesma automação do <strong class="text-secondary">Encerramento ISS</strong>, mas para <strong class="text-secondary">várias competências de uma vez</strong>: para cada empresa da planilha, busca a inscrição uma única vez e processa todos os meses selecionados antes de passar para a próxima empresa. Gera um relatório por competência.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Configuração de Encerramento
+                        </h3>
+                        <div class="flex flex-col gap-lg">
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Planilha Fiscal (.xlsx)</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-planilha-encerramento-multi" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a planilha fiscal..."/>
+                                    <button onclick="selecionarPlanilhaEncerramentoMulti()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Saída</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-saida-encerramento-multi" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a pasta de saída..."/>
+                                    <button onclick="selecionarSaidaEncerramentoMulti()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Competências (mês/ano)</label>
+                                <div class="grid grid-cols-[1fr_1fr_auto] gap-sm">
+                                    <select id="select-mes-encerramento-multi" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+                                        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+                                        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+                                        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+                                    </select>
+                                    <select id="select-ano-encerramento-multi" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white">
+                                        <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option><option value="2023">2023</option>
+                                    </select>
+                                    <button onclick="adicionarCompetenciaEncerramentoMulti()" type="button" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-[18px]">add</span>
+                                    </button>
+                                </div>
+                                <div id="lista-competencias-encerramento-multi" class="flex flex-wrap gap-xs min-h-[2rem]">
+                                    <p class="font-body-sm text-body-sm text-on-surface-variant/70 italic">Nenhuma competência adicionada ainda.</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-sm">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">CPF (Portal ISS)</label>
+                                    <input id="input-cpf-encerramento-multi" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" placeholder="000.000.000-00"/>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="font-label-md text-label-md text-on-surface-variant">Senha</label>
+                                    <input id="input-senha-encerramento-multi" type="password" class="w-full input-border rounded-lg py-sm px-sm text-sm outline-none bg-white" placeholder="••••••••"/>
+                                </div>
+                            </div>
+                            <details class="text-sm">
+                                <summary class="font-label-md text-label-md text-secondary cursor-pointer select-none">Configurações Avançadas</summary>
+                                <div class="flex flex-col gap-md mt-sm">
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">Caminho do Chrome</label>
+                                        <input id="input-chrome-encerramento-multi" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" value="C:\Program Files\Google\Chrome\Application\chrome.exe"/>
+                                    </div>
+                                    <div class="flex flex-col gap-xs">
+                                        <label class="font-label-md text-label-md text-on-surface-variant">URL do Portal</label>
+                                        <input id="input-url-encerramento-multi" type="text" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" value="https://iss.fortaleza.ce.gov.br/grpfor/login.seam"/>
+                                    </div>
+                                </div>
+                            </details>
+                            <button id="btn-iniciar-encerramento-multi" onclick="iniciarEncerramentoMultiPeriodo()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined">send</span>
+                                Realizar Encerramento
+                            </button>
+                            <button id="btn-cancelar-encerramento-multi" onclick="cancelarEncerramentoMultiPeriodo()" class="hidden w-full border border-error text-error py-sm rounded-lg font-bold text-sm hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined text-[16px]">cancel</span>
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="resumo-encerramento-multi" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h4 class="font-headline-sm text-headline-sm font-semibold mb-sm">Resumo da Execução</h4>
+                        <div class="grid grid-cols-3 gap-sm text-center">
+                            <div><p id="resumo-multi-processadas" class="font-headline-md text-headline-md">0</p><p class="font-label-md text-label-md text-on-surface-variant">Processadas</p></div>
+                            <div><p id="resumo-multi-encerradas" class="font-headline-md text-headline-md text-secondary">0</p><p class="font-label-md text-label-md text-on-surface-variant">Encerradas</p></div>
+                            <div><p id="resumo-multi-problemas" class="font-headline-md text-headline-md text-error">0</p><p class="font-label-md text-label-md text-on-surface-variant">Problemas</p></div>
+                        </div>
+                        <button id="btn-abrir-relatorios-encerramento-multi" onclick="abrirPastaRelatoriosEncerramentoMulti()" class="hidden w-full mt-md border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors">Abrir Pasta com os Relatórios Gerados</button>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                encerramento_iss_multi_periodo_output.log
+                            </span>
+                            <button onclick="limparLogEncerramentoMulti()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-encerramento-multi" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início do encerramento...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
     <!-- ============ ABA: Baixar NFS-e (Portal Nacional) ============ -->
     <main id="aba-nfse-nacional" class="flex-1 p-margin bg-background">
         <div class="max-w-[1440px] mx-auto space-y-lg">
@@ -1083,6 +1210,7 @@ tailwind.config = {
 <script src="js/tab-exportar.js"></script>
 <script src="js/tab-captura-com-movimento.js"></script>
 <script src="js/tab-encerramento-sem-movimento.js"></script>
+<script src="js/tab-encerramento-multi-periodo.js"></script>
 <script src="js/tab-nfse-nacional.js"></script>
 </body>
 </html>
