@@ -16,6 +16,7 @@ from loguru import logger
 # Importar lógicas do projeto
 from iss_fortaleza_automacao import executar_automacao_iss, interpretar_competencia, AutomacaoCanceladaError
 from exportador_xml_prestados import executar_exportacao_xml_prestados
+from iss_athenas_core import processar_arquivo as athenas_processar_arquivo, salvar_log_erros as athenas_salvar_log_erros
 from tratamento_erros import registrar_erro, registrar_evento_execucao, configurar_pastas_logs
 from processamento_xml import processar_pasta_xmls_auto, processar_pasta_multi_cnpj
 import escrituracao_multi_robo
@@ -170,6 +171,11 @@ class BeAContabAPI:
         self._lock_nfse_nacional = threading.Lock()
         self._cancelar_nfse_nacional_event = threading.Event()
 
+        # Idem para a aba "Importar para Athenas" — sem pausar/cancelar: não abre
+        # navegador, é só leitura/escrita de planilha (segundos por arquivo).
+        self._athenas_em_execucao = False
+        self._lock_athenas = threading.Lock()
+
         # Carrega chaves salvas para as variáveis de ambiente na inicialização
         try:
             chaves = self.obter_chaves_salvas()
@@ -246,6 +252,15 @@ class BeAContabAPI:
         if result:
             return result[0]
         return None
+
+    def selecionar_arquivos_athenas(self):
+        """Seletor multi-arquivo para "Importar para Athenas" (um ou mais arquivos do ISS Fortaleza)."""
+        result = self.window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=True,
+            file_types=('Excel Files (*.xlsx;*.xls)', 'All files (*.*)')
+        )
+        return list(result) if result else []
 
     def selecionar_arquivo(self):
         result = self.window.create_file_dialog(
@@ -948,6 +963,98 @@ class BeAContabAPI:
             print(f"Erro ao confirmar login de exportação: {e}")
             return False
 
+    def iniciar_athenas_gui(self, arquivos: list, regimes: list, pasta_saida: str):
+        """Dispara a conversão "Importar para Athenas" em uma thread separada.
+
+        `arquivos` e `regimes` têm o mesmo tamanho — `regimes[i]` ('normal'/'simples')
+        é o regime tributário do arquivo `arquivos[i]` (só é considerado nas notas de
+        Serviços Prestados). Sem pausar/cancelar: é leitura/escrita de planilha,
+        sem portal, dura segundos por arquivo.
+        """
+        with self._lock_athenas:
+            if self._athenas_em_execucao:
+                self.window.evaluate_js("window.log_athenas('A importação já está em andamento!', true)")
+                return
+            self._athenas_em_execucao = True
+        threading.Thread(
+            target=self._processar_athenas,
+            args=(list(arquivos), list(regimes), pasta_saida),
+            daemon=True
+        ).start()
+
+    def _processar_athenas(self, arquivos: list, regimes: list, pasta_saida: str):
+        """Thread que converte cada arquivo do ISS Fortaleza para o layout Athenas."""
+        caminho_log = self._abrir_arquivo_log(pasta_saida)
+        log_gui = self._criar_log_gui("log_athenas", caminho_log)
+        pasta_saida_path = Path(pasta_saida)
+
+        total_tomados = total_prestados = 0
+        log_erros = []
+        resultados_por_arquivo = []
+
+        try:
+            for indice, (caminho_iss, regime) in enumerate(zip(arquivos, regimes), start=1):
+                nome = Path(caminho_iss).name
+                log_gui(f"--- {nome} ---")
+                try:
+                    self.window.evaluate_js(
+                        f"window.update_progresso_athenas({int((indice - 1) / len(arquivos) * 100)}, "
+                        f"{json.dumps(f'Processando {nome} ({indice}/{len(arquivos)})...')})"
+                    )
+                except Exception:
+                    pass
+                try:
+                    contagem = athenas_processar_arquivo(caminho_iss, regime, pasta_saida_path, log=log_gui)
+                    total_tomados += contagem["tomados"]
+                    total_prestados += contagem["prestados"]
+                    resultados_por_arquivo.append({"arquivo": nome, "ok": True, **contagem})
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    log_gui(f"  ERRO: {e}", is_error=True)
+                    log_erros.append({
+                        "Arquivo": nome,
+                        "Caminho": str(caminho_iss),
+                        "Regime": regime,
+                        "Erro": str(e),
+                        "Detalhes": tb,
+                    })
+                    resultados_por_arquivo.append({"arquivo": nome, "ok": False, "erro": str(e)})
+
+            log_gui("")
+            log_gui(f"TOTAL: {len(arquivos)} empresa(s) | {total_tomados} tomados | {total_prestados} prestados")
+
+            caminho_log_erros = None
+            if log_erros:
+                caminho_log_erros = athenas_salvar_log_erros(log_erros, pasta_saida_path)
+                log_gui(f"Erros em: {', '.join(e['Arquivo'] for e in log_erros)}", is_error=True)
+                log_gui(f"Detalhes salvos em: {caminho_log_erros}", is_error=True)
+            else:
+                log_gui("Concluído!")
+
+            resumo = json.dumps({
+                "total_arquivos": len(arquivos),
+                "tomados": total_tomados,
+                "prestados": total_prestados,
+                "erros": len(log_erros),
+                "resultados": resultados_por_arquivo,
+                "pasta_saida": str(pasta_saida),
+                "caminho_log_erros": str(caminho_log_erros) if caminho_log_erros else None,
+            })
+            self.window.evaluate_js(f"window.mostrar_resumo_athenas({resumo})")
+            self.window.evaluate_js("window.update_progresso_athenas(100, 'Concluído!')")
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"[ERRO INTERNO ATHENAS] {tb}")
+            log_gui(f"Erro crítico na importação para Athenas: {e}", is_error=True)
+            self.window.evaluate_js("window.update_progresso_athenas(100, 'Falha na importação')")
+        finally:
+            with self._lock_athenas:
+                self._athenas_em_execucao = False
+            try:
+                self.window.evaluate_js("window.athenas_finalizado()")
+            except Exception:
+                pass
+
     def iniciar_captura_com_movimento_gui(self, planilha_path, saida_dir, competencia_str, encerramento_str,
                                            chrome_path, url_portal, cpf, senha):
         """Dispara a captura de escrituração (empresas com movimento) em uma thread separada."""
@@ -1283,6 +1390,8 @@ if __name__ == '__main__':
         api.iniciar_automacao,
         api.selecionar_pasta,
         api.selecionar_arquivo,
+        api.selecionar_arquivos_athenas,
+        api.iniciar_athenas_gui,
         api.fechar_app,
         api.abrir_link,
         api.obter_chaves_salvas,

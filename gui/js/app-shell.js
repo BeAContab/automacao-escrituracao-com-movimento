@@ -9,6 +9,7 @@ const TABS = [
     { id: 'captura-movimento', btnId: 'btn-aba-captura-movimento', mainId: 'aba-captura-movimento', title: 'Captura Escrituração (Com Movimento)' },
     { id: 'encerramento-sem-movimento', btnId: 'btn-aba-encerramento-sem-movimento', mainId: 'aba-encerramento-sem-movimento', title: 'Encerramento ISS (Sem Movimento)' },
     { id: 'encerramento-multi-periodo', btnId: 'btn-aba-encerramento-multi-periodo', mainId: 'aba-encerramento-multi-periodo', title: 'Encerramento ISS — Múltiplos Meses' },
+    { id: 'athenas', btnId: 'btn-aba-athenas', mainId: 'aba-athenas', title: 'Importar para Athenas' },
     { id: 'nfse-nacional', btnId: 'btn-aba-nfse-nacional', mainId: 'aba-nfse-nacional', title: 'Baixar NFS-e — Portal Nacional' },
 ];
 

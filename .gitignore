@@ -73,3 +73,10 @@ graphify-out/
 # Pasta de analise ad-hoc com XMLs/planilhas reais de clientes (PII/sigilo),
 # mesma razao do EXEMPLOS/ e teste_de_funcoes/ acima.
 analisar/
+
+# Projeto standalone "ISS Fortaleza -> Athenas" (fonte + build + planilhas reais de
+# clientes) que foi migrado para iss_athenas_core.py. Mantido no disco como referencia
+# (MIGRACAO.md, README.txt), mas fora do controle de versao: ja foi portado para o app,
+# e as planilhas de referencia sao PII/sigilo de cliente real (mesma razao do
+# EXEMPLOS/ acima). Os testes que dependem dela pulam automaticamente quando faltar.
+importar/

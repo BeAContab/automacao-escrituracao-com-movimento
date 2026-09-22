@@ -185,6 +185,11 @@ tailwind.config = {
                 <span class="font-label-md text-label-md flex-1">Encerramento ISS — Múltiplos Meses</span>
                 <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
             </a>
+            <a id="btn-aba-athenas" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+                <span class="material-symbols-outlined">sync_alt</span>
+                <span class="font-label-md text-label-md flex-1">Importar para Athenas</span>
+                <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+            </a>
         </div>
     </div>
 
@@ -1073,6 +1078,93 @@ tailwind.config = {
         </div>
     </main>
 
+    <!-- ============ ABA: Importar para Athenas ============ -->
+    <main id="aba-athenas" class="hidden flex-1 p-margin bg-background">
+        <div class="max-w-[1440px] mx-auto space-y-lg">
+            <div>
+                <div class="flex items-center gap-sm">
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">Importar para Athenas</h1>
+                    <span class="px-sm py-1 bg-error/10 text-error border border-error/30 rounded-full text-[10px] font-bold uppercase tracking-wider">Em Testes</span>
+                </div>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Converte a escrituração exportada do <strong class="text-secondary">ISS Fortaleza</strong> (abas Serviços Tomados e Serviços Prestados) para o layout de importação do <strong class="text-secondary">Athenas ERP</strong>, aplicando as regras de CFOP, retenções federais e ISS retido/próprio. Não usa portal nem navegador — é só leitura e escrita de planilha.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+                <div class="lg:col-span-5 flex flex-col gap-md">
+                    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h3 class="font-headline-sm text-headline-sm font-semibold mb-md flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-secondary">tune</span>
+                            Arquivos do ISS Fortaleza
+                        </h3>
+                        <div class="flex flex-col gap-md">
+                            <div class="flex gap-sm">
+                                <button onclick="adicionarArquivosAthenas()" class="flex-1 px-md py-sm rounded-lg text-sm font-bold bg-primary-container/15 hover:bg-primary-container/25 border border-primary-container/40 text-primary-container transition-colors flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined text-[18px]">add</span>
+                                    Adicionar Arquivos
+                                </button>
+                                <button onclick="limparListaAthenas()" class="px-md py-sm rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Limpar Lista</button>
+                            </div>
+
+                            <div id="lista-arquivos-athenas" class="flex flex-col gap-xs max-h-[280px] overflow-y-auto border border-outline-variant rounded-lg p-sm">
+                                <p id="lista-arquivos-athenas-vazia" class="font-body-sm text-body-sm text-on-surface-variant/70 italic p-sm">Nenhum arquivo adicionado. Clique em "Adicionar Arquivos".</p>
+                            </div>
+
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Saída (mesma para todos os arquivos)</label>
+                                <div class="flex gap-sm">
+                                    <input id="input-pasta-athenas" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a pasta de saída..."/>
+                                    <button onclick="selecionarPastaAthenas()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
+                                </div>
+                            </div>
+
+                            <button id="btn-gerar-athenas" onclick="gerarPlanilhasAthenas()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                                <span class="material-symbols-outlined">file_download</span>
+                                Gerar Planilhas
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="resumo-athenas" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h4 class="font-headline-sm text-headline-sm font-semibold mb-sm">Resumo da Importação</h4>
+                        <div class="grid grid-cols-3 gap-sm text-center">
+                            <div><p id="resumo-athenas-tomados" class="font-headline-md text-headline-md text-secondary">0</p><p class="font-label-md text-label-md text-on-surface-variant">Tomados</p></div>
+                            <div><p id="resumo-athenas-prestados" class="font-headline-md text-headline-md text-secondary">0</p><p class="font-label-md text-label-md text-on-surface-variant">Prestados</p></div>
+                            <div><p id="resumo-athenas-erros" class="font-headline-md text-headline-md text-error">0</p><p class="font-label-md text-label-md text-on-surface-variant">Erros</p></div>
+                        </div>
+                        <button onclick="abrirPastaSaidaAthenas()" class="w-full mt-md border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors">Abrir Pasta de Saída</button>
+                        <button id="btn-abrir-log-erros-athenas" onclick="abrirLogErrosAthenas()" class="hidden w-full mt-sm border border-error text-error font-label-md text-label-md py-sm rounded-lg hover:bg-error/5 transition-colors">Abrir Log de Erros</button>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-7 flex flex-col gap-md">
+                    <div id="progresso-container-athenas" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-md elevation-1">
+                        <div class="flex justify-between items-center text-xs font-bold mb-xs">
+                            <span id="progresso-status-athenas" class="text-secondary">Processando...</span>
+                            <span id="progresso-porcentagem-athenas" class="text-secondary">0%</span>
+                        </div>
+                        <div class="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+                            <div id="progresso-barra-athenas" class="bg-primary-container h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <section class="flex-1 flex flex-col rounded-lg overflow-hidden border border-secondary elevation-2">
+                        <div class="bg-secondary p-sm flex items-center justify-between">
+                            <span class="font-label-md text-label-md text-white flex items-center gap-xs">
+                                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                                iss_athenas_output.log
+                            </span>
+                            <button onclick="limparLogAthenas()" title="Limpar terminal" class="flex items-center text-secondary-fixed-dim hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                            </button>
+                        </div>
+                        <div id="log-athenas" class="log-terminal flex-1 p-md text-xs text-[#a3b8c2] leading-relaxed terminal-scroll" style="height: 480px; max-height: 480px; overflow-y: auto;">
+                            <p class="opacity-60">Aguardando início da importação...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
     <!-- ============ ABA: Baixar NFS-e (Portal Nacional) ============ -->
     <main id="aba-nfse-nacional" class="flex-1 p-margin bg-background">
         <div class="max-w-[1440px] mx-auto space-y-lg">
@@ -1221,6 +1313,7 @@ tailwind.config = {
 <script src="js/tab-captura-com-movimento.js"></script>
 <script src="js/tab-encerramento-sem-movimento.js"></script>
 <script src="js/tab-encerramento-multi-periodo.js"></script>
+<script src="js/tab-athenas.js"></script>
 <script src="js/tab-nfse-nacional.js"></script>
 </body>
 </html>
