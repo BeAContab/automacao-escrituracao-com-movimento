@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [2.49.0] - 2026-09-22
+
+### Adicionado
+- **Nova função "Importar para Athenas"** (novo `iss_athenas_core.py`; `app.py`; `gui/index.html`; `gui/js/tab-athenas.js`): converte a escrituração exportada do ISS Fortaleza (abas Serviços Tomados/Prestados) para o layout de importação do Athenas ERP. Migrada do projeto standalone `importar/Import ISS Fortaleza Athenas/iss_para_athenas.py` (ver `MIGRACAO.md` na mesma pasta) — a lógica de negócio (CFOP, split de PIS/COFINS/CSLL, ISS retido/próprio, ajuste de data por competência, Cod Cliente, formatação) foi trazida **byte a byte igual**, só a interface Tkinter ficou para trás. Item novo em "Outras Funções". Não usa portal nem navegador — é só leitura/escrita de planilha, sem pausar/continuar/parar.
+  - Tela: adiciona um ou mais arquivos `.xlsx` do ISS (com Regime Tributário — Normal ou Simples Nacional — por arquivo), escolhe uma pasta de saída única e gera `Athenas_Tomados_<arquivo>.xlsx`/`Athenas_Prestados_<arquivo>.xlsx` por empresa, mais `Log_Erros_ISS_Athenas.xlsx` se algum arquivo falhar (uma empresa com erro não impede as demais).
+  - Nova dependência: `pandas>=2.0.0` (adicionado ao `requirements.txt`; ainda não verificado no empacotamento do `build.py` — a verificar no próximo instalador gerado).
+  - **Validado com o arquivo de referência real** que a equipe fiscal já aprovou (200 notas de Serviços Tomados, comparação campo a campo por Número+CNPJ do prestador — CNPJ sozinho não é único no arquivo real, números de NF se repetem entre prestadores diferentes): 0 divergências.
+  - **Divergência conhecida e aceita pelo usuário**: o código (fiel ao original) não filtra pela coluna "Status Aceite" do ISS Fortaleza (não documentada em nenhum lugar); a referência validada exclui 4 notas com "Status Aceite" = "Recusada" que o código atual mantém. Decisão explícita: não alterar o comportamento herdado do original.
+  - 43 testes novos: 30 no `iss_athenas_core.py` (casos unitários da árvore de decisão de retenções federais, CFOP, Cod Cliente, ajuste de data, geração de arquivo, log de erros, e a regressão contra a referência real), 7 no backend do `app.py` (processamento por arquivo com regime próprio, soma de totais, erro isolado por arquivo, trava de execução única) e a tela exercitada no navegador embutido com API simulada.
+
 ## [2.48.0] - 2026-09-22
 
 ### Adicionado
