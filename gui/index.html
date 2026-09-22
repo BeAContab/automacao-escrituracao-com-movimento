@@ -161,29 +161,51 @@ tailwind.config = {
             <span class="font-label-md text-label-md flex-1">Escrituração</span>
         </a>
 
-        <p class="px-lg pt-md pb-1 font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider">Outras Funções</p>
-        <a id="btn-aba-exportar" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
-            <span class="material-symbols-outlined">ios_share</span>
-            <span class="font-label-md text-label-md flex-1">Exportar XML de Prestados</span>
-        </a>
-        <a id="btn-aba-captura-movimento" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
-            <span class="material-symbols-outlined">cloud_download</span>
-            <span class="font-label-md text-label-md flex-1">Captura Escrituração</span>
-            <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
-        </a>
-        <a id="btn-aba-encerramento-sem-movimento" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
-            <span class="material-symbols-outlined">check_circle</span>
-            <span class="font-label-md text-label-md flex-1">Encerramento ISS</span>
-            <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
-        </a>
+        <button id="btn-toggle-outras-funcoes" onclick="alternarOutrasFuncoes()" type="button" class="w-full flex items-center gap-xs px-lg pt-md pb-1 cursor-pointer group">
+            <span class="font-label-md text-[10px] text-secondary-fixed-dim/70 uppercase tracking-wider flex-1 text-left">Outras Funções</span>
+            <span id="icone-outras-funcoes" class="material-symbols-outlined text-[16px] text-secondary-fixed-dim/70 transition-transform">expand_more</span>
+        </button>
+        <div id="grupo-outras-funcoes" class="hidden flex flex-col">
+            <a id="btn-aba-exportar" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+                <span class="material-symbols-outlined">ios_share</span>
+                <span class="font-label-md text-label-md flex-1">Exportar XML de Prestados</span>
+            </a>
+            <a id="btn-aba-captura-movimento" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+                <span class="material-symbols-outlined">cloud_download</span>
+                <span class="font-label-md text-label-md flex-1">Captura Escrituração</span>
+                <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+            </a>
+            <a id="btn-aba-encerramento-sem-movimento" href="#" class="nav-item flex items-center gap-md px-lg py-sm rounded-lg cursor-pointer transition-colors text-secondary-fixed-dim hover:bg-on-secondary-fixed-variant hover:text-white">
+                <span class="material-symbols-outlined">check_circle</span>
+                <span class="font-label-md text-label-md flex-1">Encerramento ISS</span>
+                <span class="px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[9px] font-bold tracking-wider">TESTE</span>
+            </a>
+        </div>
     </div>
 
-    <!-- Configuração do Tess AI -->
+    <!-- Rodapé: botão de Configurações Tess AI (abre o modal) + versão do app -->
     <div class="p-lg border-t border-outline-variant/20">
-        <h4 class="font-label-md text-label-md text-secondary-fixed-dim flex items-center gap-xs mb-sm">
+        <button id="btn-abrir-config-tess" onclick="abrirConfigTess()" type="button" class="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-secondary-fixed-dim hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
             <span class="material-symbols-outlined text-[16px]">settings</span>
-            Configuração Tess AI
-        </h4>
+            Configurações Tess AI
+        </button>
+        <!-- Versão preenchida ao abrir, a partir do arquivo VERSION (ver shared.js / app.obter_versao) -->
+        <p id="lbl-versao-app" class="text-center font-label-md text-[10px] text-secondary-fixed-dim/60 mt-sm">&nbsp;</p>
+    </div>
+</nav>
+
+<!-- Modal: Configuração do Tess AI (oculta por padrão; aberta pelo botão do rodapé do menu) -->
+<div id="modal-config-tess" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-lg" onclick="if (event.target === this) fecharConfigTess()">
+    <div class="w-full max-w-sm bg-secondary border border-outline-variant/20 rounded-lg elevation-2 p-lg">
+        <div class="flex items-center justify-between mb-md">
+            <h4 class="font-headline-sm text-headline-sm text-white flex items-center gap-xs">
+                <span class="material-symbols-outlined text-[18px]">settings</span>
+                Configuração Tess AI
+            </h4>
+            <button onclick="fecharConfigTess()" type="button" class="text-secondary-fixed-dim hover:text-white">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
         <div class="space-y-2">
             <div class="space-y-1">
                 <label class="font-label-md text-[10px] text-secondary-fixed-dim">Chave de API</label>
@@ -194,14 +216,12 @@ tailwind.config = {
                 <input id="agent-id-tess" class="w-full bg-black/20 border border-white/10 focus:border-primary-container rounded-lg py-2 px-3 text-xs font-mono outline-none text-white" type="text" placeholder="Ex: 1234"/>
             </div>
         </div>
-        <button id="btn-salvar-chaves" onclick="salvarChavesAPI()" class="w-full mt-sm py-2 bg-primary-container/15 hover:bg-primary-container/25 border border-primary-container/40 text-primary-container rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
+        <button id="btn-salvar-chaves" onclick="salvarChavesAPI()" class="w-full mt-md py-2 bg-primary-container/15 hover:bg-primary-container/25 border border-primary-container/40 text-primary-container rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1">
             <span class="material-symbols-outlined text-[14px]">save</span>
             Salvar Configuração
         </button>
-        <!-- Versão preenchida ao abrir, a partir do arquivo VERSION (ver shared.js / app.obter_versao) -->
-        <p id="lbl-versao-app" class="text-center font-label-md text-[10px] text-secondary-fixed-dim/60 mt-sm">&nbsp;</p>
     </div>
-</nav>
+</div>
 
 <!-- Main Wrapper -->
 <div class="flex-1 flex flex-col md:ml-[280px] min-h-screen">
@@ -1054,6 +1074,7 @@ tailwind.config = {
 </div>
 
 <script src="js/shared.js"></script>
+<script src="js/sidebar-menu.js"></script>
 <script src="js/app-shell.js"></script>
 <script src="js/tab-xml.js"></script>
 <script src="js/tab-xml-multi.js"></script>

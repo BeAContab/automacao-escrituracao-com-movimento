@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [2.46.0] - 2026-09-22
+
+### Alterado
+- **Configuração da Tess AI ocultada num modal** (`gui/index.html`, `gui/js/sidebar-menu.js`): os campos de Chave de API e ID do Agente, antes sempre visíveis no rodapé do menu lateral, agora só aparecem ao clicar no botão "Configurações Tess AI"; o modal abre/fecha pelo botão, pelo X, por Esc ou clicando fora dele. Os campos mantêm os mesmos IDs e `salvarChavesAPI()`/`carregarChavesAPI()` (`shared.js`) não foram alterados.
+- **"Outras Funções" agora recolhe/expande** (`gui/index.html`, `gui/js/sidebar-menu.js`): o rótulo virou um botão com seta que mostra/oculta Exportar XML de Prestados, Captura Escrituração e Encerramento ISS. Começa **fechado** por padrão; a preferência de aberto/fechado é lembrada entre sessões (`localStorage`, com o app funcionando normalmente mesmo se o navegador do sistema não permitir salvar essa preferência).
+
 ## [2.45.0] - 2026-09-21
 
 ### Adicionado
