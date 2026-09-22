@@ -662,6 +662,16 @@ tailwind.config = {
                                 <span class="material-symbols-outlined">file_download</span>
                                 Iniciar Exportação
                             </button>
+                            <div id="controles-exportar" class="hidden grid grid-cols-2 gap-sm">
+                                <button id="btn-pausar-exportar" onclick="alternarPausaExportar()" class="border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                    <span id="icone-pausar-exportar" class="material-symbols-outlined text-[18px]">pause</span>
+                                    <span id="lbl-pausar-exportar">Pausar</span>
+                                </button>
+                                <button id="btn-parar-exportar" onclick="pararExportacaoXML()" class="border border-error text-error font-label-md text-label-md py-sm rounded-lg hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined text-[18px]">stop</span>
+                                    Parar
+                                </button>
+                            </div>
 
                             <div id="card-confirmar-login-exportar" class="hidden p-md rounded-lg border border-primary-container/40 bg-primary-container/10 text-xs text-on-surface space-y-sm">
                                 <div class="flex gap-sm items-start">

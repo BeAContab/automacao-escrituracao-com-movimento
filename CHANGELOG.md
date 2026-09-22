@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [2.48.0] - 2026-09-22
+
+### Adicionado
+- **Pausar/Continuar/Parar em "Exportar XML de Prestados"** (`exportador_xml_prestados.py`; `app.py`; `gui/index.html`; `gui/js/tab-exportar.js`): reaproveita a mesma infraestrutura de controle já usada em "Processar XMLs", "Multi-CNPJ" e "Escrituração Multi-CNPJ" (`_ControleProcessamentoXml`), incluindo o registro automático de "PAUSA/RETOMADA/PARADA solicitada pelo operador" no log da tela e do arquivo.
+  - A pausa e a parada são verificadas **entre uma página e outra** do laço de exportação — nunca no meio de um clique ou de um download em andamento.
+  - **Pausar → Continuar na mesma execução**: o navegador continua aberto exatamente como estava; nada se perde.
+  - **Parar**: termina a página em andamento e para; os arquivos já exportados continuam na pasta de destino e o navegador **não é fechado** (mesmo comportamento de sempre desta função).
+  - De brinde, a função ganhou uma trava contra iniciar duas exportações ao mesmo tempo (não existia antes).
+  - 9 testes novos (5 no backend do app + 4 no laço de páginas do módulo de exportação), todos com navegador Selenium dublado — nenhum toca o portal. Tela exercitada no navegador embutido com API simulada.
+
+## [2.47.1] - 2026-09-22
+
+### Corrigido
+- **"Exportar XML de Prestados" travava ~60s e falhava logo após o login** (`exportador_xml_prestados.py`, `XPATH_LINK_CONSULTAR_NFSE`): reportado por um log real (`TimeoutException` vazio, exatos 60s após "Login confirmado!"). O portal ISS Fortaleza alterou de novo a estrutura do atalho "Consultar NFS-e" da tela inicial: hoje é `<a><i class="fa fa-search"></i><h4>Consultar NFS-e</h4></a>` (o `<a>` é o **pai** do `<h4>`), enquanto o seletor buscava o inverso (um `<a>` dentro do `<h4>`), então nunca encontrava nada. Confirmado ao vivo contra o portal real (login do usuário, leitura do DOM e teste do XPath antigo x novo): o antigo não casava com nenhum elemento; o novo (`//a[h4[normalize-space()='Consultar NFS-e']]`) casa com o link certo. Terceira vez que esse atalho específico quebra por mudança de estrutura do portal (ver também a correção da 2.26.0).
+
 ## [2.47.0] - 2026-09-22
 
 ### Adicionado
