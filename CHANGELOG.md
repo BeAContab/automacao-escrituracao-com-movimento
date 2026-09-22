@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [2.47.0] - 2026-09-22
+
+### Adicionado
+- **Nova função "Encerramento ISS — Múltiplos Meses"** (novo `core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py`; `app.py`; `gui/index.html`; `gui/js/tab-encerramento-multi-periodo.js`; `gui/js/app-shell.js`): faz o mesmo encerramento de ISS de empresas sem movimento do "Encerramento ISS", mas para **várias competências de uma vez**, em vez de uma só. **A função "Encerramento ISS" original não foi alterada** — nem seu controlador, nem as peças que ela usa (empresa, credenciais, driver do Chrome, utilitários), nem sua aba/JS na GUI — conferido linha a linha (diff sem nenhuma remoção nos arquivos compartilhados, hash idêntico no pacote inteiro). Item novo no menu, dentro de "Outras Funções".
+  - **Ordem de execução**: para cada empresa da planilha, o robô busca a inscrição **uma única vez** e processa todas as competências selecionadas antes de passar para a próxima empresa — evita repetir a busca a cada mês.
+  - **Seleção de competências**: uma lista que o operador vai montando (mês + ano + "Adicionar"), com chips removíveis, ordenada automaticamente por data e sem duplicatas. Aceita meses não seguidos e anos diferentes.
+  - **Planilha de entrada**: a mesma coluna (Y) usada pela função original recebe todas as competências **acrescentadas na mesma célula**, sem apagar o que já estava lá (ex.: `01/2026: 05/01/2026; 02/2026: SERVIÇOS PENDENTES`) — decisão do usuário, ciente de que a célula acumula várias informações.
+  - **"Sem inscrição"**: registrado uma vez só (não é específico de uma competência) e vale para todas as competências pedidas daquela empresa.
+  - **Relatório de saída**: um relatório por competência (mesmo template da função original), salvo em `<pasta de saída>/<ano>-<mês>/` — pasta com ano, diferente do original (só `<mês>`), para não colidir competências do mesmo mês em anos diferentes.
+  - **Resiliência**: um erro numa competência específica não impede as demais competências da mesma empresa; um erro inesperado numa empresa não impede as demais empresas (a execução inteira só para se cancelada pelo operador ou se o navegador não abrir).
+  - 17 testes do controlador (planilha, relatório e orquestração, tudo com driver Selenium falso — nenhum toca o portal) + 8 testes do backend do app (mutuamente exclusivo com outras automações, conversão de competências, cancelamento, credenciais nunca no log). A tela foi exercitada no navegador embutido com uma API simulada (validações, chips, resumo). **Não testado no portal real.**
+
 ## [2.46.0] - 2026-09-22
 
 ### Alterado
