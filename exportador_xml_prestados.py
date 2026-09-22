@@ -18,10 +18,11 @@ from iss_fortaleza_automacao import (
 from tratamento_erros import registrar_evento_execucao
 
 # Seletores XPath para a tela de Consulta de NFS-e
-# Busca por texto do link em vez de posição (div[4]/a/h4) — o portal alterou a estrutura
-# do 4º atalho da home (adicionou um ícone antes do texto), quebrando o seletor posicional
-# antigo, que esperava o <h4> dentro do <a> quando hoje é o contrário (<a> dentro do <h4>).
-XPATH_LINK_CONSULTAR_NFSE    = "//*[@id='homeForm:divHotLinks']//h4[normalize-space()='Consultar NFS-e']/a"
+# Busca por texto do link em vez de posição (div[4]/a/h4) — o portal já alterou a estrutura
+# do 4º atalho da home mais de uma vez. Em 22/09/2026, confirmado ao vivo contra o portal
+# real: a estrutura atual é <a><i class="fa fa-search"></i><h4>Consultar NFS-e</h4></a>,
+# ou seja, o <a> é o PAI do <h4> (não o contrário) — o XPath busca o <a> que contém o <h4>.
+XPATH_LINK_CONSULTAR_NFSE    = "//*[@id='homeForm:divHotLinks']//a[h4[normalize-space()='Consultar NFS-e']]"
 XPATH_ABA_COMPETENCIA        = "//*[@id='consultarnfseForm:competencia_prestador_tab_lbl']"
 XPATH_BTN_CONSULTAR          = "//*[@id='consultarnfseForm:j_id237']"
 XPATH_BTN_SELECIONAR_PAGINA  = "//*[@id='consultarnfseForm:j_id324']"
@@ -164,6 +165,8 @@ def executar_exportacao_xml_prestados(
     caminho_confirmacao_login: Path | None = None,
     fechar_navegador_ao_fim: bool = False,
     timeout_login: int = 300,
+    callback_pausa=None,
+    callback_cancelamento=None,
 ) -> None:
     """
     Executa a automação de exportação de XMLs de Serviços Prestados do portal da ISS Fortaleza.
@@ -178,6 +181,14 @@ def executar_exportacao_xml_prestados(
     Parâmetros:
         fechar_navegador_ao_fim: Se True, encerra o Chrome ao concluir (FALHA-01).
         timeout_login: Tempo limite em segundos para aguardar o login do operador (FALHA-06).
+        callback_pausa: Chamado no início de cada página do laço de exportação; pode
+                        bloquear enquanto o operador mantiver a exportação pausada. O
+                        navegador continua aberto exatamente como está — pausar/continuar
+                        na mesma execução não perde nada.
+        callback_cancelamento: Retorna True quando o operador pediu para parar. A
+                               exportação termina após a página em andamento; os arquivos
+                               já baixados continuam na pasta de destino, e o navegador
+                               não é fechado (mesmo comportamento de `fechar_navegador_ao_fim`).
     """
 
     def log(msg: str, is_error: bool = False) -> None:
@@ -245,8 +256,18 @@ def executar_exportacao_xml_prestados(
         pagina_atual = 1
         lote_atual = 0
         total_exportados = 0
+        cancelado = False
 
         while True:
+            # Pausa (bloqueia enquanto pausado) e parada pedidas pelo operador, verificadas
+            # entre uma página e outra — o robô nunca interrompe no meio de um clique ou de
+            # um download em andamento.
+            if callback_pausa:
+                callback_pausa()
+            if callback_cancelamento and callback_cancelamento():
+                cancelado = True
+                break
+
             log(f"Selecionando todas as notas da página {pagina_atual}...")
 
             try:
@@ -310,12 +331,20 @@ def executar_exportacao_xml_prestados(
 
             pagina_atual += 1
 
-        registrar_evento_execucao(
-            f"Exportação de XMLs concluída: {total_exportados} lote(s) exportados para {pasta}.",
-            "ISS Fortaleza",
-        )
-        log(f"Tudo pronto! {total_exportados} arquivo(s) XML gerado(s) (com as notas de todas as páginas) salvos em: {pasta}")
-        progresso(100, "Exportação concluída!")
+        if cancelado:
+            log(
+                f"Exportação parada pelo operador. {total_exportados} arquivo(s) XML já tinham sido "
+                f"baixados até aqui, em: {pasta}",
+                is_error=True,
+            )
+            progresso(100, "Parado pelo operador")
+        else:
+            registrar_evento_execucao(
+                f"Exportação de XMLs concluída: {total_exportados} lote(s) exportados para {pasta}.",
+                "ISS Fortaleza",
+            )
+            log(f"Tudo pronto! {total_exportados} arquivo(s) XML gerado(s) (com as notas de todas as páginas) salvos em: {pasta}")
+            progresso(100, "Exportação concluída!")
 
     except Exception as e:
         log(f"Algo deu errado no meio da exportação e eu não consegui continuar: {e}", is_error=True)

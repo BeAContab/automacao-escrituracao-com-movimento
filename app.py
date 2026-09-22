@@ -133,6 +133,7 @@ class BeAContabAPI:
             "individual": _ControleProcessamentoXml(),
             "multi": _ControleProcessamentoXml(),
             "esc_multi": _ControleProcessamentoXml(),  # Escrituração Multi-CNPJ
+            "exportar": _ControleProcessamentoXml(),  # Exportar XML de Prestados
         }
         self._pausa_event = threading.Event()
         self._pausa_event.set()
@@ -563,11 +564,13 @@ class BeAContabAPI:
         "individual": "termina o XML em andamento e aguarda",
         "multi": "termina o XML em andamento e aguarda",
         "esc_multi": "o robô pausa no próximo ponto seguro (pode ser no meio de uma empresa; a sessão do portal expira após ~20 min sem ação)",
+        "exportar": "termina a página em andamento e aguarda, com o navegador aberto exatamente como está",
     }
     _MENSAGENS_PARADA = {
         "individual": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
         "multi": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
         "esc_multi": "interrompendo a empresa em andamento, fazendo logout e fechando o navegador",
+        "exportar": "finalizando a página em andamento; os arquivos já exportados continuam na pasta de destino e o navegador não é fechado",
     }
 
     def pausar_processamento_xml(self, modo: str = "individual"):
@@ -747,6 +750,13 @@ class BeAContabAPI:
 
     def iniciar_exportacao_xml_gui(self, pasta_destino: str, competencia_str: str):
         """Dispara a automação de exportação de XMLs de Serviços Prestados em uma thread separada."""
+        controle = self._controles_xml["exportar"]
+        with controle.lock:
+            if controle.em_execucao:
+                self.window.evaluate_js("window.log_exportar('A exportação já está em andamento!', true)")
+                return
+            controle.em_execucao = True
+        controle.reiniciar()
         threading.Thread(
             target=self._executar_exportacao_xml,
             args=(pasta_destino, competencia_str),
@@ -883,6 +893,9 @@ class BeAContabAPI:
             except Exception:
                 pass
 
+        controle = self._controles_xml["exportar"]
+        controle.log = log_gui
+
         # Gera o caminho do arquivo de flag de confirmação de login
         appdata = os.environ.get("APPDATA", str(Path.home()))
         flag_path = Path(appdata) / "BeAContab" / "brain" / "funcao3_login_ok.flag"
@@ -907,6 +920,8 @@ class BeAContabAPI:
                 callback_log=log_gui,
                 callback_progresso=callback_progresso,
                 caminho_confirmacao_login=flag_path,
+                callback_pausa=controle.aguardar_se_pausado,
+                callback_cancelamento=controle.cancelado,
             )
         except Exception as e:
             tb = traceback.format_exc()
@@ -919,6 +934,7 @@ class BeAContabAPI:
                 self.window.evaluate_js("document.getElementById('btn-iniciar-exportacao').disabled = false")
             except Exception:
                 pass
+            self._finalizar_processamento_xml("exportar", "window.xml_exportar_finalizado()")
 
     def confirmar_login_exportacao(self):
         """Cria o arquivo de flag indicando que o login manual foi concluído pelo operador na aba de exportação."""

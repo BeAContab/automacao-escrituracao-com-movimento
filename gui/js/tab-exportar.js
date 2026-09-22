@@ -9,6 +9,8 @@ async function selecionarPastaExportar() {
     }
 }
 
+let exportarPausado = false;
+
 async function iniciarExportacaoXML() {
     const pasta = document.getElementById('input-pasta-exportar').value.trim();
     const mes = document.getElementById('select-mes-exportar').value;
@@ -24,14 +26,56 @@ async function iniciarExportacaoXML() {
     addLogExportar(`Iniciando exportação de XMLs para competência ${competencia}...`);
     document.getElementById('progresso-container-exportar').classList.remove('hidden');
 
+    exportarPausado = false;
+    document.getElementById('lbl-pausar-exportar').innerText = 'Pausar';
+    document.getElementById('icone-pausar-exportar').innerText = 'pause';
+    document.getElementById('btn-parar-exportar').disabled = false;
+    document.getElementById('controles-exportar').classList.remove('hidden');
+
     if (window.pywebview && window.pywebview.api) {
         try {
             await window.pywebview.api.iniciar_exportacao_xml_gui(pasta, competencia);
         } catch (e) {
             addLogExportar('Erro ao iniciar exportação: ' + e, true);
+            xmlExportarFinalizado();
         }
     }
+    // Os controles voltam ao normal quando o Python avisa o fim (xmlExportarFinalizado).
 }
+
+function alternarPausaExportar() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    exportarPausado = !exportarPausado;
+    if (exportarPausado) {
+        window.pywebview.api.pausar_processamento_xml('exportar');
+        document.getElementById('lbl-pausar-exportar').innerText = 'Continuar';
+        document.getElementById('icone-pausar-exportar').innerText = 'play_arrow';
+    } else {
+        window.pywebview.api.retomar_processamento_xml('exportar');
+        document.getElementById('lbl-pausar-exportar').innerText = 'Pausar';
+        document.getElementById('icone-pausar-exportar').innerText = 'pause';
+    }
+}
+
+function pararExportacaoXML() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    const confirmado = confirm(
+        'Parar a exportação?\n\nO robô termina a página em andamento antes de parar. ' +
+        'Os arquivos já exportados continuam salvos na pasta de destino, e o navegador não será fechado.'
+    );
+    if (!confirmado) return;
+    window.pywebview.api.cancelar_processamento_xml('exportar');
+    document.getElementById('btn-parar-exportar').disabled = true;
+}
+
+function xmlExportarFinalizado() {
+    exportarPausado = false;
+    document.getElementById('controles-exportar').classList.add('hidden');
+    document.getElementById('btn-parar-exportar').disabled = false;
+    document.getElementById('lbl-pausar-exportar').innerText = 'Pausar';
+    document.getElementById('icone-pausar-exportar').innerText = 'pause';
+}
+window.xml_exportar_finalizado = xmlExportarFinalizado;
 
 async function confirmarLoginExportacao() {
     if (window.pywebview && window.pywebview.api) {
