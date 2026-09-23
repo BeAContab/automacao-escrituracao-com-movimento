@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [2.49.2] - 2026-09-23
+
+### Corrigido
+- **"Encerramento ISS — Múltiplos Meses" perdia competências por causa da paginação e da leitura de serviços prestados** (`core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py`; a função "Encerramento ISS" original **não foi alterada**). Causas confirmadas ao vivo no portal (login do usuário, leitura do DOM) a partir de um teste real com 15 competências:
+  - **Competências antigas "não encontradas"**: a tela Manter Escrituração lista de `data inicial` até `data final` (padrão: mês atual), em ordem decrescente e **paginada de 12 em 12**. O robô só ajustava a data inicial, então de 05/2025 a 09/2025 (17 meses até 09/2026) as competências mais antigas caíam na página 2 e nunca eram achadas (10/2025 era a 12ª linha e foi a primeira achada). Agora **data inicial e data final são fixadas na competência** (4 campos por script): a tabela devolve exatamente uma linha, sempre na página 1. Some também a espera de 60 s por competência.
+  - **`ERRO AO LER SERVIÇOS PRESTADOS` em todas as empresas**: a tabela do "Somatório" fica dentro da aba *Encerramento*; o robô trocava para a aba *Serviços Prestados* antes de ler, o que esconde essa tabela e o Selenium devolve texto vazio. Agora o Somatório é lido **sem trocar de aba**, esperando o texto aparecer; se não aparecer a tempo, continua sendo tratado como problema (nunca encerra).
+  - **Metade das competências se perdia**: depois de uma competência que terminava com problema (serviços prestados/pendentes/erro de leitura) o robô ficava na tela da escrituração; a competência seguinte falhava no calendário (60 s) e só então a recuperação voltava ao menu. Agora, antes de cada consulta, o robô **garante que está na lista de escriturações** e volta pelo menu se não estiver.
+  - **Travamento de 60 s ao trocar de empresa** (empresa 1916 do teste): o clique no CNPJ acontecia com o modal de troca ainda fechado. Agora o robô espera o formulário carregar depois de navegar e **garante o modal aberto** (esperando; se preciso, abrindo pelo botão "Alterar Inscrição Atual") antes de buscar a empresa.
+  - Serviços pendentes: antes de contar as linhas, o robô espera o indicador de "carregando" do portal sumir, para não ler uma tabela ainda sendo preenchida por AJAX.
+  - Novo no log: a **Situação** de cada competência no portal (ex.: "Aberta - Normal", "Fechada - Normal").
+- `.gitignore`: novas pastas `teste-*/` (saída real de testes manuais das automações — logs, relatórios, certificados e planilhas de empresas reais).
+- Testes: 19 novos (período com as duas datas, campo ausente, guarda de tela de lista, modal que demora/não abre/nunca aparece, Somatório sem trocar de aba/vazio/oculto/não numérico, situação do portal, ordem das chamadas) + 1 atualizado; conferido por mutação em 5 pontos.
+- **Observação**: a função original "Encerramento ISS" provavelmente tem o mesmo defeito de leitura do Somatório (troca para a aba Serviços Prestados antes de ler). Não foi alterada, conforme combinado.
+
 ## [2.49.1] - 2026-09-23
 
 ### Corrigido

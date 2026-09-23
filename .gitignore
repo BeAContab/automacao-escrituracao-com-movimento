@@ -80,3 +80,7 @@ analisar/
 # e as planilhas de referencia sao PII/sigilo de cliente real (mesma razao do
 # EXEMPLOS/ acima). Os testes que dependem dela pulam automaticamente quando faltar.
 importar/
+
+# Pastas de teste manual com saída real das automações (logs, relatórios, certificados,
+# planilhas e XMLs de empresas reais - PII/sigilo de cliente, mesma razao do EXEMPLOS/ acima).
+teste-*/
