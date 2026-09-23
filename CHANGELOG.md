@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [2.49.1] - 2026-09-23
+
+### Corrigido
+- **"Encerramento ISS — Múltiplos Meses" seguia tentando empresa após empresa com o Chrome já fechado, e um erro inesperado deixava as empresas seguintes falharem em cascata** (`core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py`; `app.py`): reportado por um log real (Chrome fechado no meio do 07/2025 da empresa 1915 → `invalid session id`, e o robô ainda "começou" a empresa 1916 com o navegador morto). A função "Encerramento ISS" original **não foi alterada**.
+  - **Navegador fechado/travado agora PARA a execução** com uma mensagem clara (`invalid session id`, `no such window`, `not connected to DevTools`, conexão com o chromedriver perdida…), em vez de tentar cada empresa restante. Os relatórios do que já foi feito continuam sendo gerados, e o `quit()` do navegador (que falha quando o Chrome já foi fechado) não impede mais o relatório.
+  - **Erro inesperado numa empresa**: antes de seguir, o robô devolve o portal à tela de troca de empresa (se já não estiver nela). Se não conseguir, **para** com mensagem clara, em vez de deixar todas as empresas seguintes falharem já no primeiro clique.
+  - **Erro inesperado numa competência** (qualquer erro, não só "elemento não encontrado"): fica registrado como problema daquela competência e o robô refaz o caminho pelo menu Escrituração → Manter Escrituração antes da próxima competência, que assim começa de uma tela conhecida.
+  - **Textos da planilha fiscal (coluna Y) e do relatório sem nome de exceção do Selenium**: `ERRO NO PORTAL` para falhas genéricas e `COMPETÊNCIA NÃO ENCONTRADA NO PORTAL` quando o portal não lista a linha da competência (antes: `Não consegui processar essa competência no portal: NoSuchElementException`).
+  - **A mesma informação não é mais empilhada na célula** ao repetir a execução (a célula Y4 do log real tinha as mesmas duas mensagens repetidas duas vezes). Resultado diferente para a mesma competência (ex.: erro numa execução, data de encerramento na seguinte) continua sendo acrescentado.
+  - Mensagem final da tela: quando a execução termina antes de percorrer a planilha inteira, o log diz "INTERROMPIDO" (em vermelho) em vez de "concluído".
+  - **Não corrigido (aguardando confirmação da causa)**: os 60 s de espera por competência quando o portal não devolve a linha do mês (hipóteses: tabela paginada, com meses antigos fora da página; ou competência anterior ao início da inscrição da filial). Teste sugerido: rodar só uma competência recente com a mesma planilha.
+  - 16 testes novos (detecção de navegador morto sem confundir com erros comuns do portal, parada com Chrome fechado e `quit()` falhando, relatório parcial, recuperação/parada por empresa, recuperação por competência, competência não encontrada, deduplicação da célula) + 1 atualizado; conferido por mutação (sem a detecção, sem o dedupe e sem a recuperação por competência os testes novos falham).
+
 ## [2.49.0] - 2026-09-22
 
 ### Adicionado

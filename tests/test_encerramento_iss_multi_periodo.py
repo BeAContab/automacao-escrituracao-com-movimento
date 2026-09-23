@@ -146,6 +146,37 @@ class TestAcrescentarNaPlanilhaFiscal(unittest.TestCase):
         reader.close_workbook()
         self.assertEqual(self._ler_celula_y2(), "Anotação manual do contador; 01/2026: 05/01/2026")
 
+    def test_repetir_a_mesma_informacao_nao_empilha_na_celula(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        for _ in range(3):  # três execuções seguidas com o mesmo resultado
+            reader = XLSXReader(self.caminho)
+            self.controlador._acrescentar_na_planilha_fiscal(reader, date(2026, 1, 1), m.MSG_ERRO_PORTAL, row_number=2)
+            reader.close_workbook()
+        self.assertEqual(self._ler_celula_y2(), "01/2026: ERRO NO PORTAL")
+
+    def test_resultado_diferente_para_a_mesma_competencia_e_acrescentado(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        reader = XLSXReader(self.caminho)
+        self.controlador._acrescentar_na_planilha_fiscal(reader, date(2026, 1, 1), m.MSG_ERRO_PORTAL, row_number=2)
+        reader.close_workbook()
+        reader = XLSXReader(self.caminho)
+        self.controlador._acrescentar_na_planilha_fiscal(reader, date(2026, 1, 1), "05/02/2026", row_number=2)
+        reader.close_workbook()
+        self.assertEqual(self._ler_celula_y2(), "01/2026: ERRO NO PORTAL; 01/2026: 05/02/2026")
+
+    def test_competencia_diferente_com_o_mesmo_texto_nao_e_confundida(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        reader = XLSXReader(self.caminho)
+        self.controlador._acrescentar_na_planilha_fiscal(reader, date(2026, 1, 1), m.MSG_ERRO_PORTAL, row_number=2)
+        reader.close_workbook()
+        reader = XLSXReader(self.caminho)
+        self.controlador._acrescentar_na_planilha_fiscal(reader, date(2026, 2, 1), m.MSG_ERRO_PORTAL, row_number=2)
+        reader.close_workbook()
+        self.assertEqual(self._ler_celula_y2(), "01/2026: ERRO NO PORTAL; 02/2026: ERRO NO PORTAL")
+
 
 @unittest.skipUnless(CAMINHO_TEMPLATE.exists(), "template do relatório não encontrado")
 class TestRelatorioDeExecucao(unittest.TestCase):
@@ -293,9 +324,54 @@ class TestOrquestracaoPorEmpresaEPorMes(unittest.TestCase):
         resultados = self.controlador_1_empresa.resultados
         self.assertEqual(len(resultados), 2)
         self.assertFalse(resultados[0].encerrada)
-        self.assertIn("não consegui processar", resultados[0].problemas[0].lower())
+        self.assertEqual(resultados[0].problemas, [m.MSG_ERRO_PORTAL])  # texto curto, sem nome de exceção do Selenium
         self.assertTrue(resultados[1].encerrada)  # fevereiro seguiu normalmente
         modal.assert_called_once()  # ainda troca de empresa ao final, mesmo com uma falha no meio
+
+        reader2 = self._reader_1_empresa()
+        self.assertEqual(reader2.get_cell("Y2").value, "01/2026: ERRO NO PORTAL")
+        reader2.close_workbook()
+
+    def test_erro_inesperado_num_mes_refaz_o_caminho_pelo_menu_e_segue_para_o_proximo_mes(self):
+        chamadas = []
+
+        def processar_competencia(driver, reader, empresa, competencia):
+            if competencia == date(2026, 1, 1):
+                raise RuntimeError("falha no meio do fluxo")  # não é NoSuchElement/Timeout
+            return m.ResultadoMesEmpresa(empresa, competencia, encerrada=True)
+
+        with mock.patch.object(self.controlador_1_empresa, "_procurar_inscricao_empresa", return_value=True), \
+             mock.patch.object(self.controlador_1_empresa, "_dar_ciencia_nas_mensagens_nao_lidas"), \
+             mock.patch.object(self.controlador_1_empresa, "_navegar_tela_escrituracao", lambda driver: chamadas.append("navegar")), \
+             mock.patch.object(self.controlador_1_empresa, "_processar_competencia", side_effect=processar_competencia), \
+             mock.patch.object(self.controlador_1_empresa, "_abrir_modal_de_alteracao_de_inscricao", lambda driver: chamadas.append("modal")):
+            reader = self._reader_1_empresa()
+            for row_number, row in reader.lazy_load_sheet():
+                self.controlador_1_empresa._processar_linha(driver=object(), reader=reader, row_number=row_number, row=row)
+            reader.close_workbook()
+
+        resultados = self.controlador_1_empresa.resultados
+        self.assertEqual([r.encerrada for r in resultados], [False, True])
+        self.assertEqual(resultados[0].problemas, [m.MSG_ERRO_PORTAL])
+        # 1 navegação inicial + 1 de recuperação depois do erro em janeiro; o modal só no fim
+        self.assertEqual(chamadas, ["navegar", "navegar", "modal"])
+
+    def test_navegador_fechado_no_meio_de_um_mes_nao_e_engolido(self):
+        def processar_competencia(driver, reader, empresa, competencia):
+            raise m.InvalidSessionIdException("invalid session id: session deleted as the browser has closed the connection")
+
+        with mock.patch.object(self.controlador_1_empresa, "_procurar_inscricao_empresa", return_value=True), \
+             mock.patch.object(self.controlador_1_empresa, "_dar_ciencia_nas_mensagens_nao_lidas"), \
+             mock.patch.object(self.controlador_1_empresa, "_navegar_tela_escrituracao"), \
+             mock.patch.object(self.controlador_1_empresa, "_processar_competencia", side_effect=processar_competencia), \
+             mock.patch.object(self.controlador_1_empresa, "_abrir_modal_de_alteracao_de_inscricao"):
+            reader = self._reader_1_empresa()
+            with self.assertRaises(m.InvalidSessionIdException):
+                for row_number, row in reader.lazy_load_sheet():
+                    self.controlador_1_empresa._processar_linha(driver=object(), reader=reader, row_number=row_number, row=row)
+            reader.close_workbook()
+
+        self.assertEqual(self.controlador_1_empresa.resultados, [])  # nada foi registrado como "erro de portal"
 
     def test_erro_inesperado_numa_empresa_nao_impede_a_proxima_empresa(self):
         chamadas_de_empresa = []
@@ -324,6 +400,178 @@ class TestOrquestracaoPorEmpresaEPorMes(unittest.TestCase):
 
         self.assertEqual(chamadas_de_empresa, [1, 2])  # a empresa 2 foi tentada mesmo com a falha na 1
         self.assertEqual(len(self.controlador.resultados), 2)  # só os 2 resultados da empresa 2 (1 por competência)
+
+
+class TestNavegadorIndisponivel(unittest.TestCase):
+    def test_reconhece_sessao_perdida(self):
+        self.assertTrue(m.navegador_indisponivel(m.InvalidSessionIdException("invalid session id")))
+        self.assertTrue(m.navegador_indisponivel(m.NoSuchWindowException("no such window")))
+        self.assertTrue(m.navegador_indisponivel(
+            m.WebDriverException("disconnected: not connected to DevTools (Session info: chrome=153)")
+        ))
+        self.assertTrue(m.navegador_indisponivel(ConnectionError("conexão recusada")))
+
+    def test_erros_comuns_de_portal_nao_sao_confundidos_com_navegador_morto(self):
+        self.assertFalse(m.navegador_indisponivel(m.NoSuchElementException("sem elemento")))
+        self.assertFalse(m.navegador_indisponivel(m.TimeoutException("demorou")))
+        self.assertFalse(m.navegador_indisponivel(m.StaleElementReferenceException("velho")))
+        self.assertFalse(m.navegador_indisponivel(m.WebDriverException("qualquer outro problema")))
+        self.assertFalse(m.navegador_indisponivel(RuntimeError("erro de programação")))
+
+
+class TestCompetenciaNaoEncontrada(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_nao_enc_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(1, "EMPRESA A", "12345678000199")])
+        self.controlador = _controlador(self.caminho, self.pasta / "saida", [date(2025, 5, 1)])
+
+    def test_linha_do_mes_ausente_vira_problema_legivel_sem_nome_de_excecao(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        reader = XLSXReader(self.caminho)
+        with mock.patch.object(self.controlador, "_preencher_widget_calendario"), \
+             mock.patch.object(m, "retry_on_exception", side_effect=m.NoSuchElementException("linha não veio")):
+            resultado = self.controlador._processar_competencia(mock.MagicMock(), reader, _empresa(linha=2), date(2025, 5, 1))
+        reader.close_workbook()
+
+        self.assertFalse(resultado.encerrada)
+        self.assertEqual(resultado.problemas, [m.MSG_COMPETENCIA_NAO_ENCONTRADA])
+
+        reader2 = XLSXReader(self.caminho)
+        self.assertEqual(reader2.get_cell("Y2").value, "05/2025: COMPETÊNCIA NÃO ENCONTRADA NO PORTAL")
+        reader2.close_workbook()
+
+
+class TestRecuperacaoDeErros(unittest.TestCase):
+    """Comportamento de `executar_processo()` quando o navegador morre ou o portal fica numa tela
+    desconhecida — sempre com ChromeDriver falso."""
+
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_rec_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(1, "EMPRESA A", "12345678000199"), (2, "EMPRESA B", "98765432000111")])
+
+    def _rodar(self, controlador, driver_falso, **patches):
+        classe = mock.Mock(return_value=driver_falso)
+        with mock.patch.object(m, "ChromeDriver", classe), \
+             mock.patch.object(controlador, "_login_iss_fortaleza"), \
+             mock.patch.object(controlador, "_dar_ciencia_nas_mensagens_nao_lidas"), \
+             mock.patch.object(controlador, "_navegar_tela_escrituracao"), \
+             mock.patch.object(controlador, "_abrir_modal_de_alteracao_de_inscricao"):
+            with mock.patch.multiple(controlador, **patches):
+                return controlador.executar_processo()
+
+    def test_navegador_fechado_para_a_execucao_e_nao_tenta_as_empresas_restantes(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        empresas_tentadas = []
+
+        def procurar(driver, empresa):
+            empresas_tentadas.append(empresa.codigo)
+            raise m.InvalidSessionIdException("invalid session id: session deleted as the browser has closed the connection")
+
+        driver_falso = mock.Mock(name="ChromeDriverFalso")
+        driver_falso.quit_driver.side_effect = m.InvalidSessionIdException("já fechado")  # quit() também falha: não pode estourar
+        resultado = self._rodar(controlador, driver_falso, _procurar_inscricao_empresa=mock.Mock(side_effect=procurar))
+
+        self.assertEqual(empresas_tentadas, [1])  # a empresa 2 NÃO foi tentada com o navegador morto
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION)
+        self.assertIn("navegador", resultado.status.message.lower())
+        driver_falso.quit_driver.assert_called_once()
+
+    def test_navegador_fechado_ainda_gera_relatorio_do_que_ja_foi_feito(self):
+        if not CAMINHO_TEMPLATE.exists():
+            self.skipTest("template do relatório não encontrado")
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+
+        def procurar(driver, empresa):
+            if empresa.codigo == 2:
+                raise m.InvalidSessionIdException("invalid session id")
+            return True
+
+        resultado = self._rodar(
+            controlador,
+            mock.Mock(name="ChromeDriverFalso"),
+            _procurar_inscricao_empresa=mock.Mock(side_effect=procurar),
+            _processar_competencia=mock.Mock(
+                side_effect=lambda driver, reader, empresa, competencia: m.ResultadoMesEmpresa(empresa, competencia, encerrada=True)
+            ),
+        )
+
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION)
+        self.assertEqual(resultado.processadas, 1)  # só a empresa 1 concluiu
+        self.assertEqual(len(resultado.report_paths), 1)
+
+    def test_erro_inesperado_por_empresa_recupera_o_portal_e_segue_para_a_proxima(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        empresas_tentadas = []
+
+        def procurar(driver, empresa):
+            empresas_tentadas.append(empresa.codigo)
+            if empresa.codigo == 1:
+                raise RuntimeError("falha inesperada")
+            return True
+
+        recuperar = mock.Mock()
+        resultado = self._rodar(
+            controlador,
+            mock.Mock(name="ChromeDriverFalso"),
+            _procurar_inscricao_empresa=mock.Mock(side_effect=procurar),
+            _recuperar_para_proxima_empresa=recuperar,
+            _processar_competencia=mock.Mock(
+                side_effect=lambda driver, reader, empresa, competencia: m.ResultadoMesEmpresa(empresa, competencia, encerrada=True)
+            ),
+        )
+
+        self.assertEqual(empresas_tentadas, [1, 2])
+        recuperar.assert_called_once()
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.SUCCESS)
+
+    def test_se_nao_da_para_recuperar_o_portal_a_execucao_para_com_mensagem_clara(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        empresas_tentadas = []
+
+        def procurar(driver, empresa):
+            empresas_tentadas.append(empresa.codigo)
+            raise RuntimeError("falha inesperada")
+
+        resultado = self._rodar(
+            controlador,
+            mock.Mock(name="ChromeDriverFalso"),
+            _procurar_inscricao_empresa=mock.Mock(side_effect=procurar),
+            _recuperar_para_proxima_empresa=mock.Mock(side_effect=m.RecuperacaoImpossivelException("não consegui voltar à troca de empresa")),
+        )
+
+        self.assertEqual(empresas_tentadas, [1])  # parou em vez de gerar falhas em cascata
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION)
+        self.assertIn("não consegui voltar", resultado.status.message)
+
+    def test_recuperacao_nao_faz_nada_se_a_troca_de_empresa_ja_esta_aberta(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        with mock.patch.object(controlador, "_modal_de_troca_de_inscricao_esta_aberto", return_value=True), \
+             mock.patch.object(controlador, "_abrir_modal_de_alteracao_de_inscricao") as abrir:
+            controlador._recuperar_para_proxima_empresa(mock.Mock())
+        abrir.assert_not_called()
+
+    def test_recuperacao_abre_a_troca_de_empresa_quando_ela_nao_esta_aberta(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        with mock.patch.object(controlador, "_modal_de_troca_de_inscricao_esta_aberto", return_value=False), \
+             mock.patch.object(controlador, "_abrir_modal_de_alteracao_de_inscricao") as abrir:
+            controlador._recuperar_para_proxima_empresa(mock.Mock())
+        abrir.assert_called_once()
+
+    def test_recuperacao_que_falha_levanta_recuperacao_impossivel(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        with mock.patch.object(controlador, "_modal_de_troca_de_inscricao_esta_aberto", return_value=False), \
+             mock.patch.object(controlador, "_abrir_modal_de_alteracao_de_inscricao", side_effect=m.NoSuchElementException("sem botão")):
+            with self.assertRaises(m.RecuperacaoImpossivelException):
+                controlador._recuperar_para_proxima_empresa(mock.Mock())
+
+    def test_recuperacao_com_navegador_morto_vira_navegador_indisponivel(self):
+        controlador = _controlador(self.caminho, self.pasta / "saida", [date(2026, 1, 1)])
+        with mock.patch.object(controlador, "_modal_de_troca_de_inscricao_esta_aberto", side_effect=m.InvalidSessionIdException("invalid session id")):
+            with self.assertRaises(m.NavegadorIndisponivelException):
+                controlador._recuperar_para_proxima_empresa(mock.Mock())
 
 
 class TestExecutarProcessoIntegrado(unittest.TestCase):
