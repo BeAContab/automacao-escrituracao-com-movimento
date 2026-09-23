@@ -29,7 +29,10 @@ from escrituracao_multi_cnpj import (
 )
 from core.captura_escrituracao_com_movimento.procedures import baixar_certificado_escrituracao_empresas_iss
 from core.captura_escrituracao_com_movimento.classes import ThreadStoppedException as CapturaThreadStoppedException
-from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import ControladorEncerramentoISS
+from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import (
+    CodigoEncerramentoISS,
+    ControladorEncerramentoISS,
+)
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss_multi_periodo import (
     ControladorEncerramentoISSMultiPeriodo,
 )
@@ -1249,7 +1252,10 @@ class BeAContabAPI:
                 "pasta_saida": str(saida_dir),
             })
             self.window.evaluate_js(f"window.mostrar_resumo_encerramento_multi({resumo})")
-            log_gui("Encerramento ISS — Múltiplos Meses concluído.")
+            if resultado.status.codigo == CodigoEncerramentoISS.SUCCESS:
+                log_gui("Encerramento ISS — Múltiplos Meses concluído.")
+            else:
+                log_gui("Encerramento ISS — Múltiplos Meses INTERROMPIDO antes de percorrer toda a planilha (veja a mensagem acima).", True)
         except Exception as e:
             tb = traceback.format_exc()
             print(f"[ERRO INTERNO ENCERRAMENTO MULTI-PERÍODO] {tb}")

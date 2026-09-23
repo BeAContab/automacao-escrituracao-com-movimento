@@ -22,7 +22,12 @@ Diferenças deliberadas em relação ao original:
   ciente de que a célula fica com várias informações concatenadas;
   ao final da célula, sem apagar o que já estava lá;
 - um erro inesperado numa competência específica não derruba a execução inteira: fica registrado
-  como problema daquela competência e o robô segue para a próxima (competência ou empresa).
+  como problema daquela competência e o robô segue para a próxima (competência ou empresa),
+  refazendo o caminho pelo menu (competência) ou voltando à troca de empresa (empresa) antes de seguir;
+- se o Chrome for fechado/travar, ou se o portal não puder ser devolvido à troca de empresa depois de
+  um erro, a execução PARA com uma mensagem clara (e gera os relatórios do que já foi feito), em vez de
+  tentar cada empresa restante com o navegador morto;
+- a mesma informação não é acrescentada duas vezes na célula da planilha ao repetir a execução.
 
 ATENÇÃO — duplicação consciente: uma correção futura no fluxo do portal (seletores, navegação)
 pode precisar ser feita nos dois módulos (este e `encerramento_iss.py`).
@@ -44,8 +49,13 @@ from selenium.common import NoSuchElementException, TimeoutException
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
     ElementNotInteractableException,
+    InvalidSessionIdException,
+    NoSuchWindowException,
     StaleElementReferenceException,
+    WebDriverException,
 )
+from selenium.webdriver.common.by import By
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
 
 from python_spreadsheet_reader.readers import SpreadsheetIsLockedException, XLSXReader
 from python_spreadsheet_reader.styler import HorizontalAlignment, VerticalAlignment
@@ -115,6 +125,43 @@ class SemEmpresasProcessadasException(Exception):
     """Nenhuma empresa foi processada para nenhuma competência (nada a gerar de relatório)."""
 
 
+class NavegadorIndisponivelException(Exception):
+    """O Chrome foi fechado (ou parou de responder) durante a execução: continuar só geraria uma
+    sequência de falhas, uma por empresa restante."""
+
+
+class RecuperacaoImpossivelException(Exception):
+    """Depois de um erro inesperado não consegui devolver o portal à tela de troca de empresa:
+    seguir para a próxima empresa faria todas as seguintes falharem em cascata."""
+
+
+# Textos que o Selenium/Chrome usam quando a sessão do navegador morreu.
+_MARCAS_NAVEGADOR_INDISPONIVEL = (
+    "invalid session id",
+    "not connected to devtools",
+    "disconnected",
+    "no such window",
+    "target window already closed",
+    "web view not found",
+    "chrome not reachable",
+    "max retries exceeded",
+)
+
+# Textos curtos que vão para a planilha fiscal (coluna Y) e para o relatório — sem nome de exceção do Selenium.
+MSG_COMPETENCIA_NAO_ENCONTRADA = "COMPETÊNCIA NÃO ENCONTRADA NO PORTAL"
+MSG_ERRO_PORTAL = "ERRO NO PORTAL"
+
+
+def navegador_indisponivel(exc: BaseException) -> bool:
+    """True se `exc` indica que o navegador foi fechado/travou (sessão do Chrome perdida)."""
+    if isinstance(exc, (InvalidSessionIdException, NoSuchWindowException, Urllib3HTTPError, ConnectionError)):
+        return True
+    if isinstance(exc, WebDriverException):
+        texto = (getattr(exc, "msg", None) or str(exc)).lower()
+        return any(marca in texto for marca in _MARCAS_NAVEGADOR_INDISPONIVEL)
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Controlador
 # ---------------------------------------------------------------------------
@@ -169,10 +216,15 @@ class ControladorEncerramentoISSMultiPeriodo:
                 self.check_thread_stopped_callback()
                 try:
                     self._processar_linha(driver, reader, row_number, row)
-                except UserStoppedThreadException:
+                except (UserStoppedThreadException, NavegadorIndisponivelException, RecuperacaoImpossivelException):
                     raise
                 except Exception as exc:  # noqa: BLE001 — um erro inesperado numa empresa não pode abortar a planilha inteira
+                    if navegador_indisponivel(exc):
+                        raise NavegadorIndisponivelException(str(exc)) from exc
                     logger.error(f"Erro inesperado na linha {row_number} da planilha — vou pular para a próxima. Detalhe: {exc}")
+                    # O erro pode ter deixado o portal numa tela qualquer; sem voltar à troca de empresa,
+                    # todas as empresas seguintes falhariam já no primeiro clique.
+                    self._recuperar_para_proxima_empresa(driver)
 
             msg = "Terminei de percorrer a planilha para todas as competências solicitadas."
             logger.success(msg)
@@ -181,6 +233,17 @@ class ControladorEncerramentoISSMultiPeriodo:
             msg = "Recebi o pedido de cancelamento do operador e parei o processo aqui."
             logger.warning(msg)
             status = StatusEncerramentoISS(codigo=CodigoEncerramentoISS.USER_ENDED_PROCESS, message=msg)
+        except NavegadorIndisponivelException:
+            msg = (
+                "O navegador (Chrome) foi fechado ou parou de responder durante a execução — parei o processo aqui. "
+                "O que já foi processado está na planilha fiscal e nos relatórios."
+            )
+            logger.error(msg)
+            status = StatusEncerramentoISS(codigo=CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION, message=msg)
+        except RecuperacaoImpossivelException as impossivel:
+            msg = str(impossivel)
+            logger.error(msg)
+            status = StatusEncerramentoISS(codigo=CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION, message=msg)
         except FileNotFoundError as fnf_err:
             msg = f"Não foi possível achar o arquivo: {fnf_err.filename}"
             logger.error(msg)
@@ -193,7 +256,10 @@ class ControladorEncerramentoISSMultiPeriodo:
             status = StatusEncerramentoISS(codigo=CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION, message=str(exc))
         finally:
             reader.close_workbook()
-            driver.quit_driver()
+            try:
+                driver.quit_driver()
+            except Exception as exc:  # noqa: BLE001 — com o Chrome já fechado o quit() pode falhar; não pode impedir o relatório
+                logger.debug(f"Não consegui fechar o navegador de forma limpa (provavelmente já estava fechado): {exc}")
 
         report_paths: list[Path] = []
         try:
@@ -248,14 +314,46 @@ class ControladorEncerramentoISSMultiPeriodo:
                 resultado = self._processar_competencia(driver, reader, empresa, competencia)
             except UserStoppedThreadException:
                 raise
-            except (NoSuchElementException, TimeoutException) as exc:
-                msg = f"Não consegui processar essa competência no portal: {type(exc).__name__}"
-                logger.error(f"{empresa} — {competencia.strftime('%m/%Y')}: {msg}")
-                resultado = ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[msg])
-                self._acrescentar_na_planilha_fiscal(reader, competencia, msg, empresa.linha_planilha_fiscal)
+            except Exception as exc:  # noqa: BLE001 — um erro numa competência não pode derrubar as demais da empresa
+                if navegador_indisponivel(exc):
+                    raise
+                logger.error(
+                    f"{empresa} — {competencia.strftime('%m/%Y')}: não consegui processar essa competência no portal "
+                    f"({type(exc).__name__}) — vou seguir para a próxima."
+                )
+                resultado = ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[MSG_ERRO_PORTAL])
+                self._acrescentar_na_planilha_fiscal(reader, competencia, MSG_ERRO_PORTAL, empresa.linha_planilha_fiscal)
+                # O erro pode ter acontecido no meio do fluxo (aba de serviços, certificado…): refaz o
+                # caminho pelo menu para a próxima competência começar de uma tela conhecida.
+                self.resultados.append(resultado)
+                self._navegar_tela_escrituracao(driver)
+                continue
             self.resultados.append(resultado)
 
         self._abrir_modal_de_alteracao_de_inscricao(driver)
+
+    def _modal_de_troca_de_inscricao_esta_aberto(self, driver: ChromeDriver) -> bool:
+        campos = driver.get_driver().find_elements(By.ID, "alteraInscricaoForm:cpfPesquisa")
+        return any(campo.is_displayed() for campo in campos)
+
+    def _recuperar_para_proxima_empresa(self, driver: ChromeDriver) -> None:
+        """Depois de um erro inesperado, devolve o portal à tela de troca de empresa (se já não estiver
+        nela). Se não conseguir, levanta `RecuperacaoImpossivelException` para parar em vez de deixar
+        todas as empresas seguintes falharem em cascata."""
+        try:
+            if self._modal_de_troca_de_inscricao_esta_aberto(driver):
+                return
+            self._abrir_modal_de_alteracao_de_inscricao(driver)
+        except UserStoppedThreadException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if navegador_indisponivel(exc):
+                raise NavegadorIndisponivelException(str(exc)) from exc
+            raise RecuperacaoImpossivelException(
+                "Depois do erro não consegui voltar para a tela de troca de empresa — parei o processo aqui para não "
+                "gerar uma sequência de falhas nas próximas empresas. O que já foi processado está na planilha fiscal "
+                "e nos relatórios."
+            ) from exc
 
     # -- login / navegação (cópia do original; não dependem da competência) ----
 
@@ -473,7 +571,15 @@ class ControladorEncerramentoISSMultiPeriodo:
             element.get_element()
             return element
 
-        search_result_row = retry_on_exception(func=_locate_element, max_attempts=60, polling_seconds=1, exception=NoSuchElementException)
+        try:
+            search_result_row = retry_on_exception(func=_locate_element, max_attempts=60, polling_seconds=1, exception=NoSuchElementException)
+        except NoSuchElementException:
+            logger.error(
+                f"{empresa} — {competencia_str}: o portal não listou essa competência para a empresa (pode ser anterior "
+                "ao início da inscrição ou estar em outra página da tabela) — vou seguir para a próxima."
+            )
+            self._acrescentar_na_planilha_fiscal(reader, competencia, MSG_COMPETENCIA_NAO_ENCONTRADA, empresa.linha_planilha_fiscal)
+            return ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[MSG_COMPETENCIA_NAO_ENCONTRADA])
         link_escriturar = driver.find_element(search_result_row).by_xpath('.//*[contains(@id, "linkEscriturar")]')
         link_escriturar_title: str | None = link_escriturar.get_element().get_dom_attribute("title")
 
@@ -598,6 +704,9 @@ class ControladorEncerramentoISSMultiPeriodo:
         rotulo = f"{competencia.strftime('%m/%Y')}: {valor}" if competencia else valor
         atual = cell.value
         atual_str = atual.strip() if isinstance(atual, str) else ("" if atual is None else str(atual).strip())
+        # Repetir a mesma execução não pode empilhar a mesma informação na célula.
+        if rotulo in (parte.strip() for parte in atual_str.split(";")):
+            return
         cell.value = f"{atual_str}; {rotulo}" if atual_str else rotulo
         reader.save_spreadsheet(close_workbook=False)
 
