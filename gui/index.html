@@ -968,7 +968,7 @@ tailwind.config = {
                         Robô de Encerramento
                     </span>
                 </div>
-                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Mesma automação do <strong class="text-secondary">Encerramento ISS</strong>, mas para <strong class="text-secondary">várias competências de uma vez</strong>: para cada empresa da planilha, busca a inscrição uma única vez e processa todos os meses selecionados antes de passar para a próxima empresa. Gera um relatório por competência.</p>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Mesma automação do <strong class="text-secondary">Encerramento ISS</strong>, mas para <strong class="text-secondary">várias competências de uma vez</strong>: para cada empresa da planilha, busca a inscrição uma única vez e processa todos os meses selecionados antes de passar para a próxima empresa. Gera um relatório por competência. Use <strong class="text-secondary">Apenas verificar</strong> para conferir tudo antes: nada é encerrado nem baixado, e depois você executa só o que aprovou.</p>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
@@ -1036,25 +1036,53 @@ tailwind.config = {
                                     </div>
                                 </div>
                             </details>
+                            <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Modo de execução</label>
+                                <label class="flex items-start gap-sm p-sm rounded-lg border border-outline-variant cursor-pointer">
+                                    <input type="radio" name="modo-encerramento-multi" value="verificar" checked onchange="atualizarBotaoIniciarEncerramentoMulti()" class="mt-1 accent-primary-container"/>
+                                    <span class="font-body-sm text-body-sm text-on-surface"><strong>Apenas verificar (não encerra)</strong> — percorre e confere tudo, sem encerrar nem baixar nada. Depois você revisa a lista e executa só o que aprovar.</span>
+                                </label>
+                                <label class="flex items-start gap-sm p-sm rounded-lg border border-outline-variant cursor-pointer">
+                                    <input type="radio" name="modo-encerramento-multi" value="encerrar" onchange="atualizarBotaoIniciarEncerramentoMulti()" class="mt-1 accent-primary-container"/>
+                                    <span class="font-body-sm text-body-sm text-on-surface"><strong>Encerrar</strong> — encerra de verdade as escriturações aptas e baixa os certificados. <strong class="text-error">Ação irreversível no portal.</strong></span>
+                                </label>
+                            </div>
                             <button id="btn-iniciar-encerramento-multi" onclick="iniciarEncerramentoMultiPeriodo()" class="w-full bg-primary-container text-white py-md rounded-lg font-bold text-base hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
-                                <span class="material-symbols-outlined">send</span>
-                                Realizar Encerramento
+                                <span id="icone-btn-iniciar-encerramento-multi" class="material-symbols-outlined">fact_check</span>
+                                <span id="lbl-btn-iniciar-encerramento-multi">Verificar (não encerra)</span>
                             </button>
-                            <button id="btn-cancelar-encerramento-multi" onclick="cancelarEncerramentoMultiPeriodo()" class="hidden w-full border border-error text-error py-sm rounded-lg font-bold text-sm hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
-                                <span class="material-symbols-outlined text-[16px]">cancel</span>
-                                Cancelar
-                            </button>
+                            <div id="controles-encerramento-multi" class="hidden grid grid-cols-2 gap-sm">
+                                <button id="btn-pausar-encerramento-multi" onclick="alternarPausaEncerramentoMulti()" class="border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center justify-center gap-sm">
+                                    <span id="icone-pausar-encerramento-multi" class="material-symbols-outlined text-[18px]">pause</span>
+                                    <span id="lbl-pausar-encerramento-multi">Pausar</span>
+                                </button>
+                                <button id="btn-parar-encerramento-multi" onclick="pararEncerramentoMulti()" class="border border-error text-error font-label-md text-label-md py-sm rounded-lg hover:bg-error/5 transition-colors flex items-center justify-center gap-sm">
+                                    <span class="material-symbols-outlined text-[18px]">stop</span>
+                                    Parar
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     <div id="resumo-encerramento-multi" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
                         <h4 class="font-headline-sm text-headline-sm font-semibold mb-sm">Resumo da Execução</h4>
-                        <div class="grid grid-cols-3 gap-sm text-center">
+                        <div class="grid grid-cols-4 gap-sm text-center">
                             <div><p id="resumo-multi-processadas" class="font-headline-md text-headline-md">0</p><p class="font-label-md text-label-md text-on-surface-variant">Processadas</p></div>
-                            <div><p id="resumo-multi-encerradas" class="font-headline-md text-headline-md text-secondary">0</p><p class="font-label-md text-label-md text-on-surface-variant">Encerradas</p></div>
+                            <div><p id="resumo-multi-encerradas" class="font-headline-md text-headline-md text-secondary">0</p><p id="rotulo-resumo-multi-encerradas" class="font-label-md text-label-md text-on-surface-variant">Encerradas agora</p></div>
+                            <div><p id="resumo-multi-ja-encerradas" class="font-headline-md text-headline-md">0</p><p class="font-label-md text-label-md text-on-surface-variant">Já encerradas</p></div>
                             <div><p id="resumo-multi-problemas" class="font-headline-md text-headline-md text-error">0</p><p class="font-label-md text-label-md text-on-surface-variant">Problemas</p></div>
                         </div>
                         <button id="btn-abrir-relatorios-encerramento-multi" onclick="abrirPastaRelatoriosEncerramentoMulti()" class="hidden w-full mt-md border border-secondary text-secondary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-container transition-colors">Abrir Pasta com os Relatórios Gerados</button>
+                    </div>
+
+                    <div id="verificacao-encerramento-multi" class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg elevation-1">
+                        <h4 class="font-headline-sm text-headline-sm font-semibold mb-xs">Revisão da verificação</h4>
+                        <p class="font-body-sm text-body-sm text-on-surface-variant mb-sm">Nada foi encerrado nem baixado. Marque o que deve ser executado: as <strong>aptas</strong> serão encerradas (e terão o certificado baixado) e das <strong>já encerradas</strong> será baixado o certificado que falta. Cada item é conferido de novo no portal imediatamente antes de ser encerrado.</p>
+                        <div id="lista-verificacao-encerramento-multi" class="flex flex-col gap-sm max-h-[420px] overflow-y-auto"></div>
+                        <button id="btn-executar-verificadas-encerramento-multi" onclick="executarVerificadasEncerramentoMulti()" class="w-full mt-md bg-primary-container text-white py-sm rounded-lg font-bold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-sm">
+                            <span class="material-symbols-outlined text-[18px]">task_alt</span>
+                            <span id="lbl-btn-executar-verificadas-encerramento-multi">Executar o que foi verificado (0)</span>
+                        </button>
                     </div>
                 </div>
 

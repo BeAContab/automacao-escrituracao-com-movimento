@@ -138,6 +138,7 @@ class BeAContabAPI:
             "multi": _ControleProcessamentoXml(),
             "esc_multi": _ControleProcessamentoXml(),  # Escrituração Multi-CNPJ
             "exportar": _ControleProcessamentoXml(),  # Exportar XML de Prestados
+            "encerramento_multi": _ControleProcessamentoXml(),  # Encerramento ISS — Múltiplos Meses
         }
         self._pausa_event = threading.Event()
         self._pausa_event.set()
@@ -167,7 +168,6 @@ class BeAContabAPI:
         # ver core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py)
         self._encerramento_multi_periodo_em_execucao = False
         self._lock_encerramento_multi_periodo = threading.Lock()
-        self._cancelar_encerramento_multi_periodo_event = threading.Event()
 
         # Idem para a aba "Baixar NFS-e (Portal Nacional)"
         self._nfse_nacional_em_execucao = False
@@ -583,12 +583,14 @@ class BeAContabAPI:
         "multi": "termina o XML em andamento e aguarda",
         "esc_multi": "o robô pausa no próximo ponto seguro (pode ser no meio de uma empresa; a sessão do portal expira após ~20 min sem ação)",
         "exportar": "termina a página em andamento e aguarda, com o navegador aberto exatamente como está",
+        "encerramento_multi": "o robô pausa antes da próxima competência/empresa (nunca no meio de um encerramento), com o navegador aberto; a sessão do portal expira após ~20 min sem ação",
     }
     _MENSAGENS_PARADA = {
         "individual": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
         "multi": "finalizando o XML em andamento; o que já foi processado fica salvo na planilha",
         "esc_multi": "interrompendo a empresa em andamento, fazendo logout e fechando o navegador",
         "exportar": "finalizando a página em andamento; os arquivos já exportados continuam na pasta de destino e o navegador não é fechado",
+        "encerramento_multi": "terminando a competência em andamento (nunca no meio de um encerramento), gerando os relatórios do que já foi feito e fechando o navegador",
     }
 
     def pausar_processamento_xml(self, modo: str = "individual"):
@@ -1191,38 +1193,76 @@ class BeAContabAPI:
                 self._encerramento_sem_movimento_em_execucao = False
 
     def iniciar_encerramento_multi_periodo_gui(self, planilha_path, saida_dir, competencias_lista,
-                                                chrome_path, url_portal, cpf, senha):
+                                                chrome_path, url_portal, cpf, senha, modo="encerrar"):
         """Dispara o Encerramento ISS — Múltiplos Meses em uma thread separada. `competencias_lista`
-        é uma lista de strings "MM/AAAA" (a competência única da função de cima vira uma lista aqui)."""
+        é uma lista de strings "MM/AAAA" (a competência única da função de cima vira uma lista aqui).
+        `modo`: "encerrar" (padrão) ou "verificar" (confere tudo, mas NÃO encerra nem baixa nada)."""
+        return self._disparar_encerramento_multi_periodo(
+            planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha, modo, None
+        )
+
+    def executar_verificadas_encerramento_multi_gui(self, planilha_path, saida_dir, itens,
+                                                     chrome_path, url_portal, cpf, senha):
+        """Executa (encerra/baixa certificado) só o que o operador aprovou numa verificação prévia.
+        `itens`: lista de {"cnpj": "<14 dígitos ou com máscara>", "competencia": "MM/AAAA"}. Abre um Chrome novo
+        (com novo login): a sessão da verificação pode ter expirado enquanto o operador revisava a lista."""
+        alvos: dict[str, set[date]] = {}
+        competencias_lista: set[str] = set()
+        for item in itens or []:
+            cnpj = re.sub(r"\D", "", str((item or {}).get("cnpj", "")))
+            competencia_str = str((item or {}).get("competencia", ""))
+            try:
+                mes_str, ano_str = competencia_str.split("/")
+                competencia = date(int(ano_str), int(mes_str), 1)
+            except ValueError:
+                continue
+            if len(cnpj) != 14:
+                continue
+            alvos.setdefault(cnpj, set()).add(competencia)
+            competencias_lista.add(competencia.strftime("%m/%Y"))
+        if not alvos:
+            self.window.evaluate_js("window.log_encerramento_multi('Erro: nenhum item válido para executar.', true)")
+            return False
+        ordenadas = sorted(competencias_lista, key=lambda c: (c.split("/")[1], c.split("/")[0]))
+        return self._disparar_encerramento_multi_periodo(
+            planilha_path, saida_dir, ordenadas, chrome_path, url_portal, cpf, senha, "encerrar", alvos
+        )
+
+    def _disparar_encerramento_multi_periodo(self, planilha_path, saida_dir, competencias_lista,
+                                              chrome_path, url_portal, cpf, senha, modo, alvos):
         with self._lock_encerramento_multi_periodo:
             if self._encerramento_multi_periodo_em_execucao:
                 self.window.evaluate_js("window.log_encerramento_multi('Erro: o encerramento já está em andamento!', true)")
-                return
+                return False
             self._encerramento_multi_periodo_em_execucao = True
 
-        self._cancelar_encerramento_multi_periodo_event.clear()
+        self._controles_xml["encerramento_multi"].reiniciar()
         threading.Thread(
             target=self._processar_encerramento_multi_periodo,
-            args=(planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha),
+            args=(planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha, modo, alvos),
             daemon=True
         ).start()
+        return True
 
     def cancelar_encerramento_multi_periodo(self):
-        self._cancelar_encerramento_multi_periodo_event.set()
+        """Compatibilidade: agora é "Parar" (termina a competência em andamento, gera os relatórios e para)."""
+        self.cancelar_processamento_xml("encerramento_multi")
 
     def _processar_encerramento_multi_periodo(self, planilha_path, saida_dir, competencias_lista,
-                                               chrome_path, url_portal, cpf, senha):
+                                               chrome_path, url_portal, cpf, senha, modo="encerrar", alvos=None):
         caminho_log = self._abrir_arquivo_log(saida_dir)
         log_gui = self._criar_log_gui("log_encerramento_multi", caminho_log)
+        controle = self._controles_xml["encerramento_multi"]
+        controle.log = log_gui
 
         def sink_loguru(mensagem):
             registro = mensagem.record
             log_gui(registro["message"], registro["level"].name in ("ERROR", "CRITICAL"))
 
-        # Mesmo adaptador de cancelamento usado na Captura Escrituração/Encerramento (ver comentário lá).
+        # Sem parada imediata: "Parar" só é atendido nos limites seguros (entre competências/empresas), via
+        # `callback_parar` — parar no meio de um encerramento (irreversível) deixaria a competência pela metade.
         def check_thread_stopped_cb():
-            if self._cancelar_encerramento_multi_periodo_event.is_set():
-                raise UserStoppedThreadException()
+            return None
 
         sink_id = logger.add(sink_loguru, level="INFO", enqueue=True)
         try:
@@ -1241,19 +1281,36 @@ class BeAContabAPI:
                 competencias=competencias,
                 caminho_template_relatorio=caminho_template,
                 check_thread_stopped_callback=check_thread_stopped_cb,
+                modo=modo,
+                callback_pausa=controle.aguardar_se_pausado,
+                callback_parar=controle.cancelado,
+                alvos=alvos,
             )
             resultado = controlador.executar_processo()
 
-            resumo = json.dumps({
+            payload = {
+                "modo": modo,
                 "processadas": resultado.processadas,
                 "encerradas": resultado.encerradas,
+                "encerradas_agora": resultado.encerradas_agora,
+                "ja_encerradas": resultado.ja_encerradas,
+                "aptas": resultado.aptas,
                 "problemas": resultado.problemas,
                 "report_paths": [str(p) for p in resultado.report_paths],
                 "pasta_saida": str(saida_dir),
-            })
-            self.window.evaluate_js(f"window.mostrar_resumo_encerramento_multi({resumo})")
-            if resultado.status.codigo == CodigoEncerramentoISS.SUCCESS:
-                log_gui("Encerramento ISS — Múltiplos Meses concluído.")
+            }
+            if modo == "verificar":
+                payload["verificacao"] = self._montar_verificacao_encerramento_multi(resultado)
+            self.window.evaluate_js(f"window.mostrar_resumo_encerramento_multi({json.dumps(payload)})")
+            codigo = resultado.status.codigo
+            if codigo == CodigoEncerramentoISS.SUCCESS:
+                if modo == "verificar":
+                    log_gui("Verificação concluída — nada foi encerrado nem baixado. Revise a lista ao lado e, se estiver tudo certo, use "
+                            "\"Executar o que foi verificado\".")
+                else:
+                    log_gui("Encerramento ISS — Múltiplos Meses concluído.")
+            elif codigo == CodigoEncerramentoISS.USER_ENDED_PROCESS:
+                log_gui("Encerramento ISS — Múltiplos Meses PARADO pelo operador (o que já foi feito está nos relatórios/na lista).", True)
             else:
                 log_gui("Encerramento ISS — Múltiplos Meses INTERROMPIDO antes de percorrer toda a planilha (veja a mensagem acima).", True)
         except Exception as e:
@@ -1262,8 +1319,33 @@ class BeAContabAPI:
             log_gui(f"Erro crítico no encerramento: {e}", True)
         finally:
             logger.remove(sink_id)
+            controle.log = None
+            try:
+                self.window.evaluate_js("window.encerramento_multi_finalizado && window.encerramento_multi_finalizado()")
+            except Exception:
+                pass
             with self._lock_encerramento_multi_periodo:
                 self._encerramento_multi_periodo_em_execucao = False
+
+    @staticmethod
+    def _montar_verificacao_encerramento_multi(resultado) -> list[dict]:
+        """Lista empresa × competência para a tela de revisão da verificação (só o que ela precisa)."""
+        itens = []
+        for r in resultado.resultados:
+            categoria = r.categoria
+            itens.append({
+                "cnpj": r.empresa.cnpj,
+                "cnpj_m": r.empresa.cnpj_m or r.empresa.cnpj,
+                "codigo": r.empresa.codigo,
+                "nome": r.empresa.nome,
+                "competencia": r.competencia.strftime("%m/%Y"),
+                "categoria": categoria,
+                "motivo": "; ".join(r.problemas),
+                "situacao": r.situacao,
+                # o que o botão "Executar o que foi verificado" pode fazer (encerrar / baixar certificado que falta)
+                "executavel": categoria in ("apta", "ja_encerrada_sem_certificado"),
+            })
+        return itens
 
     def selecionar_certificado_windows_gui(self):
         """Abre o seletor nativo do Windows para escolher um certificado já instalado
@@ -1420,6 +1502,7 @@ if __name__ == '__main__':
         api.iniciar_encerramento_sem_movimento_gui,
         api.cancelar_encerramento_sem_movimento,
         api.iniciar_encerramento_multi_periodo_gui,
+        api.executar_verificadas_encerramento_multi_gui,
         api.cancelar_encerramento_multi_periodo,
         api.selecionar_arquivo_certificado,
         api.selecionar_certificado_windows_gui,

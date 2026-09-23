@@ -81,10 +81,10 @@ class _Base(unittest.TestCase):
 
         app.ControladorEncerramentoISSMultiPeriodo = construtor
 
-    def _iniciar_e_esperar(self, competencias, cpf="12345678901", senha="segredo"):
+    def _iniciar_e_esperar(self, competencias, cpf="12345678901", senha="segredo", **extra):
         self.api.iniciar_encerramento_multi_periodo_gui(
             str(self.pasta / "planilha.xlsx"), str(self.pasta / "saida"), competencias,
-            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", cpf, senha,
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", cpf, senha, **extra,
         )
         for _ in range(200):
             if not self.api._encerramento_multi_periodo_em_execucao:
@@ -145,25 +145,20 @@ class TestErrosECancelamento(_Base):
         self.assertIn("Erro crítico no encerramento", self.logs())
         self.assertFalse(self.api._encerramento_multi_periodo_em_execucao)
 
-    def test_pedido_de_cancelamento_faz_o_callback_do_controlador_levantar(self):
-        from core.encerramento_iss_sem_movimento.utils.classes import UserStoppedThreadException
-
+    def test_parar_nao_derruba_o_callback_imediato_mas_liga_o_callback_de_parada(self):
         capturado = {}
-        chegou_a_chamar_de_novo = []
+        observado = {}
 
         def construtor(**kwargs):
             capturado.update(kwargs)
 
             def executar():
-                cb = kwargs["check_thread_stopped_callback"]
-                cb()  # 1ª checagem: ainda não foi pedido cancelamento
-                self.api.cancelar_encerramento_multi_periodo()  # operador clica em "Cancelar" no meio da execução
-                try:
-                    cb()  # 2ª checagem: agora precisa levantar
-                except UserStoppedThreadException:
-                    chegou_a_chamar_de_novo.append(True)
-                    raise
-                self.fail("a 2ª checagem deveria ter levantado UserStoppedThreadException")
+                observado["antes"] = kwargs["callback_parar"]()
+                kwargs["check_thread_stopped_callback"]()  # parada imediata desligada: nunca levanta
+                self.api.cancelar_encerramento_multi_periodo()  # operador clica em "Parar"
+                kwargs["check_thread_stopped_callback"]()  # continua sem levantar no meio de um encerramento
+                observado["depois"] = kwargs["callback_parar"]()
+                return self._resultado_padrao()
 
             fake = mock.Mock()
             fake.executar_processo.side_effect = executar
@@ -172,8 +167,8 @@ class TestErrosECancelamento(_Base):
         app.ControladorEncerramentoISSMultiPeriodo = construtor
         self._iniciar_e_esperar(["01/2026"])
 
-        self.assertEqual(chegou_a_chamar_de_novo, [True])
-        self.assertIn("Erro crítico no encerramento", self.logs())  # a exceção sobe e vira log (mesmo padrão do original)
+        self.assertEqual(observado, {"antes": False, "depois": True})
+        self.assertNotIn("Erro crítico", self.logs())
 
     def test_nao_inicia_uma_segunda_execucao_enquanto_a_primeira_esta_rodando(self):
         liberar = threading.Event()
@@ -209,6 +204,205 @@ class TestErrosECancelamento(_Base):
                 break
             threading.Event().wait(0.02)
         self.assertFalse(self.api._encerramento_multi_periodo_em_execucao)
+
+
+class TestPausaEParadaNoApp(_Base):
+    def test_controlador_recebe_callbacks_de_pausa_e_parada_e_o_modo(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._iniciar_e_esperar(["01/2026"])
+        self.assertEqual(capturado["modo"], "encerrar")
+        self.assertTrue(callable(capturado["callback_pausa"]))
+        self.assertTrue(callable(capturado["callback_parar"]))
+        self.assertIsNone(capturado["alvos"])
+
+    def test_pausa_e_retomada_sao_avisadas_no_log(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+
+        def construtor(**kwargs):
+            capturado.update(kwargs)
+
+            def executar():
+                # o robô chega ao limite seguro com a execução em andamento (log do controle ativo)
+                self.api.pausar_processamento_xml("encerramento_multi")
+                threading.Timer(0.1, lambda: self.api.retomar_processamento_xml("encerramento_multi")).start()
+                kwargs["callback_pausa"]()  # bloqueia até o Timer retomar
+                return self._resultado_padrao()
+
+            fake = mock.Mock()
+            fake.executar_processo.side_effect = executar
+            return fake
+
+        app.ControladorEncerramentoISSMultiPeriodo = construtor
+        self._iniciar_e_esperar(["01/2026"])
+        texto = self.logs()
+        self.assertIn("PAUSA solicitada pelo operador", texto)
+        self.assertIn("RETOMADA pelo operador", texto)
+        self.assertIn("nunca no meio de um encerramento", texto)
+
+    def test_iniciar_devolve_true_ao_iniciar_e_false_se_ja_ha_execucao_para_a_tela_destravar(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        args = (
+            str(self.pasta / "planilha.xlsx"), str(self.pasta / "saida"), ["01/2026"],
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo",
+        )
+        self.assertTrue(self.api.iniciar_encerramento_multi_periodo_gui(*args))
+        for _ in range(200):
+            if not self.api._encerramento_multi_periodo_em_execucao:
+                break
+            threading.Event().wait(0.05)
+        self.api._encerramento_multi_periodo_em_execucao = True  # simula outra execução em andamento
+        self.assertFalse(self.api.iniciar_encerramento_multi_periodo_gui(*args))
+        self.api._encerramento_multi_periodo_em_execucao = False
+
+    def test_fim_da_execucao_avisa_a_tela_para_destravar_os_botoes(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._iniciar_e_esperar(["01/2026"])
+        self.assertTrue(any("encerramento_multi_finalizado" in c for c in self.janela.js))
+
+    def test_parar_registra_aviso_e_libera_uma_pausa_em_andamento(self):
+        controle = self.api._controles_xml["encerramento_multi"]
+        controle.reiniciar()
+        controle.log = lambda *_a, **_k: None
+        self.api.pausar_processamento_xml("encerramento_multi")
+        self.assertFalse(controle.pausa.is_set())
+        self.api.cancelar_processamento_xml("encerramento_multi")
+        self.assertTrue(controle.cancelado())
+        self.assertTrue(controle.pausa.is_set())  # a parada acorda o robô pausado
+
+    def test_iniciar_zera_uma_parada_de_execucao_anterior(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self.api.cancelar_encerramento_multi_periodo()  # sobra de uma execução anterior
+        self._iniciar_e_esperar(["01/2026"])
+        self.assertFalse(capturado["callback_parar"]())
+
+    def test_parado_pelo_operador_loga_parado_e_nao_concluido(self):
+        capturado = {}
+        resultado = self._resultado_padrao()
+        resultado.status = StatusEncerramentoISS(CodigoEncerramentoISS.USER_ENDED_PROCESS, "parado")
+        self._instalar_controlador_falso(capturado, resultado=resultado)
+        self._iniciar_e_esperar(["01/2026"])
+        texto = self.logs()
+        self.assertIn("PARADO pelo operador", texto)
+        self.assertNotIn("Múltiplos Meses concluído", texto)
+
+
+class TestModoVerificarNoApp(_Base):
+    def _resultado_verificacao(self):
+        emp = _empresa()
+        emp.cnpj_m = "12.345.678/0001-99"
+        resultados = [
+            ResultadoMesEmpresa(emp, date(2026, 1, 1), encerrada=False, acao="apta", situacao="Aberta - Normal 01/01/2026"),
+            ResultadoMesEmpresa(emp, date(2026, 2, 1), encerrada=True, acao="ja_encerrada_sem_certificado"),
+            ResultadoMesEmpresa(emp, date(2026, 3, 1), encerrada=True, acao="ja_encerrada_certificado_existente"),
+            ResultadoMesEmpresa(emp, date(2026, 4, 1), encerrada=False, problemas=["SERVIÇOS PRESTADOS"]),
+        ]
+        return ResultadoEncerramentoISSMultiPeriodo(
+            status=StatusEncerramentoISS(CodigoEncerramentoISS.SUCCESS, "ok"), resultados=resultados, report_paths=[],
+        )
+
+    def test_modo_verificar_e_repassado_ao_controlador(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado, resultado=self._resultado_verificacao())
+        self._iniciar_e_esperar(["01/2026"], modo="verificar")
+        self.assertEqual(capturado["modo"], "verificar")
+
+    def test_resumo_da_verificacao_traz_a_lista_com_o_que_e_executavel(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado, resultado=self._resultado_verificacao())
+        self._iniciar_e_esperar(["01/2026"], modo="verificar")
+        resumo = self.janela.resumo()
+        self.assertEqual(resumo["modo"], "verificar")
+        self.assertEqual((resumo["aptas"], resumo["ja_encerradas"], resumo["problemas"], resumo["encerradas_agora"]), (1, 2, 1, 0))
+        itens = {i["competencia"]: i for i in resumo["verificacao"]}
+        self.assertEqual(sorted(itens), ["01/2026", "02/2026", "03/2026", "04/2026"])
+        self.assertTrue(itens["01/2026"]["executavel"])  # apta
+        self.assertTrue(itens["02/2026"]["executavel"])  # já encerrada, falta o certificado
+        self.assertFalse(itens["03/2026"]["executavel"])  # já encerrada, certificado existe
+        self.assertFalse(itens["04/2026"]["executavel"])  # problema
+        self.assertEqual(itens["04/2026"]["motivo"], "SERVIÇOS PRESTADOS")
+        self.assertEqual(itens["01/2026"]["situacao"], "Aberta - Normal 01/01/2026")
+        self.assertEqual(itens["01/2026"]["cnpj"], "12345678000199")
+
+    def test_log_da_verificacao_diz_que_nada_foi_encerrado(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado, resultado=self._resultado_verificacao())
+        self._iniciar_e_esperar(["01/2026"], modo="verificar")
+        texto = self.logs()
+        self.assertIn("nada foi encerrado nem baixado", texto)
+        self.assertNotIn("Múltiplos Meses concluído", texto)
+
+    def test_modo_encerrar_nao_manda_lista_de_verificacao(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._iniciar_e_esperar(["01/2026"])
+        self.assertNotIn("verificacao", self.janela.resumo())
+
+
+class TestExecutarVerificadasNoApp(_Base):
+    def _executar_e_esperar(self, itens):
+        self.api.executar_verificadas_encerramento_multi_gui(
+            str(self.pasta / "planilha.xlsx"), str(self.pasta / "saida"), itens,
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo",
+        )
+        for _ in range(200):
+            if not self.api._encerramento_multi_periodo_em_execucao:
+                return
+            threading.Event().wait(0.05)
+        self.fail("a execução não terminou a tempo")
+
+    def test_executa_em_modo_encerrar_so_com_os_alvos_aprovados(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._executar_e_esperar([
+            {"cnpj": "12.345.678/0001-99", "competencia": "02/2026"},
+            {"cnpj": "12345678000199", "competencia": "01/2026"},
+            {"cnpj": "98765432000111", "competencia": "02/2026"},
+        ])
+        self.assertEqual(capturado["modo"], "encerrar")
+        self.assertEqual(capturado["competencias"], [date(2026, 1, 1), date(2026, 2, 1)])
+        self.assertEqual(
+            capturado["alvos"],
+            {"12345678000199": {date(2026, 1, 1), date(2026, 2, 1)}, "98765432000111": {date(2026, 2, 1)}},
+        )
+
+    def test_itens_invalidos_sao_ignorados(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._executar_e_esperar([
+            {"cnpj": "123", "competencia": "01/2026"},  # CNPJ curto
+            {"cnpj": "12345678000199", "competencia": "13-2026"},  # competência inválida
+            {"cnpj": "12345678000199", "competencia": "03/2026"},  # válido
+            None,
+        ])
+        self.assertEqual(capturado["alvos"], {"12345678000199": {date(2026, 3, 1)}})
+
+    def test_lista_sem_itens_validos_nao_inicia_nada(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self.api.executar_verificadas_encerramento_multi_gui(
+            str(self.pasta / "planilha.xlsx"), str(self.pasta / "saida"), [{"cnpj": "1", "competencia": "x"}],
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo",
+        )
+        self.assertEqual(capturado, {})  # o controlador nem foi criado
+        self.assertFalse(self.api._encerramento_multi_periodo_em_execucao)
+        self.assertTrue(any("nenhum item válido" in c for c in self.janela.js))
+
+    def test_nao_executa_enquanto_outra_execucao_esta_em_andamento(self):
+        self.api._encerramento_multi_periodo_em_execucao = True
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self.api.executar_verificadas_encerramento_multi_gui(
+            str(self.pasta / "planilha.xlsx"), str(self.pasta / "saida"), [{"cnpj": "12345678000199", "competencia": "01/2026"}],
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo",
+        )
+        self.assertEqual(capturado, {})
+        self.assertTrue(any("já está em andamento" in c for c in self.janela.js))
+        self.api._encerramento_multi_periodo_em_execucao = False
 
 
 if __name__ == "__main__":

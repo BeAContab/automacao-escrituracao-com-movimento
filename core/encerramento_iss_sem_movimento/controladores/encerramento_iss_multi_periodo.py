@@ -27,7 +27,10 @@ Diferenças deliberadas em relação ao original:
 - se o Chrome for fechado/travar, ou se o portal não puder ser devolvido à troca de empresa depois de
   um erro, a execução PARA com uma mensagem clara (e gera os relatórios do que já foi feito), em vez de
   tentar cada empresa restante com o navegador morto;
-- a mesma informação não é acrescentada duas vezes na célula da planilha ao repetir a execução.
+- a mesma informação não é acrescentada duas vezes na célula da planilha ao repetir a execução;
+- Pausar/Continuar/Parar nos limites seguros (entre competências e entre empresas);
+- competência já encerrada cujo certificado já existe na pasta não baixa o certificado de novo;
+- modo "apenas verificar" (não encerra nem baixa nada) e execução restrita ao que foi verificado.
 
 ATENÇÃO — duplicação consciente: uma correção futura no fluxo do portal (seletores, navegação)
 pode precisar ser feita nos dois módulos (este e `encerramento_iss.py`).
@@ -88,6 +91,18 @@ from core.encerramento_iss_sem_movimento.utils.functions import (
 # ---------------------------------------------------------------------------
 
 
+MODO_ENCERRAR = "encerrar"
+MODO_VERIFICAR = "verificar"  # percorre e confere tudo, mas NÃO encerra nem baixa nada
+
+# O que aconteceu com uma empresa/competência (`ResultadoMesEmpresa.categoria`).
+ACAO_ENCERRADA_AGORA = "encerrada_agora"
+ACAO_JA_ENCERRADA_CERT_EXISTENTE = "ja_encerrada_certificado_existente"
+ACAO_JA_ENCERRADA_CERT_BAIXADO = "ja_encerrada_certificado_baixado"
+ACAO_JA_ENCERRADA_SEM_CERT = "ja_encerrada_sem_certificado"  # só na verificação: falta baixar o certificado
+ACAO_APTA = "apta"  # só na verificação: aberta e sem impedimento para encerrar
+ACAO_PROBLEMA = "problema"
+
+
 @dataclass
 class ResultadoMesEmpresa:
     empresa: EmpresaSemMovimentoISSFortaleza
@@ -97,6 +112,13 @@ class ResultadoMesEmpresa:
     problemas: list[str] = field(default_factory=list)
     caminho_certificado: Path | None = None
     situacao: str = ""  # texto da coluna "Situação" do portal (ex.: "Aberta - Normal", "Fechada - Normal")
+    acao: str = ""  # uma das ACAO_*; vazio = deduzir de `encerrada` (compatível com quem não informa)
+
+    @property
+    def categoria(self) -> str:
+        if self.acao:
+            return self.acao
+        return ACAO_ENCERRADA_AGORA if self.encerrada else ACAO_PROBLEMA
 
 
 class ResultadoEncerramentoISSMultiPeriodo:
@@ -116,11 +138,24 @@ class ResultadoEncerramentoISSMultiPeriodo:
 
     @property
     def encerradas(self) -> int:
+        """Competências com ISS encerrado ao final da execução (encerradas agora + já estavam encerradas)."""
         return sum(1 for r in self.resultados if r.encerrada)
 
     @property
+    def encerradas_agora(self) -> int:
+        return sum(1 for r in self.resultados if r.categoria == ACAO_ENCERRADA_AGORA)
+
+    @property
+    def ja_encerradas(self) -> int:
+        return sum(1 for r in self.resultados if r.categoria.startswith("ja_encerrada"))
+
+    @property
+    def aptas(self) -> int:
+        return sum(1 for r in self.resultados if r.categoria == ACAO_APTA)
+
+    @property
     def problemas(self) -> int:
-        return sum(1 for r in self.resultados if not r.encerrada)
+        return sum(1 for r in self.resultados if r.categoria == ACAO_PROBLEMA)
 
 
 class SemEmpresasProcessadasException(Exception):
@@ -194,9 +229,19 @@ class ControladorEncerramentoISSMultiPeriodo:
         competencias: list[date],
         caminho_template_relatorio: Path,
         check_thread_stopped_callback: Callable[[], None],
+        modo: str = MODO_ENCERRAR,
+        callback_pausa: Callable[[], None] | None = None,
+        callback_parar: Callable[[], bool] | None = None,
+        alvos: dict[str, set[date]] | None = None,
     ) -> None:
+        """`callback_pausa` bloqueia enquanto o operador estiver com a execução pausada e `callback_parar`
+        devolve True quando ele pediu para parar — ambos consultados só nos limites seguros (entre
+        competências e entre empresas). `alvos` (CNPJ com 14 dígitos -> competências) restringe a execução
+        ao que foi aprovado numa verificação prévia."""
         if not competencias:
             raise ValueError("Informe ao menos uma competência.")
+        if modo not in (MODO_ENCERRAR, MODO_VERIFICAR):
+            raise ValueError(f"Modo inválido: {modo!r}")
         self.caminho_planilha = caminho_planilha
         self.caminho_saida = caminho_saida
         self.caminho_webdriver = caminho_webdriver
@@ -206,16 +251,41 @@ class ControladorEncerramentoISSMultiPeriodo:
         self.competencias: list[date] = sorted(set(competencias))
         self.caminho_template_relatorio = caminho_template_relatorio
         self.check_thread_stopped_callback = check_thread_stopped_callback
+        self.modo = modo
+        self.callback_pausa = callback_pausa
+        self.callback_parar = callback_parar
+        self.alvos = alvos
         self.resultados: list[ResultadoMesEmpresa] = []
+
+    def _ponto_seguro(self) -> None:
+        """Limite seguro (nenhum encerramento em andamento): espera se estiver pausado e, se o operador pediu
+        para parar, interrompe levantando o mesmo sinal do cancelamento (o `executar_processo` gera os
+        relatórios do que já foi feito e fecha o navegador)."""
+        if self.callback_pausa is not None:
+            self.callback_pausa()
+        if self.callback_parar is not None and self.callback_parar():
+            raise UserStoppedThreadException()
+
+    def _competencias_da_empresa(self, empresa: EmpresaSemMovimentoISSFortaleza) -> list[date]:
+        if self.alvos is None:
+            return self.competencias
+        escolhidas = self.alvos.get(empresa.cnpj, set())
+        return [c for c in self.competencias if c in escolhidas]
 
     # -- fluxo principal -------------------------------------------------
 
     def executar_processo(self) -> ResultadoEncerramentoISSMultiPeriodo:
         rotulos = ", ".join(c.strftime("%m/%Y") for c in self.competencias)
-        logger.info(
-            f"Vou percorrer a planilha em busca das empresas sem movimento para encerrar o ISS delas "
-            f"em {len(self.competencias)} competência(s): {rotulos}."
-        )
+        if self.modo == MODO_VERIFICAR:
+            logger.info(
+                f"Vou percorrer a planilha e VERIFICAR (sem encerrar nem baixar nada) as empresas sem movimento "
+                f"em {len(self.competencias)} competência(s): {rotulos}."
+            )
+        else:
+            logger.info(
+                f"Vou percorrer a planilha em busca das empresas sem movimento para encerrar o ISS delas "
+                f"em {len(self.competencias)} competência(s): {rotulos}."
+            )
 
         driver = ChromeDriver(driver_path=self.caminho_webdriver)
         driver.start_driver(options=("--start-maximized",))
@@ -230,6 +300,7 @@ class ControladorEncerramentoISSMultiPeriodo:
 
             for row_number, row in reader.lazy_load_sheet():
                 self.check_thread_stopped_callback()
+                self._ponto_seguro()
                 try:
                     self._processar_linha(driver, reader, row_number, row)
                 except (UserStoppedThreadException, NavegadorIndisponivelException, RecuperacaoImpossivelException):
@@ -278,10 +349,11 @@ class ControladorEncerramentoISSMultiPeriodo:
                 logger.debug(f"Não consegui fechar o navegador de forma limpa (provavelmente já estava fechado): {exc}")
 
         report_paths: list[Path] = []
-        try:
-            report_paths = self._gerar_relatorios_de_execucao()
-        except SemEmpresasProcessadasException as sem_empresa:
-            logger.warning(sem_empresa)
+        if self.modo == MODO_ENCERRAR:  # a verificação não encerra nada: não há relatório de encerramento a gerar
+            try:
+                report_paths = self._gerar_relatorios_de_execucao()
+            except SemEmpresasProcessadasException as sem_empresa:
+                logger.warning(sem_empresa)
 
         return ResultadoEncerramentoISSMultiPeriodo(status, self.resultados, report_paths)
 
@@ -307,6 +379,10 @@ class ControladorEncerramentoISSMultiPeriodo:
         except (ValueError, TypeError):
             return  # Campo None ou de outro tipo inesperado
 
+        competencias = self._competencias_da_empresa(empresa)
+        if not competencias:
+            return  # execução restrita a uma lista aprovada e esta empresa não está nela
+
         self.check_thread_stopped_callback()
         empresa.cnpj_m = aplicar_mascara_cnpj(empresa.cnpj)
 
@@ -316,7 +392,7 @@ class ControladorEncerramentoISSMultiPeriodo:
                 "para todas as competências e seguir para a próxima."
             )
             msg = "S/ INSCRIÇÃO"
-            for competencia in self.competencias:
+            for competencia in competencias:
                 self.resultados.append(ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[msg]))
             self._acrescentar_na_planilha_fiscal(reader, competencia=None, valor=msg, row_number=empresa.linha_planilha_fiscal)
             return  # Sem inscrição: não há como trocar de empresa pelo modal (ele não abriu)
@@ -324,8 +400,9 @@ class ControladorEncerramentoISSMultiPeriodo:
         self._dar_ciencia_nas_mensagens_nao_lidas(driver, empresa)
         self._navegar_tela_escrituracao(driver)
 
-        for competencia in self.competencias:
+        for competencia in competencias:
             self.check_thread_stopped_callback()
+            self._ponto_seguro()
             try:
                 resultado = self._processar_competencia(driver, reader, empresa, competencia)
             except UserStoppedThreadException:
@@ -707,6 +784,26 @@ class ControladorEncerramentoISSMultiPeriodo:
         except Exception:  # noqa: BLE001 — só informativo
             return ""
 
+    def _diretorio_certificados(self, empresa: EmpresaSemMovimentoISSFortaleza, competencia: date) -> Path:
+        # <ano>-<mês>, diferente do original (só <mês>): evita colidir competências do mesmo mês em anos diferentes.
+        return Path(str(self.caminho_saida)) / f"{competencia.year}-{competencia.month:02d}" / f"EMP_{empresa.codigo}"
+
+    def _certificado_existente(self, empresa: EmpresaSemMovimentoISSFortaleza, competencia: date) -> Path | None:
+        """Certificado (PDF não vazio) já baixado para essa empresa/competência na pasta de saída, se houver."""
+        try:
+            candidatos = [
+                p for p in self._diretorio_certificados(empresa, competencia).glob("CERTIFICADO ISS_*.pdf")
+                if p.is_file() and p.stat().st_size > 0
+            ]
+        except OSError:
+            return None
+        return max(candidatos, key=lambda p: p.stat().st_mtime) if candidatos else None
+
+    @staticmethod
+    def _ler_data_encerramento(driver: ChromeDriver, search_result_row: Any) -> tuple[str, date]:
+        dt_texto: str = driver.find_element(search_result_row).by_xpath('.//*[contains(@id, "dataEncerramento")]').get_element().text
+        return dt_texto, datetime.strptime(dt_texto, FORMATO_DATA).date()
+
     def _processar_ja_encerrada(
         self,
         driver: ChromeDriver,
@@ -716,7 +813,33 @@ class ControladorEncerramentoISSMultiPeriodo:
         search_result_row: Any,
     ) -> ResultadoMesEmpresa:
         competencia_str = competencia.strftime("%m/%Y")
-        logger.warning(f"A escrituração da empresa {empresa} já tinha sido encerrada antes ({competencia_str}) — vou só baixar o certificado.")
+        existente = self._certificado_existente(empresa, competencia)
+
+        if existente is not None or self.modo == MODO_VERIFICAR:
+            # Não precisa (ou, na verificação, não deve) baixar nada: só lê a data de encerramento.
+            dt_texto, dt_encerramento = self._ler_data_encerramento(driver, search_result_row)
+            if existente is not None:
+                logger.info(
+                    f"A escrituração da empresa {empresa} já estava encerrada ({competencia_str}) e o certificado "
+                    "já existe na pasta de saída — não vou baixar de novo."
+                )
+                acao = ACAO_JA_ENCERRADA_CERT_EXISTENTE
+            else:
+                logger.warning(
+                    f"A escrituração da empresa {empresa} já estava encerrada ({competencia_str}), mas o certificado "
+                    "ainda não está na pasta de saída (a execução vai baixá-lo)."
+                )
+                acao = ACAO_JA_ENCERRADA_SEM_CERT
+            self._acrescentar_na_planilha_fiscal(reader, competencia, dt_texto, empresa.linha_planilha_fiscal)
+            return ResultadoMesEmpresa(
+                empresa, competencia, encerrada=True, dt_encerramento=dt_encerramento,
+                caminho_certificado=existente, acao=acao,
+            )
+
+        logger.warning(
+            f"A escrituração da empresa {empresa} já tinha sido encerrada antes ({competencia_str}) e o certificado "
+            "ainda não está na pasta — vou baixar o certificado."
+        )
 
         self.check_thread_stopped_callback()
         driver.click(driver.find_element(search_result_row).by_xpath('.//*[contains(@id, "certificado")]'))
@@ -726,12 +849,14 @@ class ControladorEncerramentoISSMultiPeriodo:
 
         driver.get_driver().back()  # o botão de mudar empresa fica escondido enquanto o certificado é exibido
 
-        dt_texto: str = driver.find_element(search_result_row).by_xpath('.//*[contains(@id, "dataEncerramento")]').get_element().text
-        dt_encerramento = datetime.strptime(dt_texto, FORMATO_DATA).date()
+        dt_texto, dt_encerramento = self._ler_data_encerramento(driver, search_result_row)
 
         self._acrescentar_na_planilha_fiscal(reader, competencia, dt_texto, empresa.linha_planilha_fiscal)
 
-        return ResultadoMesEmpresa(empresa, competencia, encerrada=True, dt_encerramento=dt_encerramento, caminho_certificado=Path(caminho_certificado))
+        return ResultadoMesEmpresa(
+            empresa, competencia, encerrada=True, dt_encerramento=dt_encerramento,
+            caminho_certificado=Path(caminho_certificado), acao=ACAO_JA_ENCERRADA_CERT_BAIXADO,
+        )
 
     def _processar_a_encerrar(
         self,
@@ -742,7 +867,10 @@ class ControladorEncerramentoISSMultiPeriodo:
         link_escriturar: Any,
     ) -> ResultadoMesEmpresa:
         competencia_str = competencia.strftime("%m/%Y")
-        logger.info(f"A empresa {empresa} ainda está com a escrituração em aberto ({competencia_str}) — vou verificar as pendências e encerrar.")
+        if self.modo == MODO_VERIFICAR:
+            logger.info(f"A empresa {empresa} está com a escrituração em aberto ({competencia_str}) — vou só verificar as pendências (não vou encerrar).")
+        else:
+            logger.info(f"A empresa {empresa} ainda está com a escrituração em aberto ({competencia_str}) — vou verificar as pendências e encerrar.")
 
         self.check_thread_stopped_callback()
         driver.click(link_escriturar)
@@ -754,6 +882,10 @@ class ControladorEncerramentoISSMultiPeriodo:
         if motivo is not None:
             self._acrescentar_na_planilha_fiscal(reader, competencia, motivo, empresa.linha_planilha_fiscal)
             return ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[motivo])
+
+        if self.modo == MODO_VERIFICAR:
+            logger.info(f"Verificação: a competência {competencia_str} da empresa {empresa} está apta a ser encerrada (nada foi encerrado).")
+            return ResultadoMesEmpresa(empresa, competencia, encerrada=False, acao=ACAO_APTA)
 
         btn_encerrar = driver.find_element().by_id("abaEncerramentoForm:btnEncerrarEscrituracao")
         driver.scroll_element_into_view(btn_encerrar)
@@ -776,15 +908,16 @@ class ControladorEncerramentoISSMultiPeriodo:
         logger.success(f"Pronto! Encerrei a escrituração da empresa {empresa} para a competência {competencia_str}.")
         driver.get_driver().back()  # o botão de mudar empresa fica escondido enquanto o certificado é exibido
 
-        return ResultadoMesEmpresa(empresa, competencia, encerrada=True, dt_encerramento=dt_encerramento, caminho_certificado=Path(caminho_certificado))
+        return ResultadoMesEmpresa(
+            empresa, competencia, encerrada=True, dt_encerramento=dt_encerramento,
+            caminho_certificado=Path(caminho_certificado), acao=ACAO_ENCERRADA_AGORA,
+        )
 
     def _imprimir_declaracao_fechamento_iss(self, driver: ChromeDriver, emp: EmpresaSemMovimentoISSFortaleza, competencia: date) -> str:
         self.check_thread_stopped_callback()
 
-        empresa = f"EMP_{emp.codigo}"
         arquivo = f"CERTIFICADO ISS_EMP{emp.codigo}_{timestamp_as_file_name('pdf')}"
-        # <ano>-<mês>, diferente do original (só <mês>): evita colidir competências do mesmo mês em anos diferentes.
-        diretorio = f"{self.caminho_saida}/{competencia.year}-{competencia.month:02d}/{empresa}"
+        diretorio = self._diretorio_certificados(emp, competencia).as_posix()
         driver.page_to_pdf(
             file_path=diretorio,
             file_name=arquivo,
@@ -800,6 +933,8 @@ class ControladorEncerramentoISSMultiPeriodo:
         decisão do usuário foi manter tudo numa única célula, mesmo que fique com várias informações
         concatenadas. Cada acréscimo leva o rótulo "MM/AAAA: " na frente, exceto quando `competencia`
         é None (usado só para "S/ INSCRIÇÃO", que vale para todas as competências pedidas)."""
+        if self.modo == MODO_VERIFICAR:
+            return  # verificar não deixa rastro na planilha: só registra quando o encerramento/baixa realmente acontece
         self.check_thread_stopped_callback()
         if row_number <= 0:
             raise ValueError(f"Número da coluna não pode ser 0 ou menor. Recebido: `{row_number}`")

@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [2.50.0] - 2026-09-23
+
+### Adicionado
+- **"Encerramento ISS — Múltiplos Meses": Pausar / Continuar / Parar, "Apenas verificar (não encerra)" e certificados que já existem** (`core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py`; `app.py`; `gui/index.html`; `gui/js/tab-encerramento-multi-periodo.js`). A função "Encerramento ISS" original **não foi alterada**.
+  - **Pausar / Continuar / Parar** (reaproveita `_ControleProcessamentoXml`, como Exportar e Escrituração Multi-CNPJ, com o aviso "PAUSA/RETOMADA/PARADA solicitada pelo operador" no log). Agem só nos **limites seguros**: antes de cada competência e de cada empresa — nunca no meio de um encerramento (irreversível). **Parar** termina a competência em andamento, **gera os relatórios do que já foi feito** e fecha o navegador; substitui o antigo "Cancelar", que interrompia em qualquer ponto. O aviso de pausa informa que a sessão do portal expira em cerca de 20 minutos sem ação.
+  - **Certificados que já existem**: para competências já encerradas o portal continua sendo consultado, mas o certificado só é baixado se ainda **não** existir (PDF não vazio) em `<saída>/<AAAA-MM>/EMP_<código>/`. O resumo passa a separar **Encerradas agora** e **Já encerradas** (o relatório por competência continua contando as duas como "encerradas"). Competências com problema são reconferidas a cada execução.
+  - **Modo "Apenas verificar (não encerra)"** (padrão na tela): faz as mesmas conferências (serviços prestados e pendentes), **sem encerrar, sem baixar certificado, sem gravar na planilha e sem gerar relatório**. Ao final mostra a **Revisão da verificação**: aptas a encerrar, já encerradas (com/sem certificado na pasta) e com problema (com o motivo e a Situação do portal). As aptas e as "já encerradas sem certificado" vêm com caixa de seleção marcada (as "Aberta - Com Pendência" vêm **desmarcadas**, sinalizadas). O botão **"Executar o que foi verificado (N)"** pede confirmação, abre um **Chrome novo com novo login** (a sessão da verificação pode ter expirado) e executa só os itens marcados, **reconferindo cada um no portal imediatamente antes de encerrar** — se o estado mudou, registra como problema e não encerra. A lista não é gravada em disco (se o app fechar, é preciso verificar de novo).
+  - O modo "Encerrar" direto continua disponível e agora pede uma **confirmação** antes de começar (a ação é irreversível).
+  - `iniciar_encerramento_multi_periodo_gui` ganhou o parâmetro `modo` (padrão `"encerrar"`, compatível) e devolve se iniciou (a tela destrava se já havia uma execução); nova `executar_verificadas_encerramento_multi_gui`. O controlador ganhou `modo`, `callback_pausa`, `callback_parar` e `alvos` (execução restrita ao aprovado).
+  - Botões da tela agora destravam quando o Python avisa o fim (`encerramento_multi_finalizado`), como em Exportar — antes eram destravados assim que a chamada de início retornava.
+  - 41 testes novos (categorias e contagens, pausa/parada nos limites seguros, parada que gera relatório, certificado existente/vazio/de outra competência, já encerrada com e sem certificado, verificação sem clique em Encerrar (detonador), sem planilha e sem relatório, execução restrita, fiação do app e lista de verificação) + 1 reescrito (a "parada imediata" do Cancelar deixou de existir). Conferido por mutação em 9 pontos. Tela exercitada no navegador embutido com API simulada.
+
 ## [2.49.2] - 2026-09-23
 
 ### Corrigido

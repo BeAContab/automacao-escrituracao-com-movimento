@@ -627,6 +627,368 @@ class TestPeriodoEEsperasDaEtapa1(unittest.TestCase):
         self.assertEqual(ordem, ["garantir", ("periodo", date(2025, 5, 1)), "consultar"])
 
 
+def _controlador_modo(caminho_planilha, pasta_saida, competencias, **extra):
+    return m.ControladorEncerramentoISSMultiPeriodo(
+        caminho_planilha=caminho_planilha,
+        caminho_saida=pasta_saida,
+        caminho_webdriver=Path("chrome.exe"),
+        url_iss_fortaleza="https://iss.fortaleza.ce.gov.br/grpfor/login.seam",
+        credenciais=CredenciaisISSFortaleza(cpf=SecretStr("12345678901"), senha=SecretStr("segredo")),
+        competencias=competencias,
+        caminho_template_relatorio=CAMINHO_TEMPLATE,
+        check_thread_stopped_callback=lambda: None,
+        **extra,
+    )
+
+
+class TestResultadosPorCategoria(unittest.TestCase):
+    def test_categoria_deduzida_de_encerrada_quando_nao_informada(self):
+        emp = _empresa()
+        self.assertEqual(m.ResultadoMesEmpresa(emp, date(2026, 1, 1), encerrada=True).categoria, m.ACAO_ENCERRADA_AGORA)
+        self.assertEqual(m.ResultadoMesEmpresa(emp, date(2026, 1, 1), encerrada=False).categoria, m.ACAO_PROBLEMA)
+
+    def test_contagens_separam_agora_ja_encerradas_aptas_e_problemas(self):
+        emp = _empresa()
+        r = m.ResultadoEncerramentoISSMultiPeriodo(
+            None,
+            [
+                m.ResultadoMesEmpresa(emp, date(2026, 1, 1), encerrada=True, acao=m.ACAO_ENCERRADA_AGORA),
+                m.ResultadoMesEmpresa(emp, date(2026, 2, 1), encerrada=True, acao=m.ACAO_JA_ENCERRADA_CERT_EXISTENTE),
+                m.ResultadoMesEmpresa(emp, date(2026, 3, 1), encerrada=True, acao=m.ACAO_JA_ENCERRADA_CERT_BAIXADO),
+                m.ResultadoMesEmpresa(emp, date(2026, 4, 1), encerrada=False, acao=m.ACAO_APTA),
+                m.ResultadoMesEmpresa(emp, date(2026, 5, 1), encerrada=False, problemas=["SERVIÇOS PENDENTES"]),
+            ],
+            [],
+        )
+        self.assertEqual(r.processadas, 5)
+        self.assertEqual(r.encerradas_agora, 1)
+        self.assertEqual(r.ja_encerradas, 2)
+        self.assertEqual(r.encerradas, 3)  # agora + já estavam (o relatório continua contando assim)
+        self.assertEqual(r.aptas, 1)
+        self.assertEqual(r.problemas, 1)  # a "apta" da verificação NÃO é problema
+
+    def test_modo_invalido_levanta_erro(self):
+        with self.assertRaises(ValueError):
+            _controlador_modo(Path("p.xlsx"), Path("saida"), [date(2026, 1, 1)], modo="qualquer")
+
+
+class TestPausaEParada(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_pausa_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(1, "EMPRESA A", "12345678000199"), (2, "EMPRESA B", "98765432000111")])
+
+    def _rodar_linhas(self, controlador):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        reader = XLSXReader(self.caminho)
+        try:
+            for row_number, row in reader.lazy_load_sheet():
+                controlador._processar_linha(driver=object(), reader=reader, row_number=row_number, row=row)
+        finally:
+            reader.close_workbook()
+
+    def _dubles(self, controlador, processados):
+        return (
+            mock.patch.object(controlador, "_procurar_inscricao_empresa", return_value=True),
+            mock.patch.object(controlador, "_dar_ciencia_nas_mensagens_nao_lidas"),
+            mock.patch.object(controlador, "_navegar_tela_escrituracao"),
+            mock.patch.object(controlador, "_abrir_modal_de_alteracao_de_inscricao"),
+            mock.patch.object(
+                controlador, "_processar_competencia",
+                lambda d, r, e, c: processados.append((e.codigo, c)) or m.ResultadoMesEmpresa(e, c, encerrada=True),
+            ),
+        )
+
+    def test_ponto_seguro_consulta_pausa_e_depois_parada(self):
+        ordem = []
+        c = _controlador_modo(self.caminho, self.pasta / "s", [date(2026, 1, 1)],
+                              callback_pausa=lambda: ordem.append("pausa"), callback_parar=lambda: ordem.append("parar") or False)
+        c._ponto_seguro()
+        self.assertEqual(ordem, ["pausa", "parar"])
+
+    def test_ponto_seguro_levanta_o_sinal_de_parada(self):
+        c = _controlador_modo(self.caminho, self.pasta / "s", [date(2026, 1, 1)], callback_parar=lambda: True)
+        with self.assertRaises(m.UserStoppedThreadException):
+            c._ponto_seguro()
+
+    def test_ponto_seguro_sem_callbacks_nao_faz_nada(self):
+        _controlador_modo(self.caminho, self.pasta / "s", [date(2026, 1, 1)])._ponto_seguro()
+
+    def test_pausa_e_consultada_antes_de_cada_competencia(self):
+        pausas, processados = [], []
+        c = _controlador_modo(self.caminho, self.pasta / "s", [date(2026, 1, 1), date(2026, 2, 1)],
+                              callback_pausa=lambda: pausas.append(len(processados)))
+        with self.subTest():
+            d1, d2, d3, d4, d5 = self._dubles(c, processados)
+            with d1, d2, d3, d4, d5:
+                self._rodar_linhas(c)
+        # 2 empresas x 2 competências: a pausa é consultada ANTES de cada uma (nunca no meio de uma)
+        self.assertEqual(pausas, [0, 1, 2, 3])
+
+    def test_parar_termina_a_competencia_em_andamento_e_nao_comeca_a_proxima(self):
+        processados = []
+        c = _controlador_modo(self.caminho, self.pasta / "s", [date(2026, 1, 1), date(2026, 2, 1)],
+                              callback_parar=lambda: len(processados) >= 1)
+        d1, d2, d3, d4, d5 = self._dubles(c, processados)
+        with d1, d2, d3, d4, d5:
+            with self.assertRaises(m.UserStoppedThreadException):
+                self._rodar_linhas(c)
+        self.assertEqual(processados, [(1, date(2026, 1, 1))])  # a 1ª competência foi até o fim; a 2ª nem começou
+        self.assertEqual(len(c.resultados), 1)
+
+    def test_parar_pelo_executar_processo_gera_relatorio_do_que_ja_foi_feito(self):
+        if not CAMINHO_TEMPLATE.exists():
+            self.skipTest("template do relatório não encontrado")
+        processados = []
+        c = _controlador_modo(self.caminho, self.pasta / "saida", [date(2026, 1, 1)],
+                              callback_parar=lambda: len(processados) >= 1)
+        driver_falso = mock.Mock(name="ChromeDriverFalso")
+        d1, d2, d3, d4, d5 = self._dubles(c, processados)
+        with mock.patch.object(m, "ChromeDriver", mock.Mock(return_value=driver_falso)), \
+             mock.patch.object(c, "_login_iss_fortaleza"), d1, d2, d3, d4, d5:
+            resultado = c.executar_processo()
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.USER_ENDED_PROCESS)
+        self.assertEqual(resultado.processadas, 1)
+        self.assertEqual(len(resultado.report_paths), 1)  # relatório do que foi feito antes de parar
+        driver_falso.quit_driver.assert_called_once()
+
+
+class TestCertificadoExistenteEJaEncerrada(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_cert_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(7, "EMPRESA A", "12345678000199")])
+        self.saida = self.pasta / "saida"
+        self.competencia = date(2025, 10, 1)
+        self.empresa = _empresa(codigo=7, linha=2)
+
+    def _criar_certificado(self, nome="CERTIFICADO ISS_EMP7_20251101.pdf", conteudo=b"%PDF-1.4 conteudo"):
+        pasta = self.saida / "2025-10" / "EMP_7"
+        pasta.mkdir(parents=True, exist_ok=True)
+        (pasta / nome).write_bytes(conteudo)
+        return pasta / nome
+
+    def _driver_com_data(self, texto="07/11/2025"):
+        driver = mock.MagicMock()
+        driver.find_element.return_value.by_xpath.return_value.get_element.return_value.text = texto
+        return driver
+
+    def _ler_y2(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        reader = XLSXReader(self.caminho)
+        valor = reader.get_cell("Y2").value
+        reader.close_workbook()
+        return valor
+
+    def _processar(self, controlador, driver):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        reader = XLSXReader(self.caminho)
+        try:
+            return controlador._processar_ja_encerrada(driver, reader, self.empresa, self.competencia, object())
+        finally:
+            reader.close_workbook()
+
+    def test_certificado_existente_e_encontrado(self):
+        pdf = self._criar_certificado()
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        self.assertEqual(c._certificado_existente(self.empresa, self.competencia), pdf)
+
+    def test_pdf_vazio_nao_conta_como_certificado(self):
+        self._criar_certificado(conteudo=b"")
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        self.assertIsNone(c._certificado_existente(self.empresa, self.competencia))
+
+    def test_sem_pasta_nao_ha_certificado(self):
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        self.assertIsNone(c._certificado_existente(self.empresa, self.competencia))
+
+    def test_certificado_de_outra_competencia_ou_empresa_nao_conta(self):
+        outra = self.saida / "2025-09" / "EMP_7"
+        outra.mkdir(parents=True)
+        (outra / "CERTIFICADO ISS_EMP7_x.pdf").write_bytes(b"pdf")
+        outra2 = self.saida / "2025-10" / "EMP_8"
+        outra2.mkdir(parents=True)
+        (outra2 / "CERTIFICADO ISS_EMP8_x.pdf").write_bytes(b"pdf")
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        self.assertIsNone(c._certificado_existente(self.empresa, self.competencia))
+
+    def test_ja_encerrada_com_certificado_nao_baixa_de_novo(self):
+        pdf = self._criar_certificado()
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        driver = self._driver_com_data()
+        with mock.patch.object(c, "_imprimir_declaracao_fechamento_iss") as imprimir:
+            resultado = self._processar(c, driver)
+        driver.click.assert_not_called()  # nem abriu o certificado
+        imprimir.assert_not_called()
+        self.assertEqual(resultado.acao, m.ACAO_JA_ENCERRADA_CERT_EXISTENTE)
+        self.assertTrue(resultado.encerrada)
+        self.assertEqual(resultado.caminho_certificado, pdf)
+        self.assertEqual(resultado.dt_encerramento, date(2025, 11, 7))
+        self.assertEqual(self._ler_y2(), "10/2025: 07/11/2025")  # continua registrando a data na planilha
+
+    def test_ja_encerrada_sem_certificado_baixa(self):
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        driver = self._driver_com_data()
+        with mock.patch.object(c, "_imprimir_declaracao_fechamento_iss", return_value="saida/x.pdf") as imprimir:
+            resultado = self._processar(c, driver)
+        imprimir.assert_called_once()
+        self.assertGreaterEqual(driver.click.call_count, 2)
+        driver.get_driver.return_value.back.assert_called_once()
+        self.assertEqual(resultado.acao, m.ACAO_JA_ENCERRADA_CERT_BAIXADO)
+
+    def test_verificacao_ja_encerrada_sem_certificado_nao_baixa_nem_grava(self):
+        c = _controlador_modo(self.caminho, self.saida, [self.competencia], modo=m.MODO_VERIFICAR)
+        driver = self._driver_com_data()
+        with mock.patch.object(c, "_imprimir_declaracao_fechamento_iss") as imprimir:
+            resultado = self._processar(c, driver)
+        driver.click.assert_not_called()
+        imprimir.assert_not_called()
+        self.assertEqual(resultado.acao, m.ACAO_JA_ENCERRADA_SEM_CERT)
+        self.assertIsNone(self._ler_y2())  # verificação não deixa rastro na planilha
+
+    def test_verificacao_ja_encerrada_com_certificado(self):
+        self._criar_certificado()
+        c = _controlador_modo(self.caminho, self.saida, [self.competencia], modo=m.MODO_VERIFICAR)
+        resultado = self._processar(c, self._driver_com_data())
+        self.assertEqual(resultado.acao, m.ACAO_JA_ENCERRADA_CERT_EXISTENTE)
+
+    def test_caminho_do_certificado_baixado_usa_a_mesma_pasta_da_checagem(self):
+        c = _controlador(self.caminho, self.saida, [self.competencia])
+        driver = mock.MagicMock()
+        c._imprimir_declaracao_fechamento_iss(driver, self.empresa, self.competencia)
+        pasta_usada = Path(driver.page_to_pdf.call_args.kwargs["file_path"])
+        self.assertEqual(pasta_usada, c._diretorio_certificados(self.empresa, self.competencia))
+        self.assertEqual(pasta_usada.parts[-2:], ("2025-10", "EMP_7"))
+
+
+class TestModoVerificar(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_verif_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(1, "EMPRESA A", "12345678000199")])
+        self.competencia = date(2026, 1, 1)
+        self.empresa = _empresa(linha=2)
+
+    def _reader(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        return XLSXReader(self.caminho)
+
+    def _a_encerrar(self, controlador, driver):
+        reader = self._reader()
+        try:
+            return controlador._processar_a_encerrar(driver, reader, self.empresa, self.competencia, "LINK")
+        finally:
+            reader.close_workbook()
+
+    def test_verificar_apta_nao_clica_em_encerrar_nem_no_sim(self):
+        c = _controlador_modo(self.caminho, self.pasta / "s", [self.competencia], modo=m.MODO_VERIFICAR)
+        driver = mock.MagicMock()
+        driver.scroll_element_into_view.side_effect = AssertionError("TENTATIVA DE CLICAR EM ENCERRAR NA VERIFICAÇÃO")
+        with mock.patch.object(c, "_verificar_servicos_prestados", return_value=None), \
+             mock.patch.object(c, "_verificar_servicos_pendentes", return_value=None):
+            resultado = self._a_encerrar(c, driver)
+        self.assertEqual(resultado.categoria, m.ACAO_APTA)
+        self.assertFalse(resultado.encerrada)
+        self.assertEqual(resultado.problemas, [])
+        self.assertEqual(driver.click.call_args_list, [mock.call("LINK")])  # só abriu a tela; nada além disso
+
+    def test_verificar_com_problema_registra_o_motivo_sem_gravar_na_planilha(self):
+        c = _controlador_modo(self.caminho, self.pasta / "s", [self.competencia], modo=m.MODO_VERIFICAR)
+        with mock.patch.object(c, "_verificar_servicos_prestados", return_value="SERVIÇOS PRESTADOS"):
+            resultado = self._a_encerrar(c, mock.MagicMock())
+        self.assertEqual(resultado.categoria, m.ACAO_PROBLEMA)
+        self.assertEqual(resultado.problemas, ["SERVIÇOS PRESTADOS"])
+        reader = self._reader()
+        self.assertIsNone(reader.get_cell("Y2").value)
+        reader.close_workbook()
+
+    def test_modo_encerrar_apta_realmente_encerra_e_marca_encerrada_agora(self):
+        c = _controlador(self.caminho, self.pasta / "s", [self.competencia])
+        driver = mock.MagicMock()
+        with mock.patch.object(c, "_verificar_servicos_prestados", return_value=None), \
+             mock.patch.object(c, "_verificar_servicos_pendentes", return_value=None), \
+             mock.patch.object(c, "_imprimir_declaracao_fechamento_iss", return_value="saida/x.pdf"):
+            resultado = self._a_encerrar(c, driver)
+        driver.scroll_element_into_view.assert_called_once()  # o clique em Encerrar aconteceu
+        self.assertEqual(resultado.categoria, m.ACAO_ENCERRADA_AGORA)
+        self.assertTrue(resultado.encerrada)
+
+    def test_verificacao_nunca_gera_relatorio_de_encerramento(self):
+        c = _controlador_modo(self.caminho, self.pasta / "saida", [self.competencia], modo=m.MODO_VERIFICAR)
+        driver_falso = mock.Mock(name="ChromeDriverFalso")
+        with mock.patch.object(m, "ChromeDriver", mock.Mock(return_value=driver_falso)), \
+             mock.patch.object(c, "_login_iss_fortaleza"), \
+             mock.patch.object(c, "_procurar_inscricao_empresa", return_value=True), \
+             mock.patch.object(c, "_dar_ciencia_nas_mensagens_nao_lidas"), \
+             mock.patch.object(c, "_navegar_tela_escrituracao"), \
+             mock.patch.object(c, "_abrir_modal_de_alteracao_de_inscricao"), \
+             mock.patch.object(c, "_gerar_relatorios_de_execucao") as gerar, \
+             mock.patch.object(
+                 c, "_processar_competencia",
+                 lambda d, r, e, comp: m.ResultadoMesEmpresa(e, comp, encerrada=False, acao=m.ACAO_APTA),
+             ):
+            resultado = c.executar_processo()
+        gerar.assert_not_called()
+        self.assertEqual(resultado.report_paths, [])
+        self.assertEqual((resultado.aptas, resultado.problemas), (1, 0))
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.SUCCESS)
+
+    def test_planilha_nao_e_gravada_em_nenhum_caminho_da_verificacao(self):
+        c = _controlador_modo(self.caminho, self.pasta / "s", [self.competencia], modo=m.MODO_VERIFICAR)
+        reader = self._reader()
+        c._acrescentar_na_planilha_fiscal(reader, self.competencia, "QUALQUER", row_number=2)
+        c._acrescentar_na_planilha_fiscal(reader, None, "S/ INSCRIÇÃO", row_number=2)
+        self.assertIsNone(reader.get_cell("Y2").value)
+        reader.close_workbook()
+
+
+class TestExecucaoRestritaAoQueFoiVerificado(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_alvos_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(1, "EMPRESA A", "12345678000199"), (2, "EMPRESA B", "98765432000111")])
+
+    def test_competencias_da_empresa_filtra_pelos_alvos(self):
+        c = _controlador_modo(
+            self.caminho, self.pasta / "s", [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)],
+            alvos={"12345678000199": {date(2026, 1, 1), date(2026, 3, 1)}},
+        )
+        self.assertEqual(c._competencias_da_empresa(_empresa(cnpj="12345678000199")), [date(2026, 1, 1), date(2026, 3, 1)])
+        self.assertEqual(c._competencias_da_empresa(_empresa(codigo=2, cnpj="98765432000111")), [])
+
+    def test_sem_alvos_processa_todas_as_competencias(self):
+        c = _controlador(self.caminho, self.pasta / "s", [date(2026, 1, 1), date(2026, 2, 1)])
+        self.assertEqual(c._competencias_da_empresa(_empresa()), [date(2026, 1, 1), date(2026, 2, 1)])
+
+    def test_empresa_fora_da_lista_aprovada_nem_e_procurada_no_portal(self):
+        from python_spreadsheet_reader.readers import XLSXReader
+
+        processados = []
+        c = _controlador_modo(
+            self.caminho, self.pasta / "s", [date(2026, 1, 1), date(2026, 2, 1)],
+            alvos={"12345678000199": {date(2026, 2, 1)}},  # só a empresa A, só fevereiro
+        )
+        procurar = mock.Mock(return_value=True)
+        with mock.patch.object(c, "_procurar_inscricao_empresa", procurar), \
+             mock.patch.object(c, "_dar_ciencia_nas_mensagens_nao_lidas"), \
+             mock.patch.object(c, "_navegar_tela_escrituracao"), \
+             mock.patch.object(c, "_abrir_modal_de_alteracao_de_inscricao"), \
+             mock.patch.object(
+                 c, "_processar_competencia",
+                 lambda d, r, e, comp: processados.append((e.codigo, comp)) or m.ResultadoMesEmpresa(e, comp, encerrada=True),
+             ):
+            reader = XLSXReader(self.caminho)
+            for row_number, row in reader.lazy_load_sheet():
+                c._processar_linha(driver=object(), reader=reader, row_number=row_number, row=row)
+            reader.close_workbook()
+        self.assertEqual(procurar.call_count, 1)  # a empresa B nem foi buscada
+        self.assertEqual(processados, [(1, date(2026, 2, 1))])
+
+
 class TestNavegadorIndisponivel(unittest.TestCase):
     def test_reconhece_sessao_perdida(self):
         self.assertTrue(m.navegador_indisponivel(m.InvalidSessionIdException("invalid session id")))
