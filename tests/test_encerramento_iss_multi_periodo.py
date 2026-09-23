@@ -402,6 +402,231 @@ class TestOrquestracaoPorEmpresaEPorMes(unittest.TestCase):
         self.assertEqual(len(self.controlador.resultados), 2)  # só os 2 resultados da empresa 2 (1 por competência)
 
 
+SLEEP_RETRY = "core.encerramento_iss_sem_movimento.python_webdriver.functions.sleep"
+
+
+class _ElementoFalso:
+    def __init__(self, texto="", visivel=True, classe=""):
+        self._texto = texto
+        self._visivel = visivel
+        self._classe = classe
+
+    @property
+    def text(self):
+        return self._texto if self._visivel else ""  # como o Selenium: texto de elemento oculto vem vazio
+
+    def is_displayed(self):
+        return self._visivel
+
+    def get_attribute(self, nome):
+        return self._classe if nome == "class" else None
+
+
+class _SeleniumFalso:
+    def __init__(self, elementos=None, campos_existentes=None):
+        self.elementos = elementos or {}  # id -> lista de elementos
+        self.campos_existentes = campos_existentes  # None = todos existem
+        self.scripts = []  # (campo, valor)
+
+    def find_elements(self, by, valor):
+        return list(self.elementos.get(valor, []))
+
+    def execute_script(self, script, campo, valor):
+        if self.campos_existentes is not None and campo not in self.campos_existentes:
+            return False
+        self.scripts.append((campo, valor))
+        return True
+
+
+class _DriverPortalFalso:
+    """Só o necessário para os métodos de leitura/período: `get_driver()` e `find_element().by_xpath()`."""
+
+    def __init__(self, selenium=None, celula_somatorio=None):
+        self._selenium = selenium or _SeleniumFalso()
+        self.celula_somatorio = celula_somatorio
+        self.cliques = []
+
+    def get_driver(self):
+        return self._selenium
+
+    def click(self, elemento, **_k):
+        self.cliques.append(elemento)
+
+    def find_element(self, *_a):
+        driver = self
+
+        class _Localizador:
+            def by_id(self, id_):
+                return ("id", id_)
+
+            def by_xpath(self, xpath):
+                class _Achado:
+                    def get_element(self_inner):
+                        return driver.celula_somatorio()
+
+                return _Achado()
+
+        return _Localizador()
+
+
+class TestPeriodoEEsperasDaEtapa1(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_e1_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+        self.caminho = _planilha_fiscal(self.pasta, [(1, "EMPRESA A", "12345678000199")])
+        self.controlador = _controlador(self.caminho, self.pasta / "saida", [date(2025, 5, 1)])
+
+    def test_periodo_fixa_data_inicial_e_final_na_mesma_competencia(self):
+        selenium = _SeleniumFalso()
+        self.controlador._definir_periodo_consulta(_DriverPortalFalso(selenium), date(2025, 5, 1))
+        self.assertEqual(
+            selenium.scripts,
+            [(campo, "05/2025") for campo in m.CAMPOS_PERIODO_CONSULTA],
+        )
+        # as quatro pontas: início/fim visíveis + os "CurrentDate" do calendário
+        self.assertEqual(len(m.CAMPOS_PERIODO_CONSULTA), 4)
+        self.assertTrue(any("dataFinal" in c for c in m.CAMPOS_PERIODO_CONSULTA))
+
+    def test_periodo_com_campo_ausente_levanta_erro_claro(self):
+        selenium = _SeleniumFalso(campos_existentes={m.CAMPOS_PERIODO_CONSULTA[0]})
+        with self.assertRaises(m.NoSuchElementException):
+            self.controlador._definir_periodo_consulta(_DriverPortalFalso(selenium), date(2025, 5, 1))
+
+    def test_garantir_tela_de_lista_nao_navega_se_ja_esta_na_lista(self):
+        selenium = _SeleniumFalso({m.ID_BOTAO_CONSULTAR: [_ElementoFalso()]})
+        with mock.patch.object(self.controlador, "_navegar_tela_escrituracao") as navegar:
+            self.controlador._garantir_tela_de_lista(_DriverPortalFalso(selenium))
+        navegar.assert_not_called()
+
+    def test_garantir_tela_de_lista_volta_pelo_menu_se_ficou_na_tela_da_competencia(self):
+        selenium = _SeleniumFalso({m.ID_BOTAO_CONSULTAR: []})  # botão Consultar não existe na tela de encerramento
+        with mock.patch.object(self.controlador, "_navegar_tela_escrituracao") as navegar:
+            self.controlador._garantir_tela_de_lista(_DriverPortalFalso(selenium))
+        navegar.assert_called_once()
+
+    def test_modal_de_troca_ja_visivel_nao_faz_nada(self):
+        selenium = _SeleniumFalso({m.ID_CAMPO_PESQUISA_INSCRICAO: [_ElementoFalso()]})
+        with mock.patch.object(self.controlador, "_abrir_modal_de_alteracao_de_inscricao") as abrir:
+            self.controlador._garantir_modal_de_troca(_DriverPortalFalso(selenium))
+        abrir.assert_not_called()
+
+    def test_modal_que_demora_um_pouco_e_esperado_sem_reabrir(self):
+        campo = _ElementoFalso(visivel=False)
+        selenium = _SeleniumFalso({m.ID_CAMPO_PESQUISA_INSCRICAO: [campo]})
+        chamadas = {"n": 0}
+
+        def dormir(_s):
+            chamadas["n"] += 1
+            if chamadas["n"] == 3:
+                campo._visivel = True
+
+        with mock.patch.object(m.time, "sleep", dormir), \
+             mock.patch.object(self.controlador, "_abrir_modal_de_alteracao_de_inscricao") as abrir:
+            self.controlador._garantir_modal_de_troca(_DriverPortalFalso(selenium))
+        abrir.assert_not_called()
+
+    def test_modal_que_nao_abre_sozinho_e_aberto_pelo_botao_do_topo(self):
+        campo = _ElementoFalso(visivel=False)
+        selenium = _SeleniumFalso({m.ID_CAMPO_PESQUISA_INSCRICAO: [campo]})
+
+        def abrir(_driver):
+            campo._visivel = True
+
+        with mock.patch.object(m.time, "sleep"), \
+             mock.patch.object(self.controlador, "_abrir_modal_de_alteracao_de_inscricao", side_effect=abrir) as abrir_mock:
+            self.controlador._garantir_modal_de_troca(_DriverPortalFalso(selenium))
+        abrir_mock.assert_called_once()
+
+    def test_modal_que_nunca_aparece_levanta_erro(self):
+        selenium = _SeleniumFalso({m.ID_CAMPO_PESQUISA_INSCRICAO: [_ElementoFalso(visivel=False)]})
+        with mock.patch.object(m.time, "sleep"), \
+             mock.patch.object(self.controlador, "_abrir_modal_de_alteracao_de_inscricao"):
+            with self.assertRaises(m.NoSuchElementException):
+                self.controlador._garantir_modal_de_troca(_DriverPortalFalso(selenium))
+
+    # -- serviços prestados: o Somatório fica na aba Encerramento --------------------------------
+
+    def _selenium_com_aba(self, classe_aba):
+        return _SeleniumFalso({"abaEncerramento_lbl": [_ElementoFalso(classe=classe_aba)]})
+
+    def test_le_o_somatorio_sem_trocar_para_a_aba_servicos_prestados(self):
+        driver = _DriverPortalFalso(self._selenium_com_aba("rich-tab-header rich-tab-active"), lambda: _ElementoFalso("0"))
+        motivo = self.controlador._verificar_servicos_prestados(driver, _empresa())
+        self.assertIsNone(motivo)
+        self.assertEqual(driver.cliques, [])  # nenhum clique: nem na aba Serviços Prestados, nem "de volta"
+
+    def test_quantidade_maior_que_zero_e_problema(self):
+        driver = _DriverPortalFalso(self._selenium_com_aba("rich-tab-header rich-tab-active"), lambda: _ElementoFalso("1234"))
+        self.assertEqual(self.controlador._verificar_servicos_prestados(driver, _empresa()), "SERVIÇOS PRESTADOS")
+
+    def test_espera_o_texto_do_somatorio_aparecer_em_vez_de_ler_vazio(self):
+        estados = iter([_ElementoFalso("", visivel=False), _ElementoFalso("", visivel=False), _ElementoFalso("0")])
+        driver = _DriverPortalFalso(self._selenium_com_aba("rich-tab-header rich-tab-active"), lambda: next(estados))
+        with mock.patch(SLEEP_RETRY):
+            motivo = self.controlador._verificar_servicos_prestados(driver, _empresa())
+        self.assertIsNone(motivo)  # antes lia '' na primeira tentativa e marcava ERRO AO LER SERVIÇOS PRESTADOS
+
+    def test_somatorio_que_nunca_aparece_vira_erro_de_leitura_e_nao_encerra(self):
+        driver = _DriverPortalFalso(self._selenium_com_aba("rich-tab-header rich-tab-active"), lambda: _ElementoFalso("", visivel=False))
+        with mock.patch(SLEEP_RETRY):
+            motivo = self.controlador._verificar_servicos_prestados(driver, _empresa())
+        self.assertEqual(motivo, "ERRO AO LER SERVIÇOS PRESTADOS")
+
+    def test_valor_nao_numerico_vira_erro_de_leitura(self):
+        driver = _DriverPortalFalso(self._selenium_com_aba("rich-tab-header rich-tab-active"), lambda: _ElementoFalso("abc"))
+        self.assertEqual(self.controlador._verificar_servicos_prestados(driver, _empresa()), "ERRO AO LER SERVIÇOS PRESTADOS")
+
+    def test_se_a_aba_encerramento_nao_esta_ativa_clica_nela_antes_de_ler(self):
+        driver = _DriverPortalFalso(self._selenium_com_aba("rich-tab-header rich-tab-inactive"), lambda: _ElementoFalso("0"))
+        self.controlador._verificar_servicos_prestados(driver, _empresa())
+        self.assertEqual(driver.cliques, [("id", "abaEncerramento_lbl")])
+
+    def test_situacao_do_portal_e_lida_sem_o_rotulo_da_competencia(self):
+        class _Linha:
+            def get_element(self_inner):
+                return _ElementoFalso("09/2026 Aberta - Normal 01/09/2026")
+
+        self.assertEqual(m.ControladorEncerramentoISSMultiPeriodo._ler_situacao(_Linha(), "09/2026"), "Aberta - Normal 01/09/2026")
+
+    def test_situacao_que_falha_ao_ler_devolve_vazio_sem_levantar(self):
+        class _LinhaQuebrada:
+            def get_element(self_inner):
+                raise RuntimeError("stale")
+
+        self.assertEqual(m.ControladorEncerramentoISSMultiPeriodo._ler_situacao(_LinhaQuebrada(), "09/2026"), "")
+
+    def test_busca_de_inscricao_garante_o_modal_antes_de_qualquer_clique(self):
+        driver = mock.MagicMock()
+        empresa = _empresa()
+        empresa.cnpj_m = "12.345.678/0001-99"
+        with mock.patch.object(self.controlador, "_garantir_modal_de_troca", side_effect=m.NoSuchElementException("sem modal")):
+            with self.assertRaises(m.NoSuchElementException):
+                self.controlador._procurar_inscricao_empresa(driver, empresa)
+        driver.click.assert_not_called()
+
+    def test_navegar_para_a_escrituracao_espera_a_tela_de_lista_carregar(self):
+        ordem = []
+        driver = mock.MagicMock()
+        driver.click.side_effect = lambda *_a, **_k: ordem.append("clique")
+        with mock.patch.object(self.controlador, "_aguardar_tela_de_lista", lambda d: ordem.append("aguardou")):
+            self.controlador._navegar_tela_escrituracao(driver)
+        self.assertEqual(ordem, ["clique", "clique", "aguardou"])
+
+    def test_processar_competencia_garante_a_lista_e_fixa_o_periodo_antes_de_consultar(self):
+        ordem = []
+        with mock.patch.object(self.controlador, "_garantir_tela_de_lista", lambda d: ordem.append("garantir")), \
+             mock.patch.object(self.controlador, "_definir_periodo_consulta", lambda d, c: ordem.append(("periodo", c))), \
+             mock.patch.object(m, "retry_on_exception", side_effect=m.NoSuchElementException("sem linha")):
+            driver = mock.MagicMock()
+            driver.click.side_effect = lambda *_a, **_k: ordem.append("consultar")
+            from python_spreadsheet_reader.readers import XLSXReader
+
+            reader = XLSXReader(self.caminho)
+            self.controlador._processar_competencia(driver, reader, _empresa(linha=2), date(2025, 5, 1))
+            reader.close_workbook()
+        self.assertEqual(ordem, ["garantir", ("periodo", date(2025, 5, 1)), "consultar"])
+
+
 class TestNavegadorIndisponivel(unittest.TestCase):
     def test_reconhece_sessao_perdida(self):
         self.assertTrue(m.navegador_indisponivel(m.InvalidSessionIdException("invalid session id")))
@@ -430,7 +655,8 @@ class TestCompetenciaNaoEncontrada(unittest.TestCase):
         from python_spreadsheet_reader.readers import XLSXReader
 
         reader = XLSXReader(self.caminho)
-        with mock.patch.object(self.controlador, "_preencher_widget_calendario"), \
+        with mock.patch.object(self.controlador, "_garantir_tela_de_lista"), \
+             mock.patch.object(self.controlador, "_definir_periodo_consulta"), \
              mock.patch.object(m, "retry_on_exception", side_effect=m.NoSuchElementException("linha não veio")):
             resultado = self.controlador._processar_competencia(mock.MagicMock(), reader, _empresa(linha=2), date(2025, 5, 1))
         reader.close_workbook()

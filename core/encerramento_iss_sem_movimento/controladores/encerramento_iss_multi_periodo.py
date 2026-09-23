@@ -35,6 +35,7 @@ pode precisar ser feita nos dois módulos (este e `encerramento_iss.py`).
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from math import floor
@@ -95,6 +96,7 @@ class ResultadoMesEmpresa:
     dt_encerramento: date | None = None
     problemas: list[str] = field(default_factory=list)
     caminho_certificado: Path | None = None
+    situacao: str = ""  # texto da coluna "Situação" do portal (ex.: "Aberta - Normal", "Fechada - Normal")
 
 
 class ResultadoEncerramentoISSMultiPeriodo:
@@ -146,6 +148,20 @@ _MARCAS_NAVEGADOR_INDISPONIVEL = (
     "chrome not reachable",
     "max retries exceeded",
 )
+
+# Campos do período da tela "Manter Escrituração". O portal lista as competências de `dataInicial` até
+# `dataFinal` (padrão: mês atual), em ordem decrescente e paginadas de 12 em 12 — com só a data inicial
+# ajustada, competências mais antigas que a 12ª linha caíam na página 2 e o robô não as achava. Fixando
+# as duas datas na competência a tabela devolve exatamente uma linha, sempre na primeira página.
+CAMPOS_PERIODO_CONSULTA = (
+    "manterEscrituracaoForm:dataInicialInputDate",
+    "manterEscrituracaoForm:dataInicialInputCurrentDate",
+    "manterEscrituracaoForm:dataFinalInputDate",
+    "manterEscrituracaoForm:dataFinalInputCurrentDate",
+)
+ID_BOTAO_CONSULTAR = "manterEscrituracaoForm:btnConsultar"
+ID_CAMPO_PESQUISA_INSCRICAO = "alteraInscricaoForm:cpfPesquisa"
+ID_PROGRESSO_PORTAL = "mpProgressoContentTable"
 
 # Textos curtos que vão para a planilha fiscal (coluna Y) e para o relatório — sem nome de exceção do Selenium.
 MSG_COMPETENCIA_NAO_ENCONTRADA = "COMPETÊNCIA NÃO ENCONTRADA NO PORTAL"
@@ -333,8 +349,28 @@ class ControladorEncerramentoISSMultiPeriodo:
         self._abrir_modal_de_alteracao_de_inscricao(driver)
 
     def _modal_de_troca_de_inscricao_esta_aberto(self, driver: ChromeDriver) -> bool:
-        campos = driver.get_driver().find_elements(By.ID, "alteraInscricaoForm:cpfPesquisa")
+        campos = driver.get_driver().find_elements(By.ID, ID_CAMPO_PESQUISA_INSCRICAO)
         return any(campo.is_displayed() for campo in campos)
+
+    def _aguardar_modal_de_troca(self, driver: ChromeDriver, segundos: int) -> bool:
+        for _ in range(max(1, segundos)):
+            if self._modal_de_troca_de_inscricao_esta_aberto(driver):
+                return True
+            self.check_thread_stopped_callback()
+            time.sleep(1)
+        return self._modal_de_troca_de_inscricao_esta_aberto(driver)
+
+    def _garantir_modal_de_troca(self, driver: ChromeDriver) -> None:
+        """Só segue quando a busca de inscrição estiver visível. Depois de uma troca de tela o modal pode
+        demorar (ou ter sido fechado pelo recarregamento da página): espera um pouco, tenta abri-lo pelo
+        botão "Alterar Inscrição Atual" e só então desiste — antes o robô clicava no CNPJ com o modal
+        fechado e perdia 60 s por empresa."""
+        if self._aguardar_modal_de_troca(driver, 10):
+            return
+        logger.debug("A tela de troca de empresa não abriu sozinha — vou abri-la pelo botão do topo.")
+        self._abrir_modal_de_alteracao_de_inscricao(driver)
+        if not self._aguardar_modal_de_troca(driver, 30):
+            raise NoSuchElementException("A tela de troca de empresa não ficou visível.")
 
     def _recuperar_para_proxima_empresa(self, driver: ChromeDriver) -> None:
         """Depois de um erro inesperado, devolve o portal à tela de troca de empresa (se já não estiver
@@ -374,6 +410,7 @@ class ControladorEncerramentoISSMultiPeriodo:
         logger.info(f"Agora é a vez da empresa {empresa}: vou procurar a inscrição dela no portal.")
 
         self.check_thread_stopped_callback()
+        self._garantir_modal_de_troca(driver)
 
         driver.click(driver.find_element().by_xpath('//table[@id="alteraInscricaoForm:tipoPesquisa"]//input[@value="CNPJ"]'))
         driver.explicit_wait(1)  # AJAX reaplica a máscara — digitar rápido demais apaga o texto
@@ -465,6 +502,30 @@ class ControladorEncerramentoISSMultiPeriodo:
                 '//ul[contains(@class, "navbar-nav")]//li[@class="dropdown open"]//ul[@class="dropdown-menu"]//a[normalize-space()="Manter Escrituração"]'
             )
         )
+        self._aguardar_tela_de_lista(driver)
+
+    def _tela_de_lista_esta_aberta(self, driver: ChromeDriver) -> bool:
+        botoes = driver.get_driver().find_elements(By.ID, ID_BOTAO_CONSULTAR)
+        return any(botao.is_displayed() for botao in botoes)
+
+    def _aguardar_tela_de_lista(self, driver: ChromeDriver) -> None:
+        """Espera o formulário de Manter Escrituração carregar (o período agora é definido por script, que
+        não espera o elemento existir como os cliques fazem)."""
+
+        def _esperar():
+            if not self._tela_de_lista_esta_aberta(driver):
+                raise NoSuchElementException("A tela de Manter Escrituração ainda não carregou.")
+            return True
+
+        retry_on_exception(func=_esperar, max_attempts=60, polling_seconds=1, exception=NoSuchElementException)
+
+    def _garantir_tela_de_lista(self, driver: ChromeDriver) -> None:
+        """Se o robô não estiver na lista de escriturações (ex.: ficou na tela de uma competência que
+        terminou com problema), refaz o caminho pelo menu antes de consultar a próxima competência."""
+        if self._tela_de_lista_esta_aberta(driver):
+            return
+        logger.debug("O portal não está na lista de escriturações — voltando pelo menu Escrituração > Manter Escrituração.")
+        self._navegar_tela_escrituracao(driver)
 
     @staticmethod
     def _confirmar_alteracao_de_inscricao(driver: ChromeDriver) -> None:
@@ -480,53 +541,81 @@ class ControladorEncerramentoISSMultiPeriodo:
     # -- por competência (adaptado do original: recebe a competência como parâmetro
     #    e devolve o resultado em vez de gravar direto em `self` e abrir o modal) ----
 
-    def _preencher_widget_calendario(self, driver: ChromeDriver, competencia: date) -> None:
-        logger.debug(f"Abrindo o calendário do portal para selecionar a competência {competencia.strftime('%m/%Y')}...")
+    def _definir_periodo_consulta(self, driver: ChromeDriver, competencia: date) -> None:
+        """Fixa data inicial = data final = a competência (ver `CAMPOS_PERIODO_CONSULTA`)."""
+        valor = competencia.strftime("%m/%Y")
+        logger.debug(f"Definindo o período da consulta do portal como {valor} (data inicial e final)...")
 
         self.check_thread_stopped_callback()
 
-        driver.click(driver.find_element().by_class("rich-calendar-tool-btn"))
-        driver.click(driver.find_element().by_id(f"manterEscrituracaoForm:dataInicialDateEditorLayoutM{competencia.month - 1}"))
-        driver.click(
-            driver.find_element().by_xpath(
-                f'//div[contains(@id, "manterEscrituracaoForm:dataInicialDateEditorLayoutY") and normalize-space()="{competencia.year}"]'
+        for campo in CAMPOS_PERIODO_CONSULTA:
+            definido = driver.get_driver().execute_script(
+                "var e = document.getElementById(arguments[0]); if (!e) { return false; } e.value = arguments[1]; return true;",
+                campo,
+                valor,
             )
-        )
+            if not definido:
+                raise NoSuchElementException(f"Campo de período não encontrado na tela: {campo}")
 
-        self.check_thread_stopped_callback()
-        driver.click(driver.find_element().by_id("manterEscrituracaoForm:dataInicialDateEditorButtonOk"))
+    def _garantir_aba_encerramento(self, driver: ChromeDriver) -> None:
+        abas = driver.get_driver().find_elements(By.ID, "abaEncerramento_lbl")
+        if abas and "rich-tab-active" not in (abas[0].get_attribute("class") or ""):
+            driver.click(driver.find_element().by_id("abaEncerramento_lbl"))
 
     def _verificar_servicos_prestados(self, driver: ChromeDriver, empresa: EmpresaSemMovimentoISSFortaleza) -> str | None:
-        """Devolve o motivo do problema (sem gravar nada), ou None se não houver serviços prestados."""
+        """Devolve o motivo do problema (sem gravar nada), ou None se não houver serviços prestados.
+
+        A tabela do "Somatório" (quantidade de serviços prestados) fica DENTRO da aba "Encerramento", que é a
+        aba aberta ao entrar na tela. Trocar para a aba "Serviços Prestados" esconde essa tabela e o texto lido
+        vem vazio — por isso a leitura é feita sem trocar de aba, esperando o valor aparecer."""
         logger.info("Antes de encerrar, vou conferir se essa empresa tem serviços prestados no período...")
 
         self.check_thread_stopped_callback()
-        driver.click(driver.find_element().by_id("abaServicosPrestados_lbl"))
+        self._garantir_aba_encerramento(driver)
 
-        def _aguardar_elemento_carregar():
-            return driver.find_element().by_xpath(
+        def _ler_quantidade() -> str:
+            celula = driver.find_element().by_xpath(
                 "//table[@id='abaEncerramentoForm:dataTableServicosPrestados']"
                 "//td[normalize-space(text())='Somatório']/following-sibling::td[1]"
             ).get_element()
-
-        quantidade_cell = retry_on_exception(func=_aguardar_elemento_carregar, max_attempts=60, polling_seconds=1)
+            texto = (celula.text or "").strip()
+            if not texto:  # célula ainda oculta/vazia (texto de elemento oculto vem vazio no Selenium)
+                raise NoSuchElementException("O Somatório ainda não tem texto visível.")
+            return texto
 
         motivo: str | None = None
         try:
-            quantidade = int(quantidade_cell.text.strip())
+            texto_quantidade = retry_on_exception(func=_ler_quantidade, max_attempts=60, polling_seconds=1, exception=NoSuchElementException)
+        except NoSuchElementException:
+            logger.error(
+                f"Não consegui ler a quantidade de serviços prestados da empresa {empresa} — "
+                "o portal não mostrou o valor a tempo."
+            )
+            return "ERRO AO LER SERVIÇOS PRESTADOS"
+
+        try:
+            quantidade = int(texto_quantidade)
             if quantidade > 0:
                 logger.warning(f"A empresa {empresa} tem serviços prestados no período — vou marcar como problema.")
                 motivo = "SERVIÇOS PRESTADOS"
         except (TypeError, ValueError):
             logger.error(
                 f"Não consegui ler direito a quantidade de serviços prestados da empresa {empresa} — "
-                f"o portal retornou um valor que eu não esperava: {quantidade_cell.text!r}"
+                f"o portal retornou um valor que eu não esperava: {texto_quantidade!r}"
             )
             motivo = "ERRO AO LER SERVIÇOS PRESTADOS"
 
-        self.check_thread_stopped_callback()
-        driver.click(driver.find_element().by_id("abaEncerramento_lbl"))
         return motivo
+
+    def _aguardar_progresso_do_portal(self, driver: ChromeDriver, segundos: int = 30) -> None:
+        """Espera o indicador "carregando" do portal sumir (nunca levanta): contar linhas de uma tabela que
+        ainda está sendo preenchida por AJAX daria "sem pendências" por engano."""
+        for _ in range(segundos):
+            indicadores = driver.get_driver().find_elements(By.ID, ID_PROGRESSO_PORTAL)
+            if not any(i.is_displayed() for i in indicadores):
+                return
+            self.check_thread_stopped_callback()
+            time.sleep(1)
 
     def _verificar_servicos_pendentes(self, driver: ChromeDriver, empresa: EmpresaSemMovimentoISSFortaleza) -> str | None:
         """Devolve o motivo do problema (sem gravar nada), ou None se não houver serviços pendentes."""
@@ -539,6 +628,7 @@ class ControladorEncerramentoISSMultiPeriodo:
             return driver.find_element().by_id("servicos_pendentes_form:table_servico_tomados_pendente:tb").get_element()
 
         servicos_pendentes_table = retry_on_exception(func=_aguardar_elemento_carregar, max_attempts=60, polling_seconds=1)
+        self._aguardar_progresso_do_portal(driver)
         row_count = servicos_pendentes_table.get_property("childElementCount")
 
         motivo: str | None = None
@@ -556,11 +646,12 @@ class ControladorEncerramentoISSMultiPeriodo:
     def _processar_competencia(
         self, driver: ChromeDriver, reader: XLSXReader, empresa: EmpresaSemMovimentoISSFortaleza, competencia: date
     ) -> ResultadoMesEmpresa:
-        self._preencher_widget_calendario(driver, competencia)
+        self._garantir_tela_de_lista(driver)
+        self._definir_periodo_consulta(driver, competencia)
 
         logger.debug("Consultando no portal se há escriturações em aberto para essa competência...")
         self.check_thread_stopped_callback()
-        driver.click(driver.find_element().by_id("manterEscrituracaoForm:btnConsultar"))
+        driver.click(driver.find_element().by_id(ID_BOTAO_CONSULTAR))
 
         competencia_str = competencia.strftime("%m/%Y")
 
@@ -575,13 +666,17 @@ class ControladorEncerramentoISSMultiPeriodo:
             search_result_row = retry_on_exception(func=_locate_element, max_attempts=60, polling_seconds=1, exception=NoSuchElementException)
         except NoSuchElementException:
             logger.error(
-                f"{empresa} — {competencia_str}: o portal não listou essa competência para a empresa (pode ser anterior "
-                "ao início da inscrição ou estar em outra página da tabela) — vou seguir para a próxima."
+                f"{empresa} — {competencia_str}: o portal não devolveu a linha dessa competência depois da consulta — "
+                "vou seguir para a próxima."
             )
             self._acrescentar_na_planilha_fiscal(reader, competencia, MSG_COMPETENCIA_NAO_ENCONTRADA, empresa.linha_planilha_fiscal)
             return ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[MSG_COMPETENCIA_NAO_ENCONTRADA])
         link_escriturar = driver.find_element(search_result_row).by_xpath('.//*[contains(@id, "linkEscriturar")]')
         link_escriturar_title: str | None = link_escriturar.get_element().get_dom_attribute("title")
+
+        situacao = self._ler_situacao(search_result_row, competencia_str)
+        if situacao:
+            logger.info(f"{empresa} — {competencia_str}: situação no portal: {situacao}.")
 
         if not link_escriturar_title:
             msg = "O portal não me deu informação suficiente para saber se a escrituração pode ser encerrada."
@@ -591,14 +686,26 @@ class ControladorEncerramentoISSMultiPeriodo:
 
         match link_escriturar_title.upper().strip():
             case "ESCRITURAÇÃO ENCERRADA":
-                return self._processar_ja_encerrada(driver, reader, empresa, competencia, search_result_row)
+                resultado = self._processar_ja_encerrada(driver, reader, empresa, competencia, search_result_row)
             case "ESCRITURAR":
-                return self._processar_a_encerrar(driver, reader, empresa, competencia, link_escriturar)
+                resultado = self._processar_a_encerrar(driver, reader, empresa, competencia, link_escriturar)
             case _:
                 msg = f"Título inesperado do botão de escriturar: {link_escriturar_title!r}"
                 logger.error(f"{empresa} — {competencia_str}: {msg}")
                 self._acrescentar_na_planilha_fiscal(reader, competencia, msg, empresa.linha_planilha_fiscal)
-                return ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[msg])
+                return ResultadoMesEmpresa(empresa, competencia, encerrada=False, problemas=[msg], situacao=situacao)
+
+        resultado.situacao = situacao
+        return resultado
+
+    @staticmethod
+    def _ler_situacao(search_result_row: Any, competencia_str: str) -> str:
+        """Texto da linha da competência sem o rótulo "MM/AAAA" (ex.: "Aberta - Normal 01/09/2026"). Nunca levanta."""
+        try:
+            texto = " ".join(search_result_row.get_element().text.split())
+            return texto.removeprefix(competencia_str).strip()
+        except Exception:  # noqa: BLE001 — só informativo
+            return ""
 
     def _processar_ja_encerrada(
         self,
