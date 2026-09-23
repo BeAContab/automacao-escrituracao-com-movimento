@@ -968,7 +968,7 @@ tailwind.config = {
                         Robô de Encerramento
                     </span>
                 </div>
-                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Mesma automação do <strong class="text-secondary">Encerramento ISS</strong>, mas para <strong class="text-secondary">várias competências de uma vez</strong>: para cada empresa da planilha, busca a inscrição uma única vez e processa todos os meses selecionados antes de passar para a próxima empresa. Gera um relatório por competência. Use <strong class="text-secondary">Apenas verificar</strong> para conferir tudo antes: nada é encerrado nem baixado, e depois você executa só o que aprovou.</p>
+                <p class="font-body-md text-body-md text-on-surface-variant mt-sm max-w-[850px]">Mesma automação do <strong class="text-secondary">Encerramento ISS</strong>, mas para <strong class="text-secondary">várias competências de uma vez</strong>: para cada empresa (da planilha fiscal ou dos CNPJs que você digitar), busca a inscrição uma única vez e processa todos os meses selecionados antes de passar para a próxima empresa. Gera um relatório por competência. Use <strong class="text-secondary">Apenas verificar</strong> para conferir tudo antes: nada é encerrado nem baixado, e depois você executa só o que aprovou.</p>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
@@ -980,11 +980,38 @@ tailwind.config = {
                         </h3>
                         <div class="flex flex-col gap-lg">
                             <div class="flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">Origem das empresas</label>
+                                <div class="grid grid-cols-2 gap-sm">
+                                    <label class="flex items-center gap-sm p-sm rounded-lg border border-outline-variant cursor-pointer">
+                                        <input type="radio" name="origem-encerramento-multi" value="planilha" checked onchange="atualizarOrigemEncerramentoMulti()" class="accent-primary-container"/>
+                                        <span class="font-body-sm text-body-sm text-on-surface">Planilha fiscal</span>
+                                    </label>
+                                    <label class="flex items-center gap-sm p-sm rounded-lg border border-outline-variant cursor-pointer">
+                                        <input type="radio" name="origem-encerramento-multi" value="manual" onchange="atualizarOrigemEncerramentoMulti()" class="accent-primary-container"/>
+                                        <span class="font-body-sm text-body-sm text-on-surface">Digitar CNPJs</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div id="bloco-planilha-encerramento-multi" class="flex flex-col gap-xs">
                                 <label class="font-label-md text-label-md text-on-surface-variant">Planilha Fiscal (.xlsx)</label>
                                 <div class="flex gap-sm">
                                     <input id="input-planilha-encerramento-multi" class="flex-1 input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" readonly type="text" placeholder="Selecione a planilha fiscal..."/>
                                     <button onclick="selecionarPlanilhaEncerramentoMulti()" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors">Selecionar</button>
                                 </div>
+                                <span class="font-body-sm text-body-sm text-on-surface-variant">Só as empresas de Fortaleza marcadas como sem movimento na planilha são processadas.</span>
+                            </div>
+                            <div id="bloco-cnpjs-encerramento-multi" class="hidden flex flex-col gap-xs">
+                                <label class="font-label-md text-label-md text-on-surface-variant">CNPJs das empresas</label>
+                                <div class="grid grid-cols-[1fr_auto] gap-sm">
+                                    <input id="input-cnpj-encerramento-multi" type="text" onkeydown="if (event.key === 'Enter') { event.preventDefault(); adicionarCnpjEncerramentoMulti(); }" onpaste="colarCnpjsEncerramentoMulti(event)" class="w-full input-border rounded-lg py-sm px-sm text-sm font-mono outline-none bg-white" placeholder="00.000.000/0000-00"/>
+                                    <button onclick="adicionarCnpjEncerramentoMulti()" type="button" class="px-md rounded-lg text-sm font-bold border border-secondary text-secondary hover:bg-surface-container transition-colors flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-[18px]">add</span>
+                                    </button>
+                                </div>
+                                <div id="lista-cnpjs-encerramento-multi" class="flex flex-wrap gap-xs min-h-[2rem]">
+                                    <p class="font-body-sm text-body-sm text-on-surface-variant/70 italic">Nenhum CNPJ adicionado ainda.</p>
+                                </div>
+                                <span class="font-body-sm text-body-sm text-on-surface-variant">Digite um CNPJ e clique em Adicionar (dá para colar vários, separados por vírgula ou linha). <strong class="text-error">Sem a planilha, o robô não confere se a empresa é "sem movimento"</strong> — só o portal bloqueia quem tem serviços prestados ou pendentes. Confira a lista antes de encerrar.</span>
                             </div>
                             <div class="flex flex-col gap-xs">
                                 <label class="font-label-md text-label-md text-on-surface-variant">Pasta de Saída</label>

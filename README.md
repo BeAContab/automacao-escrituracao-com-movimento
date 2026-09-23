@@ -48,7 +48,7 @@ O sistema reúne automações integradas, acessíveis por abas na interface, org
 | **Exportar XML de Prestados** | Baixa em lote os XMLs de notas emitidas (serviços prestados) direto do portal | ✅ Estável |
 | **Captura Escrituração (Com Movimento)** | Baixa em lote os certificados de escrituração de empresas encerradas com movimento | 🧪 Em testes |
 | **Encerramento ISS (Sem Movimento)** | Encerra a escrituração de empresas sem movimento/inativas e emite relatório consolidado | 🧪 Em testes |
-| **Encerramento ISS — Múltiplos Meses** | A mesma automação acima, mas para várias competências numa só execução — por empresa, processa todos os meses selecionados antes de trocar de empresa | 🧪 Em testes |
+| **Encerramento ISS — Múltiplos Meses** | A mesma automação acima, mas para várias competências numa só execução, com empresas vindas da planilha ou digitadas por CNPJ. Tem modo **Apenas verificar** (confere tudo antes, sem encerrar nada) e Pausar/Continuar/Parar | 🧪 Em testes |
 | **Importar para Athenas** | Converte a escrituração exportada do ISS Fortaleza para o layout de importação do sistema Athenas ERP, aplicando as regras de CFOP e retenções federais | 🧪 Em testes |
 
 > As funções marcadas **Em testes** já operam ponta a ponta em produção; recomenda-se conferência manual dos resultados até a validação completa pela equipe técnica.
@@ -111,9 +111,13 @@ Automatiza o encerramento em massa de empresas inativas:
 
 ### Encerramento ISS — Múltiplos Meses
 Mesma automação acima, para quando é preciso encerrar mais de uma competência de uma vez:
-* O operador monta uma lista de competências (mês/ano); para cada empresa da planilha, o robô processa todos os meses selecionados antes de trocar de empresa — evita repetir a busca da inscrição a cada mês.
+* O operador monta uma lista de competências (mês/ano); para cada empresa, o robô processa todos os meses selecionados antes de trocar de empresa — evita repetir a busca da inscrição a cada mês.
+* **Origem das empresas:** a planilha fiscal (só as empresas de Fortaleza marcadas como sem movimento) **ou** CNPJs digitados pelo operador, um a um ou colados em lista, com validação dos dígitos verificadores. Na origem manual não há planilha: o robô não confere se a empresa é "sem movimento" (só o portal bloqueia quem tem serviços prestados ou pendentes), por isso a tela pede confirmação antes de encerrar e o nome da empresa vem do próprio portal.
+* **Modo "Apenas verificar (não encerra)"**, o padrão da tela: percorre e confere tudo sem encerrar, sem baixar e sem gravar nada. Ao final mostra a revisão — aptas a encerrar, já encerradas (com ou sem certificado na pasta) e com problema (com o motivo) — e o botão **"Executar o que foi verificado"** executa só o que o operador marcou, num novo login, conferindo cada item no portal de novo imediatamente antes de encerrar.
+* **Pausar, continuar e parar** nos limites seguros (antes de cada competência ou empresa — nunca no meio de um encerramento); ao parar, os relatórios do que já foi feito são gerados.
+* **Competências já encerradas** não têm o certificado baixado de novo se ele já existir na pasta de saída; competências com problema são reconferidas a cada execução.
 * Gera um relatório de execução por competência, organizado em pastas por ano-mês.
-* Um problema numa competência específica não impede as demais competências da mesma empresa, nem as demais empresas.
+* Um problema numa competência específica não impede as demais competências da mesma empresa, nem as demais empresas. Se o Chrome for fechado, a execução para com uma mensagem clara em vez de tentar cada empresa restante.
 
 ### Importar para Athenas
 Converte a escrituração exportada do ISS Fortaleza para o layout de importação do sistema **Athenas ERP**:
@@ -128,7 +132,7 @@ Converte a escrituração exportada do ISS Fortaleza para o layout de importaç�
 
 * **Login manual nas ações mais sensíveis:** Escrituração e Exportar XML de Prestados exigem autenticação manual do operador no portal antes de qualquer lançamento — a automação nunca conhece nem armazena a senha do usuário nesses fluxos. Já a Escrituração — Multi-CNPJ recebe login/senha diretamente na planilha (única forma viável para várias empresas numa execução só); a senha fica só em memória durante a execução e nunca aparece em log, mensagem de erro ou arquivo de retomada.
 * **Certificado digital nunca persistido:** em Baixar NFS-e — Portal Nacional, a senha do certificado A1 não é salva em disco e a chave privada só existe em texto plano durante a execução, em pasta temporária apagada ao final.
-* **Ações irreversíveis sinalizadas:** o encerramento de escrituração (Encerramento ISS, nas duas versões) é tratado como uma ação real e de difícil reversão, com aviso explícito na interface antes da execução; a Escrituração — Multi-CNPJ oferece um modo de simulação que preenche os campos sem gravar nada, para conferência antes de escriturar de verdade.
+* **Ações irreversíveis sinalizadas:** o encerramento de escrituração (Encerramento ISS, nas duas versões) é tratado como uma ação real e de difícil reversão, com aviso explícito na interface antes da execução; a Escrituração — Multi-CNPJ oferece um modo de simulação que preenche os campos sem gravar nada, e o Encerramento ISS — Múltiplos Meses oferece o modo "Apenas verificar" (com revisão e confirmação antes de encerrar), para conferência antes de escriturar/encerrar de verdade.
 * **Log de auditoria por execução:** toda automação grava, junto ao resultado gerado, um arquivo de log com timestamp de cada etapa — histórico pronto para conferência interna ou suporte técnico.
 * **Rede de segurança contra dados incompletos:** notas com campos obrigatórios ausentes ou inconsistentes são automaticamente puladas e registradas em log próprio, em vez de escrituradas incorretamente.
 * **Credenciais protegidas localmente:** chaves de API e credenciais de portal ficam armazenadas apenas na máquina do operador, nunca em servidores de terceiros.

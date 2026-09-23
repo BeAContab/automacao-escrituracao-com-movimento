@@ -30,7 +30,10 @@ Diferenças deliberadas em relação ao original:
 - a mesma informação não é acrescentada duas vezes na célula da planilha ao repetir a execução;
 - Pausar/Continuar/Parar nos limites seguros (entre competências e entre empresas);
 - competência já encerrada cujo certificado já existe na pasta não baixa o certificado de novo;
-- modo "apenas verificar" (não encerra nem baixa nada) e execução restrita ao que foi verificado.
+- modo "apenas verificar" (não encerra nem baixa nada) e execução restrita ao que foi verificado;
+- as empresas podem vir da planilha fiscal (só as sem movimento de Fortaleza, como no original) OU de uma lista
+  de CNPJs digitados pelo operador — neste caso não há planilha: nada é gravado na coluna Y, o nome da empresa
+  vem da linha de resultado da busca de inscrição no portal e os certificados vão para `CNPJ_<14 dígitos>/`.
 
 ATENÇÃO — duplicação consciente: uma correção futura no fluxo do portal (seletores, navegação)
 pode precisar ser feita nos dois módulos (este e `encerramento_iss.py`).
@@ -38,6 +41,7 @@ pode precisar ser feita nos dois módulos (este e `encerramento_iss.py`).
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -89,6 +93,46 @@ from core.encerramento_iss_sem_movimento.utils.functions import (
 # que guarda o resultado direto no objeto Empresa — aqui um mesmo objeto Empresa
 # passa por várias competências, então cada uma precisa do seu próprio registro)
 # ---------------------------------------------------------------------------
+
+
+def cnpj_valido(valor: str) -> bool:
+    """CNPJ com 14 dígitos, não todos iguais e com os dois dígitos verificadores corretos (aceita máscara)."""
+    cnpj = re.sub(r"\D", "", str(valor or ""))
+    if len(cnpj) != 14 or cnpj == cnpj[0] * 14:
+        return False
+
+    def digito(base: str, pesos: list[int]) -> int:
+        resto = sum(int(d) * p for d, p in zip(base, pesos)) % 11
+        return 0 if resto < 2 else 11 - resto
+
+    pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    d1 = digito(cnpj[:12], pesos1)
+    d2 = digito(cnpj[:12] + str(d1), [6] + pesos1)
+    return cnpj[12:] == f"{d1}{d2}"
+
+
+@dataclass
+class EmpresaAlvo:
+    """Empresa informada direto pelo operador (sem planilha): só o CNPJ é obrigatório. O nome é preenchido
+    com o que o portal mostrar na busca de inscrição; código e responsável não existem nesta origem."""
+
+    cnpj: str  # 14 dígitos
+    nome: str = ""
+    codigo: int | None = None
+    responsavel: str = ""
+    linha_planilha_fiscal: int | None = None  # None = sem planilha (nada é gravado na coluna Y)
+    cnpj_m: str = ""
+    mensagens: list = field(default_factory=list)
+    problemas: list = field(default_factory=list)
+
+    def __str__(self) -> str:
+        return f"{self.nome} (CNPJ: {self.cnpj})" if self.nome else f"CNPJ {aplicar_mascara_cnpj(self.cnpj)}"
+
+
+def identificador_empresa(empresa: Any) -> str:
+    """Nome da pasta do certificado: `EMP_<código>` (origem planilha) ou `CNPJ_<14 dígitos>` (origem manual)."""
+    codigo = getattr(empresa, "codigo", None)
+    return f"EMP_{codigo}" if codigo else f"CNPJ_{empresa.cnpj}"
 
 
 MODO_ENCERRAR = "encerrar"
@@ -221,7 +265,7 @@ def navegador_indisponivel(exc: BaseException) -> bool:
 class ControladorEncerramentoISSMultiPeriodo:
     def __init__(
         self,
-        caminho_planilha: Path,
+        caminho_planilha: Path | None,
         caminho_saida: Path,
         caminho_webdriver: Path,
         url_iss_fortaleza: str,
@@ -233,15 +277,29 @@ class ControladorEncerramentoISSMultiPeriodo:
         callback_pausa: Callable[[], None] | None = None,
         callback_parar: Callable[[], bool] | None = None,
         alvos: dict[str, set[date]] | None = None,
+        cnpjs: list[str] | None = None,
     ) -> None:
         """`callback_pausa` bloqueia enquanto o operador estiver com a execução pausada e `callback_parar`
         devolve True quando ele pediu para parar — ambos consultados só nos limites seguros (entre
         competências e entre empresas). `alvos` (CNPJ com 14 dígitos -> competências) restringe a execução
-        ao que foi aprovado numa verificação prévia."""
+        ao que foi aprovado numa verificação prévia. `cnpjs` (origem manual) substitui a planilha: informe
+        `caminho_planilha` OU `cnpjs`, nunca os dois."""
         if not competencias:
             raise ValueError("Informe ao menos uma competência.")
         if modo not in (MODO_ENCERRAR, MODO_VERIFICAR):
             raise ValueError(f"Modo inválido: {modo!r}")
+        lista_cnpjs: list[str] | None = None
+        if cnpjs:
+            lista_cnpjs = []
+            for bruto in cnpjs:
+                cnpj = re.sub(r"\D", "", str(bruto))
+                if len(cnpj) != 14 or cnpj == cnpj[0] * 14:
+                    raise ValueError(f"CNPJ inválido: {bruto!r}")
+                if cnpj not in lista_cnpjs:  # sem duplicatas, na ordem informada
+                    lista_cnpjs.append(cnpj)
+        if (caminho_planilha is None) == (lista_cnpjs is None):
+            raise ValueError("Informe a planilha fiscal OU a lista de CNPJs (exatamente uma das duas origens).")
+        self.cnpjs = lista_cnpjs
         self.caminho_planilha = caminho_planilha
         self.caminho_saida = caminho_saida
         self.caminho_webdriver = caminho_webdriver
@@ -276,21 +334,25 @@ class ControladorEncerramentoISSMultiPeriodo:
 
     def executar_processo(self) -> ResultadoEncerramentoISSMultiPeriodo:
         rotulos = ", ".join(c.strftime("%m/%Y") for c in self.competencias)
+        if self.cnpjs is not None:
+            origem = f"os {len(self.cnpjs)} CNPJ(s) informados"
+        else:
+            origem = "a planilha em busca das empresas sem movimento"
         if self.modo == MODO_VERIFICAR:
             logger.info(
-                f"Vou percorrer a planilha e VERIFICAR (sem encerrar nem baixar nada) as empresas sem movimento "
+                f"Vou percorrer {origem} e VERIFICAR (sem encerrar nem baixar nada) "
                 f"em {len(self.competencias)} competência(s): {rotulos}."
             )
         else:
             logger.info(
-                f"Vou percorrer a planilha em busca das empresas sem movimento para encerrar o ISS delas "
+                f"Vou percorrer {origem} para encerrar o ISS delas "
                 f"em {len(self.competencias)} competência(s): {rotulos}."
             )
 
         driver = ChromeDriver(driver_path=self.caminho_webdriver)
         driver.start_driver(options=("--start-maximized",))
 
-        reader = XLSXReader(self.caminho_planilha)
+        reader = XLSXReader(self.caminho_planilha) if self.cnpjs is None else None
 
         status = StatusEncerramentoISS()
 
@@ -298,22 +360,29 @@ class ControladorEncerramentoISSMultiPeriodo:
             self.check_thread_stopped_callback()
             self._login_iss_fortaleza(driver)
 
-            for row_number, row in reader.lazy_load_sheet():
-                self.check_thread_stopped_callback()
-                self._ponto_seguro()
-                try:
-                    self._processar_linha(driver, reader, row_number, row)
-                except (UserStoppedThreadException, NavegadorIndisponivelException, RecuperacaoImpossivelException):
-                    raise
-                except Exception as exc:  # noqa: BLE001 — um erro inesperado numa empresa não pode abortar a planilha inteira
-                    if navegador_indisponivel(exc):
-                        raise NavegadorIndisponivelException(str(exc)) from exc
-                    logger.error(f"Erro inesperado na linha {row_number} da planilha — vou pular para a próxima. Detalhe: {exc}")
-                    # O erro pode ter deixado o portal numa tela qualquer; sem voltar à troca de empresa,
-                    # todas as empresas seguintes falhariam já no primeiro clique.
-                    self._recuperar_para_proxima_empresa(driver)
+            if self.cnpjs is None:
+                for row_number, row in reader.lazy_load_sheet():
+                    self.check_thread_stopped_callback()
+                    self._ponto_seguro()
+                    self._executar_isolado(
+                        driver, f"na linha {row_number} da planilha",
+                        lambda: self._processar_linha(driver, reader, row_number, row),
+                    )
+            else:
+                for cnpj in self.cnpjs:
+                    self.check_thread_stopped_callback()
+                    self._ponto_seguro()
+                    empresa = EmpresaAlvo(cnpj=cnpj)
+                    self._executar_isolado(
+                        driver, f"na empresa {aplicar_mascara_cnpj(cnpj)}",
+                        lambda: self._processar_empresa(driver, None, empresa),
+                    )
 
-            msg = "Terminei de percorrer a planilha para todas as competências solicitadas."
+            msg = (
+                "Terminei de percorrer a planilha para todas as competências solicitadas."
+                if self.cnpjs is None
+                else "Terminei de percorrer os CNPJs informados para todas as competências solicitadas."
+            )
             logger.success(msg)
             status = StatusEncerramentoISS(codigo=CodigoEncerramentoISS.SUCCESS, message=msg)
         except UserStoppedThreadException:
@@ -342,7 +411,8 @@ class ControladorEncerramentoISSMultiPeriodo:
             logger.error(exc)
             status = StatusEncerramentoISS(codigo=CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION, message=str(exc))
         finally:
-            reader.close_workbook()
+            if reader is not None:
+                reader.close_workbook()
             try:
                 driver.quit_driver()
             except Exception as exc:  # noqa: BLE001 — com o Chrome já fechado o quit() pode falhar; não pode impedir o relatório
@@ -356,6 +426,21 @@ class ControladorEncerramentoISSMultiPeriodo:
                 logger.warning(sem_empresa)
 
         return ResultadoEncerramentoISSMultiPeriodo(status, self.resultados, report_paths)
+
+    def _executar_isolado(self, driver: ChromeDriver, descricao: str, executar: Callable[[], None]) -> None:
+        """Roda o processamento de UMA empresa isolando erros inesperados: registra, devolve o portal à
+        troca de empresa e segue para a próxima (ou para tudo, se for o navegador que morreu)."""
+        try:
+            executar()
+        except (UserStoppedThreadException, NavegadorIndisponivelException, RecuperacaoImpossivelException):
+            raise
+        except Exception as exc:  # noqa: BLE001 — um erro inesperado numa empresa não pode abortar a execução inteira
+            if navegador_indisponivel(exc):
+                raise NavegadorIndisponivelException(str(exc)) from exc
+            logger.error(f"Erro inesperado {descricao} — vou pular para a próxima. Detalhe: {exc}")
+            # O erro pode ter deixado o portal numa tela qualquer; sem voltar à troca de empresa,
+            # todas as empresas seguintes falhariam já no primeiro clique.
+            self._recuperar_para_proxima_empresa(driver)
 
     def _processar_linha(self, driver: ChromeDriver, reader: XLSXReader, row_number: int, row: dict) -> None:
         try:
@@ -379,6 +464,10 @@ class ControladorEncerramentoISSMultiPeriodo:
         except (ValueError, TypeError):
             return  # Campo None ou de outro tipo inesperado
 
+        self._processar_empresa(driver, reader, empresa)
+
+    def _processar_empresa(self, driver: ChromeDriver, reader: XLSXReader | None, empresa: Any) -> None:
+        """Processa todas as competências de uma empresa (vinda da planilha ou digitada pelo operador)."""
         competencias = self._competencias_da_empresa(empresa)
         if not competencias:
             return  # execução restrita a uma lista aprovada e esta empresa não está nela
@@ -505,6 +594,8 @@ class ControladorEncerramentoISSMultiPeriodo:
         try:
             if bln_empresa_listada:
                 driver.explicit_wait(5)
+            if not getattr(empresa, "nome", "x"):  # origem manual: o nome vem da linha de resultado da busca
+                self._ler_nome_da_linha(driver, record_xpath, empresa)
             driver.click(driver.find_element().by_xpath(record_xpath), max_retries=5)
         except (TimeoutException, NoSuchElementException):
             return False
@@ -512,6 +603,24 @@ class ControladorEncerramentoISSMultiPeriodo:
         self._confirmar_alteracao_de_inscricao(driver)
         logger.info(f"Encontrei a procuração da empresa {empresa}. Entrando na página dela agora...")
         return True
+
+    @staticmethod
+    def _ler_nome_da_linha(driver: ChromeDriver, record_xpath: str, empresa: Any) -> None:
+        """Preenche `empresa.nome` com a razão social da linha de resultado (CNPJ, inscrição, razão social).
+        Só informativo: nunca levanta e não espera mais que alguns segundos."""
+        try:
+            for _ in range(5):
+                linhas = driver.get_driver().find_elements(By.XPATH, record_xpath + "/ancestor::tr[1]")
+                if linhas:
+                    texto = " ".join((linhas[0].text or "").split())
+                    texto = texto.removeprefix(empresa.cnpj_m).strip()
+                    texto = re.sub(r"^\d{4,8}-\d\s+", "", texto)  # inscrição municipal
+                    if texto:
+                        empresa.nome = texto
+                    return
+                time.sleep(1)
+        except Exception:  # noqa: BLE001
+            return
 
     def _dar_ciencia_nas_mensagens_nao_lidas(self, driver: ChromeDriver, emp: EmpresaSemMovimentoISSFortaleza) -> None:
         try:
@@ -786,7 +895,7 @@ class ControladorEncerramentoISSMultiPeriodo:
 
     def _diretorio_certificados(self, empresa: EmpresaSemMovimentoISSFortaleza, competencia: date) -> Path:
         # <ano>-<mês>, diferente do original (só <mês>): evita colidir competências do mesmo mês em anos diferentes.
-        return Path(str(self.caminho_saida)) / f"{competencia.year}-{competencia.month:02d}" / f"EMP_{empresa.codigo}"
+        return Path(str(self.caminho_saida)) / f"{competencia.year}-{competencia.month:02d}" / identificador_empresa(empresa)
 
     def _certificado_existente(self, empresa: EmpresaSemMovimentoISSFortaleza, competencia: date) -> Path | None:
         """Certificado (PDF não vazio) já baixado para essa empresa/competência na pasta de saída, se houver."""
@@ -916,7 +1025,8 @@ class ControladorEncerramentoISSMultiPeriodo:
     def _imprimir_declaracao_fechamento_iss(self, driver: ChromeDriver, emp: EmpresaSemMovimentoISSFortaleza, competencia: date) -> str:
         self.check_thread_stopped_callback()
 
-        arquivo = f"CERTIFICADO ISS_EMP{emp.codigo}_{timestamp_as_file_name('pdf')}"
+        sufixo = f"EMP{emp.codigo}" if getattr(emp, "codigo", None) else f"CNPJ{emp.cnpj}"
+        arquivo = f"CERTIFICADO ISS_{sufixo}_{timestamp_as_file_name('pdf')}"
         diretorio = self._diretorio_certificados(emp, competencia).as_posix()
         driver.page_to_pdf(
             file_path=diretorio,
@@ -933,6 +1043,8 @@ class ControladorEncerramentoISSMultiPeriodo:
         decisão do usuário foi manter tudo numa única célula, mesmo que fique com várias informações
         concatenadas. Cada acréscimo leva o rótulo "MM/AAAA: " na frente, exceto quando `competencia`
         é None (usado só para "S/ INSCRIÇÃO", que vale para todas as competências pedidas)."""
+        if reader is None or row_number is None:
+            return  # origem manual: não há planilha onde gravar (o registro fica nos relatórios)
         if self.modo == MODO_VERIFICAR:
             return  # verificar não deixa rastro na planilha: só registra quando o encerramento/baixa realmente acontece
         self.check_thread_stopped_callback()

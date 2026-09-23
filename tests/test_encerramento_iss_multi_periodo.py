@@ -989,6 +989,302 @@ class TestExecucaoRestritaAoQueFoiVerificado(unittest.TestCase):
         self.assertEqual(processados, [(1, date(2026, 2, 1))])
 
 
+def _dv_cnpj(base12: str) -> str:
+    """Implementação independente do algoritmo dos dígitos verificadores (não usa o código testado)."""
+    def dv(base, pesos):
+        r = sum(int(a) * b for a, b in zip(base, pesos)) % 11
+        return "0" if r < 2 else str(11 - r)
+
+    p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    d1 = dv(base12, p1)
+    d2 = dv(base12 + d1, [6] + p1)
+    return base12 + d1 + d2
+
+
+CNPJ_A = _dv_cnpj("112223330001")  # 11222333000181
+CNPJ_B = _dv_cnpj("456789120001")
+
+
+class TestCnpjValido(unittest.TestCase):
+    def test_gerador_independente_bate_com_um_cnpj_conhecido(self):
+        self.assertEqual(CNPJ_A, "11222333000181")
+
+    def test_aceita_cnpj_valido_com_e_sem_mascara(self):
+        self.assertTrue(m.cnpj_valido("11222333000181"))
+        self.assertTrue(m.cnpj_valido("11.222.333/0001-81"))
+        self.assertTrue(m.cnpj_valido(CNPJ_B))
+
+    def test_rejeita_digito_verificador_errado(self):
+        self.assertFalse(m.cnpj_valido("11222333000182"))
+        self.assertFalse(m.cnpj_valido("12345678000199"))
+
+    def test_rejeita_todos_iguais_tamanho_errado_e_vazio(self):
+        self.assertFalse(m.cnpj_valido("11111111111111"))
+        self.assertFalse(m.cnpj_valido("00000000000000"))
+        self.assertFalse(m.cnpj_valido("1122233300018"))
+        self.assertFalse(m.cnpj_valido(""))
+        self.assertFalse(m.cnpj_valido(None))
+
+
+class TestEmpresaAlvo(unittest.TestCase):
+    def test_texto_sem_nome_mostra_o_cnpj_com_mascara(self):
+        self.assertEqual(str(m.EmpresaAlvo(cnpj=CNPJ_A)), "CNPJ 11.222.333/0001-81")
+
+    def test_texto_com_nome(self):
+        self.assertEqual(str(m.EmpresaAlvo(cnpj=CNPJ_A, nome="EMPRESA X")), f"EMPRESA X (CNPJ: {CNPJ_A})")
+
+    def test_identificador_usa_o_codigo_na_planilha_e_o_cnpj_no_manual(self):
+        self.assertEqual(m.identificador_empresa(_empresa(codigo=7)), "EMP_7")
+        self.assertEqual(m.identificador_empresa(m.EmpresaAlvo(cnpj=CNPJ_A)), f"CNPJ_{CNPJ_A}")
+
+
+class TestConstrutorOrigem(unittest.TestCase):
+    def test_exige_exatamente_uma_origem(self):
+        with self.assertRaises(ValueError):
+            _controlador_modo(None, Path("s"), [date(2026, 1, 1)])  # nenhuma
+        with self.assertRaises(ValueError):
+            _controlador_modo(Path("p.xlsx"), Path("s"), [date(2026, 1, 1)], cnpjs=[CNPJ_A])  # as duas
+
+    def test_cnpj_invalido_no_construtor_levanta(self):
+        with self.assertRaises(ValueError):
+            _controlador_modo(None, Path("s"), [date(2026, 1, 1)], cnpjs=["123"])
+
+    def test_cnpjs_sao_normalizados_e_sem_duplicatas_na_ordem(self):
+        c = _controlador_modo(None, Path("s"), [date(2026, 1, 1)], cnpjs=["11.222.333/0001-81", CNPJ_B, CNPJ_A])
+        self.assertEqual(c.cnpjs, [CNPJ_A, CNPJ_B])
+
+    def test_planilha_continua_funcionando_sem_cnpjs(self):
+        c = _controlador_modo(Path("p.xlsx"), Path("s"), [date(2026, 1, 1)])
+        self.assertIsNone(c.cnpjs)
+
+
+class TestOrigemManual(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_manual_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+
+    def _controlador(self, cnpjs=None, competencias=None, **extra):
+        return _controlador_modo(None, self.pasta / "saida", competencias or [date(2026, 1, 1)], cnpjs=cnpjs or [CNPJ_A, CNPJ_B], **extra)
+
+    def _rodar(self, controlador, **patches):
+        driver_falso = mock.Mock(name="ChromeDriverFalso")
+        real = m.XLSXReader
+        self.planilhas_abertas = []
+
+        def leitor(*a, **k):  # registra o que foi aberto; só o modelo do relatório é permitido na origem manual
+            self.planilhas_abertas.append(str(a[0] if a else k.get("workbook_path")))
+            return real(*a, **k)
+
+        with mock.patch.object(m, "ChromeDriver", mock.Mock(return_value=driver_falso)), \
+             mock.patch.object(m, "XLSXReader", leitor), \
+             mock.patch.object(controlador, "_login_iss_fortaleza"), \
+             mock.patch.object(controlador, "_abrir_modal_de_alteracao_de_inscricao"), \
+             mock.patch.multiple(controlador, **patches):
+            return controlador.executar_processo(), driver_falso
+
+    def _ok(self, empresa_falsa=None):
+        return dict(
+            _procurar_inscricao_empresa=mock.Mock(return_value=True),
+            _dar_ciencia_nas_mensagens_nao_lidas=mock.Mock(),
+            _navegar_tela_escrituracao=mock.Mock(),
+            _processar_competencia=mock.Mock(
+                side_effect=lambda d, r, e, c: m.ResultadoMesEmpresa(e, c, encerrada=True, dt_encerramento=date(2026, 1, 5))
+            ),
+        )
+
+    def test_percorre_os_cnpjs_sem_abrir_planilha(self):
+        c = self._controlador()
+        patches = self._ok()
+        resultado, driver = self._rodar(c, **patches)
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.SUCCESS)
+        self.assertIn("CNPJs informados", resultado.status.message)
+        self.assertEqual(resultado.processadas, 2)  # 2 empresas x 1 competência
+        # nenhuma planilha fiscal foi aberta (só o modelo do relatório) e o reader é None em todas as chamadas
+        self.assertTrue(all(p == str(CAMINHO_TEMPLATE) for p in self.planilhas_abertas), self.planilhas_abertas)
+        leitores = {chamada.args[1] for chamada in patches["_processar_competencia"].call_args_list}
+        self.assertEqual(leitores, {None})
+        driver.quit_driver.assert_called_once()
+
+    def test_empresas_processadas_na_ordem_informada_como_empresa_alvo(self):
+        c = self._controlador(cnpjs=[CNPJ_B, CNPJ_A])
+        patches = self._ok()
+        self._rodar(c, **patches)
+        empresas = [chamada.args[1] for chamada in patches["_procurar_inscricao_empresa"].call_args_list]
+        self.assertTrue(all(isinstance(e, m.EmpresaAlvo) for e in empresas))
+        self.assertEqual([e.cnpj for e in empresas], [CNPJ_B, CNPJ_A])
+        self.assertTrue(all(e.linha_planilha_fiscal is None and e.codigo is None for e in empresas))
+
+    def test_gera_relatorio_mesmo_sem_codigo_nem_responsavel(self):
+        if not CAMINHO_TEMPLATE.exists():
+            self.skipTest("template do relatório não encontrado")
+        c = self._controlador()
+        resultado, _ = self._rodar(c, **self._ok())
+        self.assertEqual(len(resultado.report_paths), 1)
+        self.assertTrue(resultado.report_paths[0].exists())
+
+    def test_sem_inscricao_no_manual_marca_problema_sem_tocar_em_planilha(self):
+        c = self._controlador(cnpjs=[CNPJ_A])
+        patches = self._ok()
+        patches["_procurar_inscricao_empresa"] = mock.Mock(return_value=False)
+        resultado, _ = self._rodar(c, **patches)
+        self.assertEqual([r.problemas for r in resultado.resultados], [["S/ INSCRIÇÃO"]])
+
+    def test_erro_inesperado_numa_empresa_recupera_e_segue_para_a_proxima(self):
+        c = self._controlador()
+        tentadas = []
+
+        def procurar(driver, empresa):
+            tentadas.append(empresa.cnpj)
+            if empresa.cnpj == CNPJ_A:
+                raise RuntimeError("falha inesperada")
+            return True
+
+        patches = self._ok()
+        patches["_procurar_inscricao_empresa"] = mock.Mock(side_effect=procurar)
+        recuperar = mock.Mock()
+        patches["_recuperar_para_proxima_empresa"] = recuperar
+        resultado, _ = self._rodar(c, **patches)
+        self.assertEqual(tentadas, [CNPJ_A, CNPJ_B])
+        recuperar.assert_called_once()
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.SUCCESS)
+
+    def test_navegador_fechado_para_a_execucao_no_manual_tambem(self):
+        c = self._controlador()
+        tentadas = []
+
+        def procurar(driver, empresa):
+            tentadas.append(empresa.cnpj)
+            raise m.InvalidSessionIdException("invalid session id")
+
+        patches = self._ok()
+        patches["_procurar_inscricao_empresa"] = mock.Mock(side_effect=procurar)
+        resultado, _ = self._rodar(c, **patches)
+        self.assertEqual(tentadas, [CNPJ_A])
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.ERROR_UNHANDLED_EXCEPTION)
+
+    def test_parar_no_manual_termina_a_empresa_em_andamento_e_nao_comeca_a_proxima(self):
+        processados = []
+        c = self._controlador(callback_parar=lambda: len(processados) >= 1)
+        patches = self._ok()
+        patches["_processar_competencia"] = mock.Mock(
+            side_effect=lambda d, r, e, comp: processados.append(e.cnpj) or m.ResultadoMesEmpresa(e, comp, encerrada=True)
+        )
+        resultado, _ = self._rodar(c, **patches)
+        self.assertEqual(resultado.status.codigo, CodigoEncerramentoISS.USER_ENDED_PROCESS)
+        self.assertEqual(processados, [CNPJ_A])
+
+    def test_pausa_e_consultada_a_cada_empresa_e_competencia_no_manual(self):
+        pausas = []
+        c = self._controlador(competencias=[date(2026, 1, 1), date(2026, 2, 1)], callback_pausa=lambda: pausas.append(1))
+        self._rodar(c, **self._ok())
+        self.assertEqual(len(pausas), 2 + 4)  # 2 empresas + 2 empresas x 2 competências
+
+    def test_alvos_no_manual_pulam_empresas_fora_da_lista_sem_buscar_no_portal(self):
+        c = self._controlador(alvos={CNPJ_B: {date(2026, 1, 1)}})
+        patches = self._ok()
+        resultado, _ = self._rodar(c, **patches)
+        buscadas = [chamada.args[1].cnpj for chamada in patches["_procurar_inscricao_empresa"].call_args_list]
+        self.assertEqual(buscadas, [CNPJ_B])
+
+    def test_acrescentar_na_planilha_sem_reader_nao_faz_nada(self):
+        c = self._controlador()
+        c._acrescentar_na_planilha_fiscal(None, date(2026, 1, 1), "X", None)  # não levanta
+        c._acrescentar_na_planilha_fiscal(None, None, "S/ INSCRIÇÃO", None)
+
+    def test_mensagem_de_erro_inesperado_cita_o_cnpj(self):
+        c = self._controlador(cnpjs=[CNPJ_A])
+        patches = self._ok()
+        patches["_procurar_inscricao_empresa"] = mock.Mock(side_effect=RuntimeError("x"))
+        patches["_recuperar_para_proxima_empresa"] = mock.Mock()
+        mensagens = []
+        ident = m.logger.add(lambda msg: mensagens.append(msg.record["message"]), level="ERROR")
+        try:
+            self._rodar(c, **patches)
+        finally:
+            m.logger.remove(ident)
+        self.assertTrue(any("Erro inesperado na empresa 11.222.333/0001-81" in t for t in mensagens))
+
+
+class TestNomeDaLinhaEPastaManual(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp(prefix="encerr_multi_nome_"))
+        self.addCleanup(shutil.rmtree, self.pasta, ignore_errors=True)
+
+    def _empresa_manual(self):
+        e = m.EmpresaAlvo(cnpj=CNPJ_A)
+        e.cnpj_m = "11.222.333/0001-81"
+        return e
+
+    def _driver_com_linha(self, texto):
+        driver = mock.MagicMock()
+        driver.get_driver.return_value.find_elements.return_value = [_ElementoFalso(texto)] if texto is not None else []
+        return driver
+
+    def test_nome_vem_da_razao_social_da_linha_sem_cnpj_nem_inscricao(self):
+        e = self._empresa_manual()
+        m.ControladorEncerramentoISSMultiPeriodo._ler_nome_da_linha(
+            self._driver_com_linha("11.222.333/0001-81\n0000075-2\nSOCIEDADE MEDICO CIRURGICO LTDA"), "//xpath", e)
+        self.assertEqual(e.nome, "SOCIEDADE MEDICO CIRURGICO LTDA")
+
+    def test_linha_ausente_deixa_o_nome_vazio_sem_levantar(self):
+        e = self._empresa_manual()
+        with mock.patch.object(m.time, "sleep"):
+            m.ControladorEncerramentoISSMultiPeriodo._ler_nome_da_linha(self._driver_com_linha(None), "//xpath", e)
+        self.assertEqual(e.nome, "")
+
+    def test_erro_ao_ler_o_nome_nunca_derruba_a_busca(self):
+        e = self._empresa_manual()
+        driver = mock.MagicMock()
+        driver.get_driver.return_value.find_elements.side_effect = RuntimeError("stale")
+        m.ControladorEncerramentoISSMultiPeriodo._ler_nome_da_linha(driver, "//xpath", e)
+        self.assertEqual(e.nome, "")
+
+    def _controlador(self):
+        return _controlador_modo(None, self.pasta / "saida", [date(2025, 10, 1)], cnpjs=[CNPJ_A])
+
+    def test_busca_le_o_nome_so_na_origem_manual(self):
+        c = self._controlador()
+        driver = mock.MagicMock()
+        with mock.patch.object(c, "_garantir_modal_de_troca"), mock.patch.object(c, "_confirmar_alteracao_de_inscricao"), \
+             mock.patch.object(c, "_ler_nome_da_linha") as ler:
+            manual = self._empresa_manual()
+            self.assertTrue(c._procurar_inscricao_empresa(driver, manual))
+            ler.assert_called_once()
+            ler.reset_mock()
+            planilha = _empresa()
+            planilha.cnpj_m = "12.345.678/0001-99"
+            self.assertTrue(c._procurar_inscricao_empresa(driver, planilha))
+            ler.assert_not_called()  # na planilha o nome já veio da própria planilha
+
+    def test_certificado_do_manual_vai_para_pasta_por_cnpj(self):
+        c = self._controlador()
+        e = self._empresa_manual()
+        self.assertEqual(c._diretorio_certificados(e, date(2025, 10, 1)).parts[-2:], ("2025-10", f"CNPJ_{CNPJ_A}"))
+
+    def test_nome_do_arquivo_do_certificado_por_origem(self):
+        c = self._controlador()
+        driver = mock.MagicMock()
+        c._imprimir_declaracao_fechamento_iss(driver, self._empresa_manual(), date(2025, 10, 1))
+        self.assertIn(f"CERTIFICADO ISS_CNPJ{CNPJ_A}_", driver.page_to_pdf.call_args.kwargs["file_name"])
+        driver2 = mock.MagicMock()
+        c._imprimir_declaracao_fechamento_iss(driver2, _empresa(codigo=7), date(2025, 10, 1))
+        self.assertIn("CERTIFICADO ISS_EMP7_", driver2.page_to_pdf.call_args.kwargs["file_name"])  # planilha: igual a antes
+
+    def test_certificado_existente_no_manual_e_reconhecido_e_nao_baixa_de_novo(self):
+        c = self._controlador()
+        e = self._empresa_manual()
+        pasta = c._diretorio_certificados(e, date(2025, 10, 1))
+        pasta.mkdir(parents=True)
+        pdf = pasta / f"CERTIFICADO ISS_CNPJ{CNPJ_A}_x.pdf"
+        pdf.write_bytes(b"%PDF conteudo")
+        driver = mock.MagicMock()
+        driver.find_element.return_value.by_xpath.return_value.get_element.return_value.text = "07/11/2025"
+        resultado = c._processar_ja_encerrada(driver, None, e, date(2025, 10, 1), object())
+        driver.click.assert_not_called()
+        self.assertEqual(resultado.acao, m.ACAO_JA_ENCERRADA_CERT_EXISTENTE)
+        self.assertEqual(resultado.caminho_certificado, pdf)
+
+
 class TestNavegadorIndisponivel(unittest.TestCase):
     def test_reconhece_sessao_perdida(self):
         self.assertTrue(m.navegador_indisponivel(m.InvalidSessionIdException("invalid session id")))
