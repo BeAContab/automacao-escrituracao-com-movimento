@@ -405,5 +405,87 @@ class TestExecutarVerificadasNoApp(_Base):
         self.api._encerramento_multi_periodo_em_execucao = False
 
 
+CNPJ_VALIDO_A = "11222333000181"
+CNPJ_VALIDO_B = "11444777000161"
+
+
+class TestOrigemManualNoApp(_Base):
+    def _iniciar(self, cnpjs, modo="encerrar", planilha=""):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        retorno = self.api.iniciar_encerramento_multi_periodo_gui(
+            planilha, str(self.pasta / "saida"), ["01/2026"],
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo",
+            modo, cnpjs,
+        )
+        for _ in range(200):
+            if not self.api._encerramento_multi_periodo_em_execucao:
+                break
+            threading.Event().wait(0.05)
+        return capturado, retorno
+
+    def test_cnpjs_digitados_substituem_a_planilha_no_controlador(self):
+        capturado, retorno = self._iniciar(["11.222.333/0001-81", CNPJ_VALIDO_B, CNPJ_VALIDO_A])
+        self.assertTrue(retorno)
+        self.assertIsNone(capturado["caminho_planilha"])  # nenhuma planilha é lida
+        self.assertEqual(capturado["cnpjs"], [CNPJ_VALIDO_A, CNPJ_VALIDO_B])  # normalizados e sem duplicatas
+
+    def test_sem_cnpjs_continua_usando_a_planilha(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._iniciar_e_esperar(["01/2026"])
+        self.assertEqual(capturado["caminho_planilha"], self.pasta / "planilha.xlsx")
+        self.assertIsNone(capturado["cnpjs"])
+
+    def test_cnpj_invalido_nao_inicia_e_mostra_o_erro_na_tela(self):
+        capturado, retorno = self._iniciar([CNPJ_VALIDO_A, "12345678000199"])
+        self.assertFalse(retorno)
+        self.assertEqual(capturado, {})  # o controlador nem foi criado
+        self.assertFalse(self.api._encerramento_multi_periodo_em_execucao)
+        self.assertTrue(any("CNPJ inválido: 12345678000199" in c for c in self.janela.js))
+
+    def test_resumo_informa_a_origem(self):
+        self._iniciar([CNPJ_VALIDO_A])
+        self.assertEqual(self.janela.resumo()["origem"], "manual")
+
+    def test_resumo_da_planilha_informa_origem_planilha(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self._iniciar_e_esperar(["01/2026"])
+        self.assertEqual(self.janela.resumo()["origem"], "planilha")
+
+    def test_executar_verificadas_no_manual_usa_so_os_cnpjs_aprovados(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self.api.executar_verificadas_encerramento_multi_gui(
+            "", str(self.pasta / "saida"),
+            [{"cnpj": CNPJ_VALIDO_B, "competencia": "02/2026"}, {"cnpj": CNPJ_VALIDO_A, "competencia": "01/2026"}],
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo", "manual",
+        )
+        for _ in range(200):
+            if not self.api._encerramento_multi_periodo_em_execucao:
+                break
+            threading.Event().wait(0.05)
+        self.assertIsNone(capturado["caminho_planilha"])
+        self.assertEqual(sorted(capturado["cnpjs"]), sorted([CNPJ_VALIDO_A, CNPJ_VALIDO_B]))
+        self.assertEqual(capturado["modo"], "encerrar")
+        self.assertEqual(set(capturado["alvos"]), {CNPJ_VALIDO_A, CNPJ_VALIDO_B})
+
+    def test_executar_verificadas_da_planilha_continua_sem_cnpjs(self):
+        capturado = {}
+        self._instalar_controlador_falso(capturado)
+        self.api.executar_verificadas_encerramento_multi_gui(
+            str(self.pasta / "planilha.xlsx"), str(self.pasta / "saida"),
+            [{"cnpj": CNPJ_VALIDO_A, "competencia": "01/2026"}],
+            "chrome.exe", "https://iss.fortaleza.ce.gov.br/grpfor/login.seam", "12345678901", "segredo",
+        )
+        for _ in range(200):
+            if not self.api._encerramento_multi_periodo_em_execucao:
+                break
+            threading.Event().wait(0.05)
+        self.assertIsNone(capturado["cnpjs"])
+        self.assertEqual(capturado["caminho_planilha"], self.pasta / "planilha.xlsx")
+
+
 if __name__ == "__main__":
     unittest.main()

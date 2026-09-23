@@ -35,6 +35,7 @@ from core.encerramento_iss_sem_movimento.controladores.encerramento_iss import (
 )
 from core.encerramento_iss_sem_movimento.controladores.encerramento_iss_multi_periodo import (
     ControladorEncerramentoISSMultiPeriodo,
+    cnpj_valido,
 )
 from core.encerramento_iss_sem_movimento.iss.credenciais import CredenciaisISSFortaleza
 from core.encerramento_iss_sem_movimento.utils.classes import UserStoppedThreadException
@@ -1193,19 +1194,45 @@ class BeAContabAPI:
                 self._encerramento_sem_movimento_em_execucao = False
 
     def iniciar_encerramento_multi_periodo_gui(self, planilha_path, saida_dir, competencias_lista,
-                                                chrome_path, url_portal, cpf, senha, modo="encerrar"):
+                                                chrome_path, url_portal, cpf, senha, modo="encerrar",
+                                                cnpjs_lista=None):
         """Dispara o Encerramento ISS — Múltiplos Meses em uma thread separada. `competencias_lista`
         é uma lista de strings "MM/AAAA" (a competência única da função de cima vira uma lista aqui).
-        `modo`: "encerrar" (padrão) ou "verificar" (confere tudo, mas NÃO encerra nem baixa nada)."""
+        `modo`: "encerrar" (padrão) ou "verificar" (confere tudo, mas NÃO encerra nem baixa nada).
+        `cnpjs_lista` (opcional): CNPJs digitados pelo operador; quando informada substitui a planilha fiscal."""
+        cnpjs = self._normalizar_cnpjs_encerramento_multi(cnpjs_lista)
+        if cnpjs is False:
+            return False
         return self._disparar_encerramento_multi_periodo(
-            planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha, modo, None
+            planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha, modo, None, cnpjs
         )
 
+    def _normalizar_cnpjs_encerramento_multi(self, cnpjs_lista):
+        """None se a origem for a planilha; lista de CNPJs (14 dígitos, sem duplicatas, na ordem) se for manual;
+        False (e erro na tela) se algum CNPJ digitado for inválido."""
+        if not cnpjs_lista:
+            return None
+        cnpjs: list[str] = []
+        invalidos: list[str] = []
+        for bruto in cnpjs_lista:
+            cnpj = re.sub(r"\D", "", str(bruto))
+            if not cnpj_valido(cnpj):
+                invalidos.append(str(bruto))
+            elif cnpj not in cnpjs:
+                cnpjs.append(cnpj)
+        if invalidos:
+            self.window.evaluate_js(
+                "window.log_encerramento_multi(" + json.dumps("Erro: CNPJ inválido: " + ", ".join(invalidos)) + ", true)"
+            )
+            return False
+        return cnpjs
+
     def executar_verificadas_encerramento_multi_gui(self, planilha_path, saida_dir, itens,
-                                                     chrome_path, url_portal, cpf, senha):
+                                                     chrome_path, url_portal, cpf, senha, origem="planilha"):
         """Executa (encerra/baixa certificado) só o que o operador aprovou numa verificação prévia.
         `itens`: lista de {"cnpj": "<14 dígitos ou com máscara>", "competencia": "MM/AAAA"}. Abre um Chrome novo
-        (com novo login): a sessão da verificação pode ter expirado enquanto o operador revisava a lista."""
+        (com novo login): a sessão da verificação pode ter expirado enquanto o operador revisava a lista.
+        `origem`: a mesma da verificação ("planilha" ou "manual"); no modo manual as empresas são os CNPJs aprovados."""
         alvos: dict[str, set[date]] = {}
         competencias_lista: set[str] = set()
         for item in itens or []:
@@ -1224,12 +1251,13 @@ class BeAContabAPI:
             self.window.evaluate_js("window.log_encerramento_multi('Erro: nenhum item válido para executar.', true)")
             return False
         ordenadas = sorted(competencias_lista, key=lambda c: (c.split("/")[1], c.split("/")[0]))
+        cnpjs = list(alvos) if origem == "manual" else None
         return self._disparar_encerramento_multi_periodo(
-            planilha_path, saida_dir, ordenadas, chrome_path, url_portal, cpf, senha, "encerrar", alvos
+            planilha_path, saida_dir, ordenadas, chrome_path, url_portal, cpf, senha, "encerrar", alvos, cnpjs
         )
 
     def _disparar_encerramento_multi_periodo(self, planilha_path, saida_dir, competencias_lista,
-                                              chrome_path, url_portal, cpf, senha, modo, alvos):
+                                              chrome_path, url_portal, cpf, senha, modo, alvos, cnpjs=None):
         with self._lock_encerramento_multi_periodo:
             if self._encerramento_multi_periodo_em_execucao:
                 self.window.evaluate_js("window.log_encerramento_multi('Erro: o encerramento já está em andamento!', true)")
@@ -1239,7 +1267,7 @@ class BeAContabAPI:
         self._controles_xml["encerramento_multi"].reiniciar()
         threading.Thread(
             target=self._processar_encerramento_multi_periodo,
-            args=(planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha, modo, alvos),
+            args=(planilha_path, saida_dir, competencias_lista, chrome_path, url_portal, cpf, senha, modo, alvos, cnpjs),
             daemon=True
         ).start()
         return True
@@ -1249,7 +1277,8 @@ class BeAContabAPI:
         self.cancelar_processamento_xml("encerramento_multi")
 
     def _processar_encerramento_multi_periodo(self, planilha_path, saida_dir, competencias_lista,
-                                               chrome_path, url_portal, cpf, senha, modo="encerrar", alvos=None):
+                                               chrome_path, url_portal, cpf, senha, modo="encerrar", alvos=None,
+                                               cnpjs=None):
         caminho_log = self._abrir_arquivo_log(saida_dir)
         log_gui = self._criar_log_gui("log_encerramento_multi", caminho_log)
         controle = self._controles_xml["encerramento_multi"]
@@ -1273,7 +1302,7 @@ class BeAContabAPI:
             caminho_template = Path(obter_caminho_recurso("core/templates/template_relatorio_execucao.xlsx"))
 
             controlador = ControladorEncerramentoISSMultiPeriodo(
-                caminho_planilha=Path(planilha_path),
+                caminho_planilha=None if cnpjs else Path(planilha_path),
                 caminho_saida=Path(saida_dir),
                 caminho_webdriver=Path(chrome_path),
                 url_iss_fortaleza=url_portal,
@@ -1281,6 +1310,7 @@ class BeAContabAPI:
                 competencias=competencias,
                 caminho_template_relatorio=caminho_template,
                 check_thread_stopped_callback=check_thread_stopped_cb,
+                cnpjs=cnpjs,
                 modo=modo,
                 callback_pausa=controle.aguardar_se_pausado,
                 callback_parar=controle.cancelado,
@@ -1290,6 +1320,7 @@ class BeAContabAPI:
 
             payload = {
                 "modo": modo,
+                "origem": "manual" if cnpjs else "planilha",
                 "processadas": resultado.processadas,
                 "encerradas": resultado.encerradas,
                 "encerradas_agora": resultado.encerradas_agora,

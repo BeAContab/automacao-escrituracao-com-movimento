@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [2.51.0] - 2026-09-23
+
+### Adicionado
+- **"Encerramento ISS — Múltiplos Meses": origem das empresas — planilha fiscal OU CNPJs digitados** (`core/encerramento_iss_sem_movimento/controladores/encerramento_iss_multi_periodo.py`; `app.py`; `gui/index.html`; `gui/js/tab-encerramento-multi-periodo.js`; `README.md`). A função "Encerramento ISS" original **não foi alterada**.
+  - **Novo seletor "Origem das empresas"**: *Planilha fiscal* (comportamento de sempre: só as empresas de Fortaleza marcadas como sem movimento, registro na coluna Y) ou *Digitar CNPJs*.
+  - **Origem manual**: campo de CNPJ + botão **Adicionar** (ou Enter) e lista removível. Valida os **dígitos verificadores** (na tela e de novo no Python), ignora duplicatas e aceita **colar vários** CNPJs separados por vírgula, ponto e vírgula, espaço ou quebra de linha (o evento de colar trata as quebras de linha, que um campo de uma linha descartaria, juntando os CNPJs).
+  - **Sem planilha**: nenhuma planilha é lida ou gravada (nada na coluna Y — o registro fica nos relatórios por competência); o **nome da empresa vem da linha de resultado da busca de inscrição no portal** (razão social); código e responsável ficam em branco no relatório; os certificados vão para `<saída>/<AAAA-MM>/CNPJ_<14 dígitos>/` (na planilha continua `EMP_<código>/`). Novo modelo `EmpresaAlvo` só para este controlador — o modelo original, com os validadores "SM -"/Fortaleza, continua sendo usado no modo planilha.
+  - **Sem a planilha o robô não confere se a empresa é "sem movimento"** — só o portal bloqueia quem tem serviços prestados ou pendentes. Por isso o "Encerrar" direto na origem manual lista as empresas na confirmação (com esse aviso), e o modo "Apenas verificar" continua sendo o padrão.
+  - "Executar o que foi verificado" usa **a mesma origem da verificação** (mesmo que o seletor tenha sido trocado depois) e, no modo manual, só os CNPJs aprovados.
+  - Tudo o que já existia continua valendo na origem manual: Pausar/Continuar/Parar, Apenas verificar, certificados já existentes, parada com Chrome fechado e isolamento de erro por empresa.
+  - `iniciar_encerramento_multi_periodo_gui` ganhou `cnpjs_lista` (opcional; substitui a planilha) e `executar_verificadas_encerramento_multi_gui` ganhou `origem`; o controlador ganhou `cnpjs` (exatamente uma das duas origens) e `cnpj_valido()`.
+  - 36 testes novos (validação de CNPJ com gerador independente, `EmpresaAlvo`, origens no construtor, percurso manual sem abrir planilha, ordem/dedupe, erro/Chrome fechado/parada/pausa no manual, alvos, leitura do nome da linha, pasta e nome do certificado por origem, fiação do app); conferido por mutação em 10 pontos. Tela exercitada no navegador embutido com API simulada (seletor, validação, colar em lista, verificação → execução manual, confirmação). O XPath usado para ler o nome (`.../ancestor::tr[1]` da linha do CNPJ) foi conferido contra o texto real das linhas da busca de inscrição capturado no portal.
+
 ## [2.50.0] - 2026-09-23
 
 ### Adicionado

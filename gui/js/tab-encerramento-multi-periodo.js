@@ -9,6 +9,8 @@
 let competenciasEncerramentoMulti = []; // lista de strings "MM/AAAA", na ordem em que foram adicionadas
 let encerramentoMultiPausado = false;
 let verificacaoEncerramentoMulti = []; // itens da última verificação (vindos do Python)
+let cnpjsEncerramentoMulti = []; // CNPJs digitados (14 dígitos, sem máscara), na ordem em que foram adicionados
+let origemDaVerificacaoEncerramentoMulti = 'planilha'; // origem usada na última verificação ("planilha" | "manual")
 
 async function selecionarPlanilhaEncerramentoMulti() {
     if (window.pywebview) {
@@ -95,6 +97,112 @@ function renderizarCompetenciasEncerramentoMulti() {
     });
 }
 
+// ---- Origem das empresas: planilha fiscal ou CNPJs digitados -------------------------------------------------------
+
+function origemEncerramentoMulti() {
+    const marcado = document.querySelector('input[name="origem-encerramento-multi"]:checked');
+    return marcado ? marcado.value : 'planilha';
+}
+
+function atualizarOrigemEncerramentoMulti() {
+    const manual = origemEncerramentoMulti() === 'manual';
+    document.getElementById('bloco-planilha-encerramento-multi').classList.toggle('hidden', manual);
+    document.getElementById('bloco-cnpjs-encerramento-multi').classList.toggle('hidden', !manual);
+}
+
+// CNPJ com 14 dígitos, não todos iguais e com os dígitos verificadores corretos (mesma regra do Python).
+function cnpjValidoEncerramentoMulti(valor) {
+    const cnpj = String(valor || '').replace(/\D/g, '');
+    if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+    const digito = (base, pesos) => {
+        const resto = base.split('').reduce((soma, d, i) => soma + Number(d) * pesos[i], 0) % 11;
+        return resto < 2 ? 0 : 11 - resto;
+    };
+    const pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const d1 = digito(cnpj.slice(0, 12), pesos1);
+    const d2 = digito(cnpj.slice(0, 12) + d1, [6, ...pesos1]);
+    return cnpj.slice(12) === `${d1}${d2}`;
+}
+
+function formatarCnpjEncerramentoMulti(cnpj) {
+    return String(cnpj).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+function adicionarCnpjEncerramentoMulti() {
+    const campo = document.getElementById('input-cnpj-encerramento-multi');
+    const digitado = campo.value.trim();
+    if (!digitado) { addLogEncerramentoMulti('Digite um CNPJ para adicionar.', true); return; }
+
+    // Aceita colar vários CNPJs separados por vírgula, ponto e vírgula, espaço ou quebra de linha.
+    const partes = digitado.split(/[\s,;]+/).filter(Boolean);
+    let adicionados = 0;
+    partes.forEach(parte => {
+        const cnpj = parte.replace(/\D/g, '');
+        if (!cnpjValidoEncerramentoMulti(cnpj)) {
+            addLogEncerramentoMulti(`CNPJ inválido: ${parte}`, true);
+            return;
+        }
+        if (cnpjsEncerramentoMulti.includes(cnpj)) {
+            addLogEncerramentoMulti(`O CNPJ ${formatarCnpjEncerramentoMulti(cnpj)} já está na lista.`, true);
+            return;
+        }
+        cnpjsEncerramentoMulti.push(cnpj);
+        adicionados++;
+    });
+
+    if (adicionados > 0) campo.value = '';
+    renderizarCnpjsEncerramentoMulti();
+    campo.focus();
+}
+
+// Um <input> de uma linha descarta as quebras de linha ao colar (e juntaria os CNPJs); por isso, quando o
+// texto colado tem várias linhas, as quebras viram espaços e os CNPJs são adicionados de uma vez.
+function colarCnpjsEncerramentoMulti(evento) {
+    const texto = ((evento.clipboardData || window.clipboardData).getData('text') || '');
+    if (!/[\r\n]/.test(texto)) return; // uma linha só: comportamento normal do campo
+    evento.preventDefault();
+    document.getElementById('input-cnpj-encerramento-multi').value = texto.replace(/[\r\n]+/g, ' ').trim();
+    adicionarCnpjEncerramentoMulti();
+}
+
+function removerCnpjEncerramentoMulti(cnpj) {
+    cnpjsEncerramentoMulti = cnpjsEncerramentoMulti.filter(c => c !== cnpj);
+    renderizarCnpjsEncerramentoMulti();
+}
+
+function renderizarCnpjsEncerramentoMulti() {
+    const container = document.getElementById('lista-cnpjs-encerramento-multi');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (cnpjsEncerramentoMulti.length === 0) {
+        const vazio = document.createElement('p');
+        vazio.className = 'font-body-sm text-body-sm text-on-surface-variant/70 italic';
+        vazio.innerText = 'Nenhum CNPJ adicionado ainda.';
+        container.appendChild(vazio);
+        return;
+    }
+
+    cnpjsEncerramentoMulti.forEach(cnpj => {
+        const chip = document.createElement('span');
+        chip.className = 'inline-flex items-center gap-1 pl-sm pr-1 py-1 bg-primary-container/15 text-primary-container rounded-full text-xs font-bold font-mono';
+
+        const texto = document.createElement('span');
+        texto.innerText = formatarCnpjEncerramentoMulti(cnpj);
+        chip.appendChild(texto);
+
+        const remover = document.createElement('button');
+        remover.type = 'button';
+        remover.title = 'Remover';
+        remover.className = 'material-symbols-outlined text-[16px] leading-none hover:text-error transition-colors';
+        remover.innerText = 'close';
+        remover.onclick = () => removerCnpjEncerramentoMulti(cnpj);
+        chip.appendChild(remover);
+
+        container.appendChild(chip);
+    });
+}
+
 function modoEncerramentoMulti() {
     const marcado = document.querySelector('input[name="modo-encerramento-multi"]:checked');
     return marcado ? marcado.value : 'verificar';
@@ -138,18 +246,28 @@ function lerCamposEncerramentoMulti() {
 async function iniciarEncerramentoMultiPeriodo() {
     const { planilha, saida, cpf, senha, chromePath, urlPortal } = lerCamposEncerramentoMulti();
     const modo = modoEncerramentoMulti();
+    const origem = origemEncerramentoMulti();
+    const manual = origem === 'manual';
 
-    if (!planilha) { addLogEncerramentoMulti('Selecione a planilha fiscal.', true); return; }
+    if (!manual && !planilha) { addLogEncerramentoMulti('Selecione a planilha fiscal.', true); return; }
+    if (manual && cnpjsEncerramentoMulti.length === 0) { addLogEncerramentoMulti('Adicione ao menos um CNPJ.', true); return; }
     if (!saida) { addLogEncerramentoMulti('Selecione a pasta de saída.', true); return; }
     if (competenciasEncerramentoMulti.length === 0) { addLogEncerramentoMulti('Adicione ao menos uma competência.', true); return; }
     if (!cpf || !senha) { addLogEncerramentoMulti('Informe o CPF e a senha do portal ISS Fortaleza.', true); return; }
 
     if (modo === 'encerrar') {
+        const quem = manual
+            ? `${cnpjsEncerramentoMulti.length} empresa(s) informada(s) por você:\n` +
+              cnpjsEncerramentoMulti.slice(0, 8).map(c => `  • ${formatarCnpjEncerramentoMulti(c)}`).join('\n') +
+              (cnpjsEncerramentoMulti.length > 8 ? `\n  • ... e mais ${cnpjsEncerramentoMulti.length - 8}` : '') +
+              '\n\nATENÇÃO: sem a planilha, o robô não confere se essas empresas são "sem movimento" — só o portal ' +
+              'bloqueia quem tem serviços prestados ou pendentes.'
+            : 'todas as empresas sem movimento da planilha';
         const confirmado = confirm(
             'ENCERRAR de verdade?\n\n' +
-            `Competências: ${competenciasEncerramentoMulti.join(', ')}\n\n` +
-            'O robô vai ENCERRAR no portal as escriturações aptas de todas as empresas sem movimento da planilha ' +
-            'e baixar os certificados. O encerramento é irreversível.\n\n' +
+            `Competências: ${competenciasEncerramentoMulti.join(', ')}\n` +
+            `Empresas: ${quem}\n\n` +
+            'O robô vai ENCERRAR no portal as escriturações aptas e baixar os certificados. O encerramento é irreversível.\n\n' +
             'Dica: use "Apenas verificar" antes para conferir o que seria encerrado.'
         );
         if (!confirmado) return;
@@ -170,7 +288,8 @@ async function iniciarEncerramentoMultiPeriodo() {
     if (window.pywebview && window.pywebview.api) {
         try {
             const iniciou = await window.pywebview.api.iniciar_encerramento_multi_periodo_gui(
-                planilha, saida, competenciasEncerramentoMulti, chromePath, urlPortal, cpf, senha, modo
+                manual ? '' : planilha, saida, competenciasEncerramentoMulti, chromePath, urlPortal, cpf, senha, modo,
+                manual ? cnpjsEncerramentoMulti : null
             );
             if (iniciou === false) encerramentoMultiFinalizado(); // já havia uma execução em andamento
         } catch (e) {
@@ -305,7 +424,9 @@ async function executarVerificadasEncerramentoMulti() {
     if (selecionados.length === 0) { addLogEncerramentoMulti('Marque ao menos um item da lista para executar.', true); return; }
 
     const { planilha, saida, cpf, senha, chromePath, urlPortal } = lerCamposEncerramentoMulti();
-    if (!planilha || !saida) { addLogEncerramentoMulti('A planilha fiscal e a pasta de saída precisam continuar selecionadas.', true); return; }
+    const origem = origemDaVerificacaoEncerramentoMulti; // a mesma origem da verificação, mesmo que o seletor tenha mudado
+    if (!saida) { addLogEncerramentoMulti('A pasta de saída precisa continuar selecionada.', true); return; }
+    if (origem === 'planilha' && !planilha) { addLogEncerramentoMulti('A planilha fiscal precisa continuar selecionada.', true); return; }
     if (!cpf || !senha) { addLogEncerramentoMulti('Informe o CPF e a senha do portal ISS Fortaleza.', true); return; }
 
     const aEncerrar = selecionados.filter(i => i.categoria === 'apta').length;
@@ -327,7 +448,7 @@ async function executarVerificadasEncerramentoMulti() {
     if (window.pywebview && window.pywebview.api) {
         try {
             const iniciou = await window.pywebview.api.executar_verificadas_encerramento_multi_gui(
-                planilha, saida, itens, chromePath, urlPortal, cpf, senha
+                origem === 'manual' ? '' : planilha, saida, itens, chromePath, urlPortal, cpf, senha, origem
             );
             if (iniciou === false) encerramentoMultiFinalizado();
         } catch (e) {
@@ -359,6 +480,7 @@ function mostrarResumoEncerramentoMulti(resumo) {
     }
 
     if (verificacao) {
+        origemDaVerificacaoEncerramentoMulti = resumo.origem || 'planilha';
         verificacaoEncerramentoMulti = resumo.verificacao || [];
         renderizarVerificacaoEncerramentoMulti();
     } else {
